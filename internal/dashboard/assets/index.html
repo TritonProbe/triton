@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Triton Dashboard</title>
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <p class="eyebrow">TritonProbe</p>
+      <h1>Live server, probe, and benchmark overview.</h1>
+      <p class="lede">This scaffold ships a lightweight dashboard that lists stored probe and benchmark runs while the transport layer grows underneath it.</p>
+    </section>
+    <section class="grid">
+      <article class="card">
+        <h2>Status</h2>
+        <pre id="status">loading...</pre>
+      </article>
+      <article class="card">
+        <h2>Recent Probes</h2>
+        <pre id="probes">loading...</pre>
+      </article>
+      <article class="card">
+        <h2>Recent Benches</h2>
+        <pre id="benches">loading...</pre>
+      </article>
+    </section>
+  </main>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

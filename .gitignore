@@ -1,0 +1,30 @@
+# Binaries
+/triton
+/triton.exe
+/bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Build/test artifacts
+*.test
+*.out
+*.coverprofile
+coverage.out
+
+# Local runtime data
+/triton-data/
+
+# Go workspace caches
+.gocache/
+
+# Environment files
+.env
+.env.*
+
+# IDE / OS files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

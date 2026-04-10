@@ -1,0 +1,53 @@
+body {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  background:
+    radial-gradient(circle at top left, rgba(0, 148, 255, 0.18), transparent 32%),
+    linear-gradient(180deg, #0b1320, #111827 58%, #172033);
+  color: #f8fafc;
+}
+
+.shell {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 48px 20px 80px;
+}
+
+.hero h1 {
+  font-size: clamp(2.3rem, 6vw, 4.6rem);
+  line-height: 0.95;
+  margin: 0;
+  max-width: 10ch;
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: #7dd3fc;
+}
+
+.lede {
+  max-width: 60ch;
+  color: #cbd5e1;
+}
+
+.grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  margin-top: 36px;
+}
+
+.card {
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(125, 211, 252, 0.2);
+  border-radius: 18px;
+  padding: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
+}
+
+pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #dbeafe;
+}
