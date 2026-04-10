@@ -9,7 +9,10 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/tritonprobe/triton/internal/appmux"
 	"github.com/tritonprobe/triton/internal/config"
+	"github.com/tritonprobe/triton/internal/h3"
+	"github.com/tritonprobe/triton/internal/quic/transport"
 )
 
 type Result struct {
@@ -31,6 +34,9 @@ func Run(target string, cfg config.ProbeConfig) (*Result, error) {
 	}
 	if parsed.Scheme == "" {
 		parsed.Scheme = "https"
+	}
+	if parsed.Scheme == "triton" && parsed.Host == "loopback" {
+		return runLoopbackProbe(parsed, cfg)
 	}
 
 	var dnsStart, dnsDone, connectStart, connectDone, tlsStart, tlsDone, gotFirstByte time.Time
@@ -100,4 +106,62 @@ func millisBetween(start, end time.Time) int64 {
 		return 0
 	}
 	return end.Sub(start).Milliseconds()
+}
+
+func runLoopbackProbe(parsed *url.URL, cfg config.ProbeConfig) (*Result, error) {
+	listener, err := transport.ListenQUIC("127.0.0.1:0")
+	if err != nil {
+		return nil, err
+	}
+	defer listener.Close()
+	listener.SetAutoEcho(false)
+
+	dialer := transport.NewDialer(cfg.Timeout)
+	session, err := dialer.DialSession(listener.Addr().String())
+	if err != nil {
+		return nil, err
+	}
+	defer session.Close()
+
+	serverConn, err := listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+
+	service := h3.NewServer(listener, serverConn, appmux.New())
+	client := h3.NewClient(session)
+
+	path := parsed.Path
+	if path == "" {
+		path = "/ping"
+	}
+	start := time.Now()
+	resp, err := service.ServeRoundTrip(client, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	headers := make(http.Header)
+	for k, v := range resp.Headers {
+		if len(k) > 0 && k[0] == ':' {
+			continue
+		}
+		headers.Set(k, v)
+	}
+
+	return &Result{
+		ID:        fmt.Sprintf("pr-%s", time.Now().UTC().Format("20060102-150405")),
+		Target:    parsed.String(),
+		Timestamp: time.Now().UTC(),
+		Duration:  time.Since(start),
+		Status:    resp.StatusCode,
+		Proto:     "HTTP/3-loopback",
+		Headers:   headers,
+		Timings: map[string]int64{
+			"total": time.Since(start).Milliseconds(),
+		},
+		TLS: map[string]any{
+			"mode": "in-process-loopback",
+		},
+	}, nil
 }

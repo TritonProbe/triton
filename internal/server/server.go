@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/tritonprobe/triton/internal/appmux"
 	"github.com/tritonprobe/triton/internal/config"
 	"github.com/tritonprobe/triton/internal/dashboard"
 	"github.com/tritonprobe/triton/internal/storage"
@@ -28,7 +29,7 @@ func New(cfg config.ServerConfig, dataDir string, store *storage.FileStore) (*Se
 		return nil, err
 	}
 
-	mux := NewMux()
+	mux := appmux.New()
 	srv := &http.Server{
 		Addr:         cfg.ListenTCP,
 		Handler:      mux,

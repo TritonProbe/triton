@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tritonprobe/triton/internal/appmux"
 	"github.com/tritonprobe/triton/internal/quic/transport"
-	tritonserver "github.com/tritonprobe/triton/internal/server"
 )
 
 func TestServiceRoundTrip(t *testing.T) {
@@ -29,7 +29,7 @@ func TestServiceRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	service := NewServer(listener, serverConn, tritonserver.NewMux())
+	service := NewServer(listener, serverConn, appmux.New())
 	client := NewClient(session)
 
 	resp, err := service.ServeRoundTrip(client, http.MethodGet, "/status/204", nil)

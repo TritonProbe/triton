@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tritonprobe/triton/internal/appmux"
 	"github.com/tritonprobe/triton/internal/quic/transport"
-	tritonserver "github.com/tritonprobe/triton/internal/server"
 )
 
 func TestTritonMuxOverH3LoopbackPing(t *testing.T) {
@@ -30,7 +30,7 @@ func TestTritonMuxOverH3LoopbackPing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resp, err := RoundTripHandlerLoopback(listener, session, serverConn, tritonserver.NewMux(), http.MethodGet, "/ping", nil)
+	resp, err := RoundTripHandlerLoopback(listener, session, serverConn, appmux.New(), http.MethodGet, "/ping", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestTritonMuxOverH3LoopbackEcho(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resp, err := RoundTripHandlerLoopback(listener, session, serverConn, tritonserver.NewMux(), http.MethodPost, "/echo", []byte("demo"))
+	resp, err := RoundTripHandlerLoopback(listener, session, serverConn, appmux.New(), http.MethodPost, "/echo", []byte("demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
