@@ -3,6 +3,7 @@ package appmux
 import (
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -12,31 +13,56 @@ import (
 	"time"
 )
 
+type Options struct {
+	MaxBodyBytes int64
+	Metrics      *Metrics
+}
+
 func New() http.Handler {
+	return NewWithOptions(Options{
+		MaxBodyBytes: 1 << 20,
+		Metrics:      NewMetrics(),
+	})
+}
+
+func NewWithOptions(opts Options) http.Handler {
+	if opts.MaxBodyBytes <= 0 {
+		opts.MaxBodyBytes = 1 << 20
+	}
+	if opts.Metrics == nil {
+		opts.Metrics = NewMetrics()
+	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", handleRoot)
-	mux.HandleFunc("/ping", handlePing)
-	mux.HandleFunc("/echo", handleEcho)
-	mux.HandleFunc("/download/", handleDownload)
-	mux.HandleFunc("/upload", handleUpload)
-	mux.HandleFunc("/delay/", handleDelay)
-	mux.HandleFunc("/redirect/", handleRedirect)
-	mux.HandleFunc("/streams/", handleStreams)
-	mux.HandleFunc("/headers/", handleHeaders)
-	mux.HandleFunc("/status/", handleStatus)
-	mux.HandleFunc("/drip/", handleDrip)
-	mux.HandleFunc("/tls-info", handleTLSInfo)
-	mux.HandleFunc("/quic-info", handleQUICInfo)
-	mux.HandleFunc("/migration-test", handleMigration)
-	mux.HandleFunc("/.well-known/triton", handleCapabilities)
-	return mux
+	mux.HandleFunc("/", methodHandler(handleRoot, http.MethodGet))
+	mux.HandleFunc("/healthz", methodHandler(handleHealth, http.MethodGet))
+	mux.HandleFunc("/readyz", methodHandler(handleReady, http.MethodGet))
+	mux.HandleFunc("/metrics", methodHandler(opts.Metrics.handleMetrics, http.MethodGet))
+	mux.HandleFunc("/ping", methodHandler(handlePing, http.MethodGet))
+	mux.HandleFunc("/echo", methodHandler(func(w http.ResponseWriter, r *http.Request) {
+		handleEcho(w, r, opts)
+	}, http.MethodGet, http.MethodPost))
+	mux.HandleFunc("/download/", methodHandler(handleDownload, http.MethodGet))
+	mux.HandleFunc("/upload", methodHandler(func(w http.ResponseWriter, r *http.Request) {
+		handleUpload(w, r, opts)
+	}, http.MethodPost))
+	mux.HandleFunc("/delay/", methodHandler(handleDelay, http.MethodGet))
+	mux.HandleFunc("/redirect/", methodHandler(handleRedirect, http.MethodGet))
+	mux.HandleFunc("/streams/", methodHandler(handleStreams, http.MethodGet))
+	mux.HandleFunc("/headers/", methodHandler(handleHeaders, http.MethodGet))
+	mux.HandleFunc("/status/", methodHandler(handleStatus, http.MethodGet))
+	mux.HandleFunc("/drip/", methodHandler(handleDrip, http.MethodGet))
+	mux.HandleFunc("/tls-info", methodHandler(handleTLSInfo, http.MethodGet))
+	mux.HandleFunc("/quic-info", methodHandler(handleQUICInfo, http.MethodGet))
+	mux.HandleFunc("/migration-test", methodHandler(handleMigration, http.MethodGet))
+	mux.HandleFunc("/.well-known/triton", methodHandler(handleCapabilities, http.MethodGet))
+	return opts.Metrics.middleware(mux)
 }
 
 func handleRoot(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"name":         "triton",
 		"mode":         "server",
-		"capabilities": []string{"http1", "http2", "dashboard", "probe-storage", "bench-storage"},
+		"capabilities": []string{"http1", "http2", "dashboard", "probe-storage", "bench-storage", "healthz", "readyz", "metrics"},
 	})
 }
 
@@ -45,14 +71,29 @@ func handlePing(w http.ResponseWriter, _ *http.Request) {
 	_, _ = io.WriteString(w, "pong")
 }
 
-func handleEcho(w http.ResponseWriter, r *http.Request) {
-	body, _ := io.ReadAll(r.Body)
+func handleHealth(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": "ok",
+	})
+}
+
+func handleReady(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": "ready",
+	})
+}
+
+func handleEcho(w http.ResponseWriter, r *http.Request, opts Options) {
+	body, err := readLimitedBody(w, r, opts.MaxBodyBytes)
+	if err != nil {
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"method":  r.Method,
 		"path":    r.URL.Path,
 		"query":   r.URL.RawQuery,
 		"headers": r.Header,
-		"body":    string(body),
+		"body":    body,
 	})
 }
 
@@ -78,9 +119,14 @@ func handleDownload(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func handleUpload(w http.ResponseWriter, r *http.Request) {
+func handleUpload(w http.ResponseWriter, r *http.Request, opts Options) {
 	start := time.Now()
-	n, _ := io.Copy(io.Discard, r.Body)
+	r.Body = http.MaxBytesReader(w, r.Body, opts.MaxBodyBytes)
+	n, err := io.Copy(io.Discard, r.Body)
+	if err != nil {
+		handleBodyReadError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"bytes":       n,
 		"duration_ms": time.Since(start).Milliseconds(),
@@ -208,8 +254,42 @@ func handleCapabilities(w http.ResponseWriter, _ *http.Request) {
 		"name":      "triton",
 		"version":   "dev",
 		"protocols": []string{"http/1.1", "h2"},
-		"endpoints": []string{"/ping", "/echo", "/download/:size", "/upload", "/delay/:ms", "/streams/:n", "/headers/:n", "/redirect/:n", "/status/:code", "/drip/:size/:delay"},
+		"endpoints": []string{"/healthz", "/readyz", "/metrics", "/ping", "/echo", "/download/:size", "/upload", "/delay/:ms", "/streams/:n", "/headers/:n", "/redirect/:n", "/status/:code", "/drip/:size/:delay"},
 	})
+}
+
+func methodHandler(next http.HandlerFunc, methods ...string) http.HandlerFunc {
+	allowed := make(map[string]struct{}, len(methods))
+	for _, method := range methods {
+		allowed[method] = struct{}{}
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := allowed[r.Method]; !ok {
+			w.Header().Set("Allow", strings.Join(methods, ", "))
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		next(w, r)
+	}
+}
+
+func readLimitedBody(w http.ResponseWriter, r *http.Request, limit int64) (string, error) {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		handleBodyReadError(w, err)
+		return "", err
+	}
+	return string(body), nil
+}
+
+func handleBodyReadError(w http.ResponseWriter, err error) {
+	var maxBytesErr *http.MaxBytesError
+	if errors.As(err, &maxBytesErr) {
+		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+		return
+	}
+	http.Error(w, "failed to read request body", http.StatusBadRequest)
 }
 
 func parseTailInt(path, prefix string) (int, error) {

@@ -1,15 +1,22 @@
 server:
   listen: ":4433"
+  listen_h3: ""
   listen_tcp: ":8443"
   dashboard: true
   dashboard_listen: "127.0.0.1:9090"
+  dashboard_user: ""
+  dashboard_pass: ""
   read_timeout: 15s
   write_timeout: 30s
   idle_timeout: 30s
+  max_body_bytes: 1048576
+  access_log: ""
+  trace_dir: ""
 
 probe:
   timeout: 10s
   insecure: false
+  trace_dir: ""
   default_tests:
     - handshake
     - tls
@@ -23,9 +30,12 @@ bench:
   warmup: 2s
   default_duration: 10s
   default_concurrency: 10
+  trace_dir: ""
   default_protocols:
     - h1
     - h2
+  insecure: false
+  # use h3 explicitly with loopback targets, e.g. triton://loopback/ping
 
 storage:
   results_dir: ./triton-data

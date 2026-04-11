@@ -28,6 +28,12 @@ func NewApp(version, buildTime string) *App {
 	}
 }
 
+func (a *App) SetStdout(w io.Writer) {
+	if w != nil {
+		a.stdout = w
+	}
+}
+
 func (a *App) Run(args []string) error {
 	if len(args) == 0 {
 		a.printHelp()
@@ -75,12 +81,46 @@ func loadBaseConfig(path string) (config.Config, *storage.FileStore, error) {
 }
 
 func requireTarget(args []string) (string, error) {
-	for _, arg := range args {
-		if !strings.HasPrefix(arg, "-") {
-			return arg, nil
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if strings.HasPrefix(arg, "--") || strings.HasPrefix(arg, "-") {
+			if strings.Contains(arg, "=") {
+				continue
+			}
+			if flagTakesValue(arg) && i+1 < len(args) {
+				i++
+			}
+			continue
 		}
+		return arg, nil
 	}
 	return "", errors.New("target argument is required")
+}
+
+func flagTakesValue(arg string) bool {
+	switch arg {
+	case "-config", "--config",
+		"-target", "--target",
+		"-format", "--format",
+		"-timeout", "--timeout",
+		"-duration", "--duration",
+		"-concurrency", "--concurrency",
+		"-protocols", "--protocols",
+		"-listen", "--listen",
+		"-listen-h3", "--listen-h3",
+		"-listen-tcp", "--listen-tcp",
+		"-cert", "--cert",
+		"-key", "--key",
+		"-dashboard-listen", "--dashboard-listen",
+		"-dashboard-user", "--dashboard-user",
+		"-dashboard-pass", "--dashboard-pass",
+		"-max-body-bytes", "--max-body-bytes",
+		"-access-log", "--access-log",
+		"-trace-dir", "--trace-dir":
+		return true
+	default:
+		return false
+	}
 }
 
 func (a *App) runServer(args []string) error {

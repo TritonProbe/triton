@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"crypto/rand"
 	"net"
 	"time"
 
@@ -49,8 +50,16 @@ func (d *Dialer) DialSession(address string) (*Session, error) {
 		return nil, err
 	}
 
-	dcid := []byte{0xde, 0xad, 0xbe, 0xef, 0, 0, 0, 1}
-	scid := []byte{0xca, 0xfe, 0xba, 0xbe, 0, 0, 0, 1}
+	dcid, err := randomCID(8)
+	if err != nil {
+		_ = udp.Close()
+		return nil, err
+	}
+	scid, err := randomCID(8)
+	if err != nil {
+		_ = udp.Close()
+		return nil, err
+	}
 	conn := connection.New(connection.RoleClient, 1, dcid)
 	_ = conn.Transition(connection.StateInitialSent)
 	_ = conn.Transition(connection.StateHandshake)
@@ -135,5 +144,13 @@ func (s *Session) ReceiveFrames() error {
 }
 
 func (s *Session) srcCID() []byte {
-	return []byte{0xca, 0xfe, 0xba, 0xbe, 0, 0, 0, 1}
+	return s.conn.OriginalDCID()
+}
+
+func randomCID(size int) ([]byte, error) {
+	buf := make([]byte, size)
+	if _, err := rand.Read(buf); err != nil {
+		return nil, err
+	}
+	return buf, nil
 }

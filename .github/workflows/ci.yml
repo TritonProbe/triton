@@ -1,0 +1,48 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@latest
+
+      - name: Verify formatting
+        run: |
+          files="$(find . -name '*.go' -not -path './vendor/*')"
+          test -z "$(gofmt -l $files)"
+
+      - name: Run tests
+        run: go test ./... -count=1
+
+      - name: Run vet
+        run: go vet ./...
+
+      - name: Run staticcheck
+        run: "$(go env GOPATH)/bin/staticcheck" ./...
+
+      - name: Build binary
+        run: |
+          mkdir -p bin
+          go build -ldflags="-s -w -X main.version=${GITHUB_SHA::7}" -o bin/triton ./cmd/triton
+
+      - name: Run smoke flow
+        run: bash ./scripts/ci-smoke.sh

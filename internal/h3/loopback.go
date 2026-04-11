@@ -1,6 +1,9 @@
 package h3
 
 import (
+	"bytes"
+	"io"
+
 	h3frame "github.com/tritonprobe/triton/internal/h3/frame"
 	"github.com/tritonprobe/triton/internal/quic/connection"
 	quicframe "github.com/tritonprobe/triton/internal/quic/frame"
@@ -83,10 +86,23 @@ func acceptStream(m *stream.Manager) (*stream.Stream, error) {
 }
 
 func readAll(s *stream.Stream) ([]byte, error) {
+	var out bytes.Buffer
 	buf := make([]byte, 4096)
-	n, err := s.Read(buf)
-	if err != nil && err.Error() != "EOF" {
-		return nil, err
+	for {
+		n, err := s.Read(buf)
+		if n > 0 {
+			if _, writeErr := out.Write(buf[:n]); writeErr != nil {
+				return nil, writeErr
+			}
+		}
+		if err == io.EOF {
+			return out.Bytes(), nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		if n == 0 {
+			return out.Bytes(), nil
+		}
 	}
-	return append([]byte(nil), buf[:n]...), nil
 }

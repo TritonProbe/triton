@@ -201,3 +201,13 @@ func (l *Listener) SendFrames(conn *connection.Connection, frames []frame.Frame)
 	}
 	return l.transport.WritePacket(packetBytes, addr)
 }
+
+func (l *Listener) RemoteAddr(conn *connection.Connection) *net.UDPAddr {
+	if conn == nil {
+		return nil
+	}
+	key := hex.EncodeToString(conn.OriginalDCID())
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.addrs[key]
+}

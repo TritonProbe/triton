@@ -40,6 +40,7 @@ Examples:
 ```bash
 triton server
 triton server --listen-tcp :8443 --dashboard-listen 127.0.0.1:9090
+triton server --listen-h3 :4434 --listen-tcp :8443
 ```
 
 Main endpoints currently available:
@@ -69,6 +70,7 @@ Examples:
 ```bash
 triton probe --target https://example.com --format json
 triton probe --target triton://loopback/ping --format json
+triton probe --target h3://localhost:8443/ping --insecure --format json
 ```
 
 Specification-level probe goals include:
@@ -93,7 +95,9 @@ Examples:
 
 ```bash
 triton bench --target https://example.com --duration 3s --concurrency 4
-triton bench --target https://example.com --protocols h1,h2
+triton bench --target https://example.com --protocols h1,h2,h3 --insecure
+triton bench --target triton://loopback/ping --protocols h3 --duration 2s
+triton probe --target triton://127.0.0.1:4433/ping --format json
 ```
 
 Specification-level benchmark goals include:
@@ -106,6 +110,13 @@ Specification-level benchmark goals include:
 - head-of-line blocking comparison
 - migration and loss resilience
 - memory and resource profiles
+
+Current implementation note:
+
+- `h1` and `h2` bench runs work against normal HTTPS targets
+- `h3` bench runs work against normal HTTPS targets using real HTTP/3 and also against `triton://...` targets
+- `h3://host:port/path` probe targets use a real HTTP/3 client over QUIC
+- `triton://host:port/path` targets use Triton's experimental UDP H3 transport
 
 ## Architecture
 
@@ -227,11 +238,17 @@ Important flags:
 
 - `--config`
 - `--listen`
+- `--listen-h3`
 - `--listen-tcp`
 - `--cert`
 - `--key`
 - `--dashboard`
 - `--dashboard-listen`
+- `--dashboard-user`
+- `--dashboard-pass`
+- `--max-body-bytes`
+- `--access-log`
+- `--trace-dir`
 
 ### Probe
 
@@ -246,6 +263,13 @@ Important flags:
 - `--format`
 - `--timeout`
 - `--insecure`
+- `--trace-dir`
+
+Probe target schemes:
+
+- `https://...` uses the standard HTTP client path with HTTP/1.1 or HTTP/2 negotiation
+- `h3://...` forces real HTTP/3 over QUIC
+- `triton://...` uses Triton's in-repo experimental transport
 
 ### Bench
 
@@ -261,6 +285,8 @@ Important flags:
 - `--duration`
 - `--concurrency`
 - `--protocols`
+- `--insecure`
+- `--trace-dir`
 
 ## Example Endpoints
 
@@ -315,12 +341,21 @@ Current precedence model:
 Recognized environment variable examples:
 
 - `TRITON_SERVER_LISTEN`
+- `TRITON_SERVER_LISTEN_H3`
 - `TRITON_SERVER_LISTEN_TCP`
 - `TRITON_SERVER_TLS_CERT`
 - `TRITON_SERVER_TLS_KEY`
+- `TRITON_SERVER_DASHBOARD_USER`
+- `TRITON_SERVER_DASHBOARD_PASS`
+- `TRITON_SERVER_MAX_BODY_BYTES`
+- `TRITON_SERVER_ACCESS_LOG`
+- `TRITON_SERVER_TRACE_DIR`
 - `TRITON_DASHBOARD_ENABLED`
 - `TRITON_PROBE_TIMEOUT`
+- `TRITON_PROBE_TRACE_DIR`
 - `TRITON_BENCH_DEFAULT_DURATION`
+- `TRITON_BENCH_INSECURE`
+- `TRITON_BENCH_TRACE_DIR`
 
 ## Storage
 
@@ -351,6 +386,19 @@ The embedded dashboard is currently a lightweight scaffold that serves:
 - `/api/v1/probes/:id`
 - `/api/v1/benches`
 - `/api/v1/benches/:id`
+- `/api/v1/traces`
+- `/api/v1/traces/:name`
+
+Current hardening features:
+
+- optional HTTP Basic Auth via `server.dashboard_user` / `server.dashboard_pass`
+- defensive security headers on dashboard and HTTPS server responses
+- bounded request body reads for `/echo` and `/upload`
+- benchmark TLS verification enabled by default; `--insecure` is now opt-in
+- request ID propagation and JSON access logs
+- optional access log file output via `server.access_log` or `--access-log`
+- qlog trace file output for real HTTP/3 connections via `server.trace_dir`
+- client qlog trace output for real H3 probe and bench runs via `probe.trace_dir` / `bench.trace_dir`
 
 Long-term specification goals include:
 
@@ -416,6 +464,16 @@ Current local build helpers:
 
 - [Makefile](/d:/Codebox/TritonProbe/Makefile)
 - [Dockerfile](/d:/Codebox/TritonProbe/Dockerfile)
+- `.github/workflows/ci.yml`
+- `.github/workflows/release.yml`
+- [.goreleaser.yml](/d:/Codebox/TritonProbe/.goreleaser.yml)
+
+Current automation now includes:
+
+- CI on pushes and pull requests for `gofmt`, `go test`, `go vet`, `staticcheck`, and binary build verification
+- binary smoke verification covering `server`, `probe`, health endpoints, and H3 loopback bench
+- tag-based release automation for `v*` tags via GoReleaser
+- cross-platform archives for Linux, macOS, and Windows
 
 ## Roadmap
 

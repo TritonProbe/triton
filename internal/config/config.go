@@ -19,14 +19,18 @@ type Config struct {
 
 type ServerConfig struct {
 	Listen          string        `yaml:"listen"`
+	ListenH3        string        `yaml:"listen_h3"`
 	ListenTCP       string        `yaml:"listen_tcp"`
 	CertFile        string        `yaml:"cert"`
 	KeyFile         string        `yaml:"key"`
 	Dashboard       bool          `yaml:"dashboard"`
 	DashboardListen string        `yaml:"dashboard_listen"`
+	DashboardUser   string        `yaml:"dashboard_user"`
+	DashboardPass   string        `yaml:"dashboard_pass"`
 	ReadTimeout     time.Duration `yaml:"read_timeout"`
 	WriteTimeout    time.Duration `yaml:"write_timeout"`
 	IdleTimeout     time.Duration `yaml:"idle_timeout"`
+	MaxBodyBytes    int64         `yaml:"max_body_bytes"`
 	RateLimit       int           `yaml:"rate_limit"`
 	TraceDir        string        `yaml:"trace_dir"`
 	AccessLog       string        `yaml:"access_log"`
@@ -35,6 +39,7 @@ type ServerConfig struct {
 type ProbeConfig struct {
 	Timeout        time.Duration `yaml:"timeout"`
 	Insecure       bool          `yaml:"insecure"`
+	TraceDir       string        `yaml:"trace_dir"`
 	DefaultTests   []string      `yaml:"default_tests"`
 	DefaultFormat  string        `yaml:"default_format"`
 	DownloadSize   string        `yaml:"download_size"`
@@ -47,6 +52,8 @@ type BenchConfig struct {
 	DefaultDuration    time.Duration `yaml:"default_duration"`
 	DefaultConcurrency int           `yaml:"default_concurrency"`
 	DefaultProtocols   []string      `yaml:"default_protocols"`
+	Insecure           bool          `yaml:"insecure"`
+	TraceDir           string        `yaml:"trace_dir"`
 }
 
 type StorageConfig struct {
@@ -59,12 +66,14 @@ func Default() Config {
 	return Config{
 		Server: ServerConfig{
 			Listen:          ":4433",
+			ListenH3:        "",
 			ListenTCP:       ":8443",
 			Dashboard:       true,
 			DashboardListen: "127.0.0.1:9090",
 			ReadTimeout:     15 * time.Second,
 			WriteTimeout:    30 * time.Second,
 			IdleTimeout:     30 * time.Second,
+			MaxBodyBytes:    1 << 20,
 		},
 		Probe: ProbeConfig{
 			Timeout:        10 * time.Second,
@@ -79,6 +88,7 @@ func Default() Config {
 			DefaultDuration:    10 * time.Second,
 			DefaultConcurrency: 10,
 			DefaultProtocols:   []string{"h1", "h2"},
+			Insecure:           false,
 		},
 		Storage: StorageConfig{
 			ResultsDir: filepath.Clean("./triton-data"),
@@ -92,6 +102,11 @@ func (c Config) Validate() error {
 	if err := validateListen(c.Server.Listen, "server.listen"); err != nil {
 		return err
 	}
+	if c.Server.ListenH3 != "" {
+		if err := validateListen(c.Server.ListenH3, "server.listen_h3"); err != nil {
+			return err
+		}
+	}
 	if err := validateListen(c.Server.ListenTCP, "server.listen_tcp"); err != nil {
 		return err
 	}
@@ -102,6 +117,12 @@ func (c Config) Validate() error {
 	}
 	if c.Server.ReadTimeout <= 0 || c.Server.WriteTimeout <= 0 || c.Server.IdleTimeout <= 0 {
 		return errors.New("server timeouts must be positive")
+	}
+	if c.Server.MaxBodyBytes <= 0 {
+		return errors.New("server.max_body_bytes must be positive")
+	}
+	if (c.Server.DashboardUser == "") != (c.Server.DashboardPass == "") {
+		return errors.New("server dashboard auth requires both user and pass")
 	}
 	if c.Storage.ResultsDir == "" {
 		return errors.New("storage.results_dir cannot be empty")

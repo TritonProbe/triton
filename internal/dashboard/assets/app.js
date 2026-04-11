@@ -12,3 +12,4 @@ async function load(id, path) {
 load("status", "/api/v1/status");
 load("probes", "/api/v1/probes");
 load("benches", "/api/v1/benches");
+load("traces", "/api/v1/traces");
