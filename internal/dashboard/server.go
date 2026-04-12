@@ -144,7 +144,15 @@ func (s *Server) handleProbes(w http.ResponseWriter, _ *http.Request) {
 		writeAPIError(w, http.StatusInternalServerError, "failed to list probes", err)
 		return
 	}
-	writeJSON(w, items)
+	summaries := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		summary, err := s.probeSummary(item)
+		if err != nil {
+			continue
+		}
+		summaries = append(summaries, summary)
+	}
+	writeJSON(w, summaries)
 }
 
 func (s *Server) handleBenches(w http.ResponseWriter, _ *http.Request) {
@@ -153,7 +161,15 @@ func (s *Server) handleBenches(w http.ResponseWriter, _ *http.Request) {
 		writeAPIError(w, http.StatusInternalServerError, "failed to list benches", err)
 		return
 	}
-	writeJSON(w, items)
+	summaries := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		summary, err := s.benchSummary(item)
+		if err != nil {
+			continue
+		}
+		summaries = append(summaries, summary)
+	}
+	writeJSON(w, summaries)
 }
 
 func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
@@ -274,6 +290,45 @@ func (s *Server) traceMetadata(name string) (map[string]any, error) {
 		"download_url": "/api/v1/traces/" + name,
 		"meta_url":     "/api/v1/traces/meta/" + name,
 		"preview":      preview,
+	}, nil
+}
+
+func (s *Server) probeSummary(item storage.Item) (map[string]any, error) {
+	var result probe.Result
+	if err := s.store.Load("probes", item.ID, &result); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"id":          item.ID,
+		"target":      result.Target,
+		"timestamp":   result.Timestamp.UTC().Format(time.RFC3339),
+		"status":      result.Status,
+		"proto":       result.Proto,
+		"duration":    result.Duration.String(),
+		"mod_time":    item.ModTime.UTC().Format(time.RFC3339),
+		"size":        item.Size,
+		"analysis":    result.Analysis,
+		"trace_files": append([]string(nil), result.TraceFiles...),
+	}, nil
+}
+
+func (s *Server) benchSummary(item storage.Item) (map[string]any, error) {
+	var result bench.Result
+	if err := s.store.Load("benches", item.ID, &result); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"id":          item.ID,
+		"target":      result.Target,
+		"timestamp":   result.Timestamp.UTC().Format(time.RFC3339),
+		"duration":    result.Duration.String(),
+		"concurrency": result.Concurrency,
+		"protocols":   append([]string(nil), result.Protocols...),
+		"summary":     result.Summary,
+		"stats":       result.Stats,
+		"mod_time":    item.ModTime.UTC().Format(time.RFC3339),
+		"size":        item.Size,
+		"trace_files": append([]string(nil), result.TraceFiles...),
 	}, nil
 }
 

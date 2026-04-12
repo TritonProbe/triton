@@ -81,7 +81,7 @@ func Default() Config {
 		},
 		Probe: ProbeConfig{
 			Timeout:        10 * time.Second,
-			DefaultTests:   []string{"handshake", "tls", "latency"},
+			DefaultTests:   []string{"handshake", "tls", "latency", "throughput", "streams", "alt-svc"},
 			DefaultFormat:  "table",
 			DownloadSize:   "1MB",
 			UploadSize:     "1MB",
@@ -155,6 +155,9 @@ func (c Config) Validate() error {
 	}
 	if c.Probe.Timeout <= 0 {
 		return errors.New("probe.timeout must be positive")
+	}
+	if c.Probe.DefaultStreams <= 0 {
+		return errors.New("probe.default_streams must be positive")
 	}
 	if c.Bench.Warmup < 0 || c.Bench.DefaultDuration <= 0 || c.Bench.DefaultConcurrency <= 0 {
 		return errors.New("bench defaults are invalid")

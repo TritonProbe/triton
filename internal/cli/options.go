@@ -9,6 +9,24 @@ import (
 	"github.com/tritonprobe/triton/internal/config"
 )
 
+var fullProbeTestSuite = []string{
+	"handshake",
+	"tls",
+	"latency",
+	"throughput",
+	"streams",
+	"alt-svc",
+	"0rtt",
+	"migration",
+	"ecn",
+	"retry",
+	"version",
+	"qpack",
+	"congestion",
+	"loss",
+	"spin-bit",
+}
+
 type serverOptions struct {
 	ConfigPath           string
 	Listen               string
@@ -97,6 +115,11 @@ type probeOptions struct {
 	Timeout    time.Duration
 	Insecure   bool
 	TraceDir   string
+	Streams    int
+	Tests      string
+	Full       bool
+	ZeroRTT    bool
+	Migration  bool
 }
 
 func parseProbeOptions(args []string) (probeOptions, error) {
@@ -108,6 +131,11 @@ func parseProbeOptions(args []string) (probeOptions, error) {
 	fs.DurationVar(&opts.Timeout, "timeout", 0, "request timeout")
 	fs.BoolVar(&opts.Insecure, "insecure", false, "skip certificate verification")
 	fs.StringVar(&opts.TraceDir, "trace-dir", "", "directory for client qlog trace files")
+	fs.IntVar(&opts.Streams, "streams", 0, "number of concurrent probe streams/samples")
+	fs.StringVar(&opts.Tests, "tests", "", "comma-separated probe tests")
+	fs.BoolVar(&opts.Full, "full", false, "run the full available probe suite")
+	fs.BoolVar(&opts.ZeroRTT, "0rtt", false, "request 0-RTT probe coverage")
+	fs.BoolVar(&opts.Migration, "migration", false, "request migration probe coverage")
 	if err := fs.Parse(args); err != nil {
 		return opts, err
 	}
@@ -121,7 +149,49 @@ func (o probeOptions) Apply(cfg *config.Config) {
 	if o.TraceDir != "" {
 		cfg.Probe.TraceDir = o.TraceDir
 	}
+	if o.Streams > 0 {
+		cfg.Probe.DefaultStreams = o.Streams
+	}
+	if tests := o.selectedTests(cfg.Probe.DefaultTests); len(tests) > 0 {
+		cfg.Probe.DefaultTests = tests
+	}
 	cfg.Probe.Insecure = cfg.Probe.Insecure || o.Insecure
+}
+
+func (o probeOptions) selectedTests(defaults []string) []string {
+	if o.Full {
+		return append([]string(nil), fullProbeTestSuite...)
+	}
+
+	selected := make([]string, 0, len(defaults)+4)
+	seen := map[string]struct{}{}
+	add := func(values ...string) {
+		for _, value := range values {
+			value = strings.TrimSpace(strings.ToLower(value))
+			if value == "" {
+				continue
+			}
+			if _, ok := seen[value]; ok {
+				continue
+			}
+			seen[value] = struct{}{}
+			selected = append(selected, value)
+		}
+	}
+
+	if o.Tests != "" {
+		add(splitCSV(o.Tests)...)
+	}
+	if o.ZeroRTT {
+		add("0rtt")
+	}
+	if o.Migration {
+		add("migration")
+	}
+	if len(selected) == 0 {
+		add(defaults...)
+	}
+	return selected
 }
 
 func (o probeOptions) FormatOrDefault(defaultFormat string) string {

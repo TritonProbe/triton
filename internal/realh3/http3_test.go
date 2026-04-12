@@ -44,3 +44,16 @@ func TestNewClientWithTraceDir(t *testing.T) {
 		t.Fatal("expected qlog tracer when traceDir is set")
 	}
 }
+
+func TestNewClientWithSessionCache(t *testing.T) {
+	cache := tls.NewLRUClientSessionCache(8)
+	client, transport := NewClientWithSessionCache(2*time.Second, false, "", cache)
+	defer transport.Close()
+
+	if client.Timeout != 2*time.Second {
+		t.Fatalf("unexpected client timeout: %v", client.Timeout)
+	}
+	if transport.TLSClientConfig == nil || transport.TLSClientConfig.ClientSessionCache == nil {
+		t.Fatalf("expected TLS session cache to be configured: %+v", transport.TLSClientConfig)
+	}
+}

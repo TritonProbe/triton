@@ -15,6 +15,7 @@ func TestLoadAppliesEnvOverrides(t *testing.T) {
 	t.Setenv("TRITON_SERVER_ACCESS_LOG", "logs/access.jsonl")
 	t.Setenv("TRITON_SERVER_TRACE_DIR", "traces/server")
 	t.Setenv("TRITON_PROBE_TRACE_DIR", "traces/probe")
+	t.Setenv("TRITON_PROBE_DEFAULT_STREAMS", "21")
 	t.Setenv("TRITON_BENCH_TRACE_DIR", "traces/bench")
 	t.Setenv("TRITON_PROBE_TIMEOUT", "4s")
 	t.Setenv("TRITON_BENCH_DEFAULT_PROTOCOLS", "h2, h3")
@@ -41,7 +42,7 @@ func TestLoadAppliesEnvOverrides(t *testing.T) {
 	if !cfg.Server.AllowRemoteDashboard {
 		t.Fatal("expected remote dashboard env override to be applied")
 	}
-	if cfg.Probe.TraceDir != "traces/probe" || cfg.Probe.Timeout != 4*time.Second {
+	if cfg.Probe.TraceDir != "traces/probe" || cfg.Probe.Timeout != 4*time.Second || cfg.Probe.DefaultStreams != 21 {
 		t.Fatalf("probe env not applied: %+v", cfg.Probe)
 	}
 	wantProtocols := []string{"h2", "h3"}

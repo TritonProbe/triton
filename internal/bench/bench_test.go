@@ -31,6 +31,12 @@ func TestRunProtocolTLSVerification(t *testing.T) {
 	if stats.Requests == 0 {
 		t.Fatal("expected at least one successful request")
 	}
+	if stats.Latency.P95 <= 0 {
+		t.Fatalf("expected latency percentiles to be populated: %+v", stats.Latency)
+	}
+	if stats.Phases.FirstByteMS <= 0 {
+		t.Fatalf("expected first-byte phase timing: %+v", stats.Phases)
+	}
 }
 
 func TestRunProtocolLoopbackH3(t *testing.T) {
@@ -40,6 +46,12 @@ func TestRunProtocolLoopbackH3(t *testing.T) {
 	}
 	if stats.Requests == 0 {
 		t.Fatal("expected at least one h3 request")
+	}
+	if stats.SampledPoints == 0 {
+		t.Fatalf("expected latency percentiles to be populated: %+v", stats.Latency)
+	}
+	if stats.Latency.P99 < stats.Latency.P50 {
+		t.Fatalf("expected percentile ordering: %+v", stats.Latency)
 	}
 }
 
@@ -60,6 +72,9 @@ func TestRunProtocolHTTPSH3(t *testing.T) {
 	}
 	if stats.Requests == 0 {
 		t.Fatal("expected at least one real h3 request")
+	}
+	if stats.Phases.FirstByteMS <= 0 {
+		t.Fatalf("expected phase timings for h3 benchmark: %+v", stats.Phases)
 	}
 	ok, err := observability.HasQLOGFiles(traceDir)
 	if err != nil {
@@ -90,6 +105,12 @@ func TestRunBenchLinksTraceFiles(t *testing.T) {
 	if len(result.TraceFiles) == 0 {
 		t.Fatal("expected trace files linked in bench result")
 	}
+	if result.Stats["h3"].Latency.P99 <= 0 {
+		t.Fatalf("expected bench result to include latency percentiles: %+v", result.Stats["h3"])
+	}
+	if result.Summary["protocols"] != 1 || result.Summary["best_protocol"] != "h3" {
+		t.Fatalf("expected bench summary to be populated: %#v", result.Summary)
+	}
 }
 
 func TestRunProtocolRemoteTritonH3(t *testing.T) {
@@ -112,6 +133,9 @@ func TestRunProtocolRemoteTritonH3(t *testing.T) {
 	if stats.Requests == 0 {
 		t.Fatal("expected at least one h3 request")
 	}
+	if stats.SampledPoints == 0 {
+		t.Fatalf("expected sampled points for remote triton benchmark: %+v", stats)
+	}
 
 	if err := listener.Close(); err != nil {
 		t.Fatalf("close listener: %v", err)
@@ -123,5 +147,32 @@ func TestRunProtocolRemoteTritonH3(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for server shutdown")
+	}
+}
+
+func TestRunProtocolSummarizesErrors(t *testing.T) {
+	stats, err := runProtocol("https://127.0.0.1:1", "h1", 100*time.Millisecond, 1, true, "")
+	if err == nil {
+		t.Fatal("expected benchmark to fail when all requests error")
+	}
+	if stats.Errors == 0 {
+		t.Fatalf("expected errors to be counted: %+v", stats)
+	}
+	if len(stats.ErrorSummary) == 0 {
+		t.Fatalf("expected error summary to be populated: %+v", stats)
+	}
+}
+
+func TestBuildSummaryClassifiesProtocols(t *testing.T) {
+	summary := buildSummary(map[string]Stats{
+		"h1": {Requests: 10, Errors: 0, RequestsPerS: 20, ErrorRate: 0.0},
+		"h2": {Requests: 10, Errors: 2, RequestsPerS: 18, ErrorRate: 0.2},
+		"h3": {Requests: 0, Errors: 5, RequestsPerS: 0, ErrorRate: 1.0},
+	})
+	if summary["healthy_protocols"] != 1 || summary["degraded_protocols"] != 1 || summary["failed_protocols"] != 1 {
+		t.Fatalf("unexpected bench summary classification: %#v", summary)
+	}
+	if summary["best_protocol"] != "h1" || summary["riskiest_protocol"] != "h3" {
+		t.Fatalf("unexpected bench summary ranking: %#v", summary)
 	}
 }

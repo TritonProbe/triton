@@ -12,10 +12,15 @@ import (
 )
 
 func NewClient(timeout time.Duration, insecure bool, traceDir string) (*http.Client, *quichttp3.Transport) {
+	return NewClientWithSessionCache(timeout, insecure, traceDir, nil)
+}
+
+func NewClientWithSessionCache(timeout time.Duration, insecure bool, traceDir string, cache tls.ClientSessionCache) (*http.Client, *quichttp3.Transport) {
 	transport := &quichttp3.Transport{
 		TLSClientConfig: &tls.Config{
 			MinVersion:         tls.VersionTLS13,
 			InsecureSkipVerify: insecure,
+			ClientSessionCache: cache,
 		},
 		QUICConfig: &quic.Config{
 			Tracer: observability.NewQLOGTracer(traceDir),

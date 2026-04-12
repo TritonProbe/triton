@@ -65,6 +65,10 @@ func TestParseProbeOptionsAndApply(t *testing.T) {
 		"-target", "https://example.com",
 		"-format", "json",
 		"-timeout", "3s",
+		"-streams", "12",
+		"-tests", "latency,streams",
+		"-0rtt",
+		"-migration",
 		"-insecure",
 		"-trace-dir", "traces/probe",
 	})
@@ -74,14 +78,20 @@ func TestParseProbeOptionsAndApply(t *testing.T) {
 	if opts.ConfigPath != "probe.yaml" || opts.Target != "https://example.com" || opts.Format != "json" {
 		t.Fatalf("unexpected parsed probe options: %+v", opts)
 	}
-	if opts.Timeout != 3*time.Second || !opts.Insecure || opts.TraceDir != "traces/probe" {
+	if opts.Timeout != 3*time.Second || !opts.Insecure || opts.TraceDir != "traces/probe" || opts.Streams != 12 {
 		t.Fatalf("probe flags not parsed correctly: %+v", opts)
+	}
+	if !reflect.DeepEqual(opts.selectedTests(nil), []string{"latency", "streams", "0rtt", "migration"}) {
+		t.Fatalf("unexpected selected tests: %+v", opts.selectedTests(nil))
 	}
 
 	cfg := config.Default()
 	opts.Apply(&cfg)
-	if cfg.Probe.Timeout != 3*time.Second || !cfg.Probe.Insecure || cfg.Probe.TraceDir != "traces/probe" {
+	if cfg.Probe.Timeout != 3*time.Second || !cfg.Probe.Insecure || cfg.Probe.TraceDir != "traces/probe" || cfg.Probe.DefaultStreams != 12 {
 		t.Fatalf("probe options not applied: %+v", cfg.Probe)
+	}
+	if !reflect.DeepEqual(cfg.Probe.DefaultTests, []string{"latency", "streams", "0rtt", "migration"}) {
+		t.Fatalf("probe tests not applied: %+v", cfg.Probe.DefaultTests)
 	}
 	if got := opts.FormatOrDefault("table"); got != "json" {
 		t.Fatalf("expected explicit format, got %q", got)
@@ -92,6 +102,15 @@ func TestProbeFormatOrDefaultFallback(t *testing.T) {
 	opts := probeOptions{}
 	if got := opts.FormatOrDefault("yaml"); got != "yaml" {
 		t.Fatalf("expected fallback format, got %q", got)
+	}
+}
+
+func TestProbeSelectedTestsFull(t *testing.T) {
+	opts := probeOptions{Full: true}
+	got := opts.selectedTests([]string{"latency"})
+	want := []string{"handshake", "tls", "latency", "throughput", "streams", "alt-svc", "0rtt", "migration", "ecn", "retry", "version", "qpack", "congestion", "loss", "spin-bit"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected full test list: got %v want %v", got, want)
 	}
 }
 

@@ -96,6 +96,8 @@ Specification-level probe goals include:
 - congestion and loss behavior
 - spin bit, GREASE, Alt-Svc, and H3 settings
 
+Current probe output now includes richer `analysis` sections for response throughput, sampled latency percentiles, basic stream-concurrency summaries, an HTTP/3-only `qpack` approximation based on estimated header-block size, partial `loss` and `congestion` signals inferred from repeated request failures, timeout categories, latency spread, and concurrent slowdown, partial `version` and `retry` observations inferred from the negotiated H3 protocol/alpn and handshake visibility, plus partial `ecn` and `spin-bit` observations inferred from observable protocol metadata and sampled RTT stability. Probe results also include a `test_plan` summary so requested tests, executed tests, and skipped unsupported tests are explicit, a `support` matrix that marks advanced checks such as `0rtt`, `migration`, `qpack`, `loss`, `congestion`, `retry`, `version`, `ecn`, and `spin-bit` as partial, full, or unavailable, and a `support_summary` rollup so overall advanced coverage can be judged at a glance. The deeper spec items such as true 0-RTT, migration, packet-level loss analysis, congestion-window telemetry, Retry packet observation, QUIC version negotiation telemetry, packet-mark ECN visibility, packet-level spin-bit observation, and real QPACK inspection are still not fully implemented.
+
 ### 3. Bench
 
 Bench mode produces cross-protocol comparisons.
@@ -126,6 +128,8 @@ Current implementation note:
 - `h3` bench runs work against normal HTTPS targets using real HTTP/3 and also against `triton://...` targets
 - `h3://host:port/path` probe targets use a real HTTP/3 client over QUIC
 - `triton://host:port/path` targets use Triton's experimental UDP H3 transport
+- bench output now includes sampled latency percentiles (`p50`, `p95`, `p99`), error-rate/error-summary data, and average request phases such as connect, TLS, first-byte, and transfer time
+- bench results now also include a computed `summary` rollup that classifies protocols as healthy/degraded/failed and highlights the best and riskiest protocol in the run
 
 ## Architecture
 
@@ -281,7 +285,12 @@ Important flags:
 - `--config`
 - `--target`
 - `--format`
+- `--tests`
+- `--full`
+- `--0rtt`
+- `--migration`
 - `--timeout`
+- `--streams`
 - `--insecure`
 - `--trace-dir`
 
@@ -372,6 +381,7 @@ Recognized environment variable examples:
 - `TRITON_SERVER_TRACE_DIR`
 - `TRITON_DASHBOARD_ENABLED`
 - `TRITON_PROBE_TIMEOUT`
+- `TRITON_PROBE_DEFAULT_STREAMS`
 - `TRITON_PROBE_TRACE_DIR`
 - `TRITON_BENCH_DEFAULT_DURATION`
 - `TRITON_BENCH_INSECURE`
@@ -409,6 +419,8 @@ The embedded dashboard is currently a lightweight scaffold that serves:
 - `/api/v1/benches/:id`
 - `/api/v1/traces`
 - `/api/v1/traces/:name`
+
+The UI now renders status/config snapshots plus typed summaries for recent probes, benches, and trace files instead of showing only raw JSON blobs, including probe test-plan/skipped-test hints, `0rtt` / `migration` probe summary hints, support-coverage pills, and richer benchmark summary pills plus bench health rollups.
 
 Current hardening features:
 

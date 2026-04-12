@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tritonprobe/triton/internal/bench"
 	"github.com/tritonprobe/triton/internal/observability"
+	"github.com/tritonprobe/triton/internal/probe"
 	"github.com/tritonprobe/triton/internal/storage"
 )
 
@@ -166,6 +168,67 @@ func TestDashboardConfigEndpoint(t *testing.T) {
 	}
 }
 
+func TestDashboardProbeAndBenchListsReturnSummaries(t *testing.T) {
+	store, err := storage.NewFileStore(t.TempDir(), 10, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveProbe("probe-1", probe.Result{
+		ID:       "probe-1",
+		Target:   "https://example.com",
+		Status:   http.StatusOK,
+		Proto:    "HTTP/2.0",
+		Duration: 150 * time.Millisecond,
+		Analysis: map[string]any{
+			"latency": map[string]any{"p95": 12.5},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveBench("bench-1", bench.Result{
+		ID:          "bench-1",
+		Target:      "https://example.com",
+		Duration:    time.Second,
+		Concurrency: 2,
+		Protocols:   []string{"h1", "h2"},
+		Summary: map[string]any{
+			"protocols":          2,
+			"healthy_protocols":  1,
+			"degraded_protocols": 1,
+			"failed_protocols":   0,
+			"best_protocol":      "h1",
+			"riskiest_protocol":  "h2",
+		},
+		Stats: map[string]bench.Stats{
+			"h1": {Requests: 10, Latency: bench.Percentiles{P95: 9.5}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := New("127.0.0.1:0", store, Options{})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/probes", nil)
+	rec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from probes list, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"target":"https://example.com"`) || !strings.Contains(rec.Body.String(), `"latency"`) {
+		t.Fatalf("expected enriched probe summary payload, got %q", rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/benches", nil)
+	rec = httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from benches list, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"protocols":["h1","h2"]`) || !strings.Contains(rec.Body.String(), `"latency_ms"`) || !strings.Contains(rec.Body.String(), `"summary"`) {
+		t.Fatalf("expected enriched bench summary payload, got %q", rec.Body.String())
+	}
+}
+
 func TestDashboardAssetsAndHead(t *testing.T) {
 	store, err := storage.NewFileStore(t.TempDir(), 10, time.Hour)
 	if err != nil {
@@ -192,6 +255,31 @@ func TestDashboardAssetsAndHead(t *testing.T) {
 	srv.http.Handler.ServeHTTP(rec, req)
 	if !strings.Contains(rec.Body.String(), `id="config"`) {
 		t.Fatalf("expected config card in dashboard html, got %q", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `class="stack"`) {
+		t.Fatalf("expected stack containers in dashboard html, got %q", rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/assets/app.js", nil)
+	rec = httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for app.js, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "renderProbes") || !strings.Contains(rec.Body.String(), "renderBenches") {
+		t.Fatalf("expected typed dashboard renderers in app.js, got %q", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "skipped") || !strings.Contains(rec.Body.String(), "Top Error") {
+		t.Fatalf("expected richer probe/bench renderer hints in app.js, got %q", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Bench summary") || !strings.Contains(rec.Body.String(), "Healthy") {
+		t.Fatalf("expected bench summary renderer hints in app.js, got %q", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "0rtt") || !strings.Contains(rec.Body.String(), "migration") || !strings.Contains(rec.Body.String(), "qpack") || !strings.Contains(rec.Body.String(), "loss") || !strings.Contains(rec.Body.String(), "congestion") || !strings.Contains(rec.Body.String(), "version") || !strings.Contains(rec.Body.String(), "retry") || !strings.Contains(rec.Body.String(), "ecn") || !strings.Contains(rec.Body.String(), "spin") || !strings.Contains(rec.Body.String(), "Coverage") || !strings.Contains(rec.Body.String(), "Support summary") {
+		t.Fatalf("expected advanced probe renderer hints in app.js, got %q", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "supportPills") || !strings.Contains(rec.Body.String(), ".coverage") {
+		t.Fatalf("expected support coverage renderer hints in app.js, got %q", rec.Body.String())
 	}
 }
 

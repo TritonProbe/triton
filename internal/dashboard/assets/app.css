@@ -46,6 +46,98 @@ body {
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
 }
 
+.stack {
+  display: grid;
+  gap: 12px;
+}
+
+.metric-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.metric {
+  background: rgba(8, 15, 30, 0.72);
+  border: 1px solid rgba(125, 211, 252, 0.15);
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.metric-label {
+  display: block;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+}
+
+.metric-value {
+  display: block;
+  margin-top: 6px;
+  font-size: 1.1rem;
+  color: #f8fafc;
+}
+
+.record-list {
+  display: grid;
+  gap: 10px;
+}
+
+.record {
+  background: rgba(8, 15, 30, 0.5);
+  border: 1px solid rgba(125, 211, 252, 0.12);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.record h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.record p {
+  margin: 6px 0 0;
+  color: #cbd5e1;
+}
+
+.pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: rgba(125, 211, 252, 0.14);
+  color: #dbeafe;
+  font-size: 0.85rem;
+}
+
+.pill-muted {
+  background: rgba(148, 163, 184, 0.16);
+  color: #cbd5e1;
+}
+
+.pill-warn {
+  background: rgba(251, 191, 36, 0.18);
+  color: #fde68a;
+}
+
+.mini {
+  color: #94a3b8;
+  font-size: 0.86rem;
+}
+
+.empty {
+  color: #94a3b8;
+  font-style: italic;
+}
+
 pre {
   white-space: pre-wrap;
   word-break: break-word;

@@ -106,6 +106,8 @@ func flagTakesValue(arg string) bool {
 		"-target", "--target",
 		"-format", "--format",
 		"-timeout", "--timeout",
+		"-streams", "--streams",
+		"-tests", "--tests",
 		"-duration", "--duration",
 		"-concurrency", "--concurrency",
 		"-protocols", "--protocols",
