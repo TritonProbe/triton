@@ -19,6 +19,7 @@ const (
 
 type Stream struct {
 	id            uint64
+	stateMu       sync.Mutex
 	state         State
 	sendMu        sync.Mutex
 	recvMu        sync.Mutex
@@ -66,8 +67,8 @@ func (s *Stream) BufferedSendBytes() int {
 }
 
 func (s *Stream) State() State {
-	s.sendMu.Lock()
-	defer s.sendMu.Unlock()
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
 	return s.state
 }
 
@@ -113,6 +114,8 @@ func (s *Stream) CloseWrite() error {
 		return nil
 	}
 	s.sendFin = true
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
 	switch s.state {
 	case StateOpen:
 		s.state = StateHalfClosedLocal
@@ -123,17 +126,18 @@ func (s *Stream) CloseWrite() error {
 }
 
 func (s *Stream) Close() error {
-	_ = s.CloseWrite()
+	s.sendMu.Lock()
+	if !s.sendFin {
+		s.sendFin = true
+	}
 	s.recvMu.Lock()
+	defer s.sendMu.Unlock()
 	defer s.recvMu.Unlock()
 	s.recvFin = true
 	s.recvFinOffset = s.recvOffset
-	switch s.state {
-	case StateOpen:
-		s.state = StateHalfClosedRemote
-	case StateHalfClosedLocal:
-		s.state = StateClosed
-	}
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	s.state = StateClosed
 	return nil
 }
 
@@ -144,6 +148,8 @@ func (s *Stream) Reset(_ uint64) {
 	defer s.recvMu.Unlock()
 	s.sendFin = true
 	s.recvFin = true
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
 	s.state = StateClosed
 }
 
@@ -166,11 +172,13 @@ func (s *Stream) PushRecv(offset uint64, data []byte, fin bool) error {
 	if fin {
 		s.recvFin = true
 		s.recvFinOffset = offset + uint64(len(data))
+		s.stateMu.Lock()
 		if s.state == StateOpen {
 			s.state = StateHalfClosedRemote
 		} else if s.state == StateHalfClosedLocal {
 			s.state = StateClosed
 		}
+		s.stateMu.Unlock()
 	}
 	select {
 	case s.flowUpdate <- struct{}{}:
@@ -180,6 +188,8 @@ func (s *Stream) PushRecv(offset uint64, data []byte, fin bool) error {
 }
 
 func (s *Stream) transitionAfterReadEOF() {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
 	switch s.state {
 	case StateHalfClosedRemote:
 		s.state = StateClosed

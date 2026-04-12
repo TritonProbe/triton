@@ -3,9 +3,9 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"net/http/httptest"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -58,16 +58,17 @@ func TestH3HandlerIncludesMiddlewareAndRateLimit(t *testing.T) {
 	}
 
 	srv, err := New(config.ServerConfig{
-		Listen:        "127.0.0.1:0",
-		ListenTCP:     "127.0.0.1:0",
-		ReadTimeout:   2 * time.Second,
-		WriteTimeout:  2 * time.Second,
-		IdleTimeout:   2 * time.Second,
-		RateLimit:     1,
-		MaxBodyBytes:  1 << 20,
-		Dashboard:     false,
-		DashboardPass: "",
-		DashboardUser: "",
+		Listen:              "127.0.0.1:0",
+		AllowExperimentalH3: true,
+		ListenTCP:           "127.0.0.1:0",
+		ReadTimeout:         2 * time.Second,
+		WriteTimeout:        2 * time.Second,
+		IdleTimeout:         2 * time.Second,
+		RateLimit:           1,
+		MaxBodyBytes:        1 << 20,
+		Dashboard:           false,
+		DashboardPass:       "",
+		DashboardUser:       "",
 	}, t.TempDir(), store)
 	if err != nil {
 		t.Fatal(err)
@@ -124,15 +125,16 @@ func TestRealHTTP3ServerSupportsProbe(t *testing.T) {
 	_ = pc.Close()
 
 	srv, err := New(config.ServerConfig{
-		Listen:       "127.0.0.1:0",
-		ListenH3:     h3Addr,
-		ListenTCP:    "127.0.0.1:0",
-		ReadTimeout:  2 * time.Second,
-		WriteTimeout: 2 * time.Second,
-		IdleTimeout:  2 * time.Second,
-		MaxBodyBytes: 1 << 20,
-		TraceDir:     t.TempDir(),
-		Dashboard:    false,
+		Listen:              "127.0.0.1:0",
+		AllowExperimentalH3: true,
+		ListenH3:            h3Addr,
+		ListenTCP:           "127.0.0.1:0",
+		ReadTimeout:         2 * time.Second,
+		WriteTimeout:        2 * time.Second,
+		IdleTimeout:         2 * time.Second,
+		MaxBodyBytes:        1 << 20,
+		TraceDir:            t.TempDir(),
+		Dashboard:           false,
 	}, t.TempDir(), store)
 	if err != nil {
 		t.Fatal(err)
@@ -260,5 +262,97 @@ func TestBuildHandlerAndMiddlewareHelpers(t *testing.T) {
 	withAltSvc(base, &quichttp3.Server{Addr: "127.0.0.1:4444"}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected passthrough with h3 server, got %d", rec.Code)
+	}
+}
+
+func TestActiveListenersSummary(t *testing.T) {
+	summary := activeListenersSummary(config.ServerConfig{
+		ListenTCP:           "127.0.0.1:8443",
+		ListenH3:            "127.0.0.1:4434",
+		Listen:              "127.0.0.1:4433",
+		AllowExperimentalH3: true,
+		Dashboard:           true,
+		DashboardListen:     "127.0.0.1:9090",
+	})
+	if len(summary) != 4 {
+		t.Fatalf("expected four listener summary entries, got %v", summary)
+	}
+	if summary[0] != "https/tcp=127.0.0.1:8443" {
+		t.Fatalf("unexpected https summary: %q", summary[0])
+	}
+	if summary[1] != "http3/quic=127.0.0.1:4434" {
+		t.Fatalf("unexpected h3 summary: %q", summary[1])
+	}
+	if summary[2] != "experimental-h3/udp=127.0.0.1:4433" {
+		t.Fatalf("unexpected experimental summary: %q", summary[2])
+	}
+	if summary[3] != "dashboard=127.0.0.1:9090" {
+		t.Fatalf("unexpected dashboard summary: %q", summary[3])
+	}
+}
+
+func TestDashboardConfigSnapshotRedactsSecrets(t *testing.T) {
+	snapshot := dashboardConfigSnapshot(config.ServerConfig{
+		ListenTCP:            "127.0.0.1:8443",
+		ListenH3:             "127.0.0.1:4434",
+		Listen:               "127.0.0.1:4433",
+		AllowExperimentalH3:  true,
+		Dashboard:            true,
+		DashboardListen:      "127.0.0.1:9090",
+		AllowRemoteDashboard: true,
+		DashboardUser:        "admin",
+		DashboardPass:        "secret",
+		MaxBodyBytes:         1024,
+		RateLimit:            5,
+		ReadTimeout:          time.Second,
+		WriteTimeout:         2 * time.Second,
+		IdleTimeout:          3 * time.Second,
+		TraceDir:             "traces",
+		AccessLog:            "access.log",
+		CertFile:             "cert.pem",
+		KeyFile:              "key.pem",
+	})
+
+	dashboardCfg := snapshot["dashboard"].(map[string]any)
+	if dashboardCfg["auth_enabled"] != true {
+		t.Fatalf("expected auth_enabled=true, got %#v", dashboardCfg)
+	}
+	if _, ok := dashboardCfg["password"]; ok {
+		t.Fatal("dashboard snapshot must not expose passwords")
+	}
+}
+
+func TestCapabilityHelpersReflectConfig(t *testing.T) {
+	cfg := config.ServerConfig{
+		ListenH3:            "127.0.0.1:4434",
+		Listen:              "127.0.0.1:4433",
+		AllowExperimentalH3: true,
+		Dashboard:           true,
+		TraceDir:            "traces",
+	}
+
+	protocols := supportedProtocols(cfg)
+	if len(protocols) != 4 || protocols[2] != "h3" || protocols[3] != "triton-h3" {
+		t.Fatalf("unexpected supported protocols: %v", protocols)
+	}
+
+	flags := capabilityFlags(cfg)
+	if len(flags) == 0 {
+		t.Fatal("expected capability flags")
+	}
+	if flags[len(flags)-1] != "qlog" {
+		t.Fatalf("expected qlog capability, got %v", flags)
+	}
+
+	experimental := experimentalFeatures(cfg)
+	if len(experimental) != 1 || experimental[0] != "triton-udp-h3" {
+		t.Fatalf("unexpected experimental features: %v", experimental)
+	}
+
+	if profile := deploymentProfile(cfg); profile != "mixed" {
+		t.Fatalf("unexpected deployment profile: %q", profile)
+	}
+	if stability := stabilityLevel(cfg); stability != "mixed-stability" {
+		t.Fatalf("unexpected stability level: %q", stability)
 	}
 }

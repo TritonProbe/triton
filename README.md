@@ -35,12 +35,19 @@ Core principles from the specification:
 
 Server mode exposes test and benchmark endpoints.
 
+By default, `triton server` starts the HTTPS/TCP server on `:8443` and the dashboard on `127.0.0.1:9090`. The in-repo UDP H3 transport is experimental and now requires both `--listen` and `--allow-experimental-h3`.
+Remote dashboard binding is blocked by default; use `--allow-remote-dashboard` only when you intentionally want non-loopback access, and pair it with dashboard auth.
+
+If you want to work with the experimental Triton UDP H3 stack directly, prefer `triton lab` instead of mixing it into the normal `server` command.
+
 Examples:
 
 ```bash
 triton server
 triton server --listen-tcp :8443 --dashboard-listen 127.0.0.1:9090
+triton server --listen :4433 --allow-experimental-h3 --listen-tcp :8443
 triton server --listen-h3 :4434 --listen-tcp :8443
+triton lab
 ```
 
 Main endpoints currently available:
@@ -60,6 +67,8 @@ Main endpoints currently available:
 - `GET /quic-info`
 - `GET /migration-test`
 - `GET /.well-known/triton`
+
+The capability document at `/.well-known/triton` now reflects the active runtime configuration, including real HTTP/3 availability, whether the experimental Triton UDP H3 path is enabled, and the current deployment/stability profile.
 
 ### 2. Probe
 
@@ -200,6 +209,7 @@ go build ./cmd/triton
 
 ```bash
 go run ./cmd/triton server
+go run ./cmd/triton server --listen :4433 --allow-experimental-h3
 ```
 
 ### Probe a public target
@@ -237,18 +247,28 @@ triton server [flags]
 Important flags:
 
 - `--config`
-- `--listen`
-- `--listen-h3`
+- `--listen` (experimental Triton UDP H3 listener)
+- `--allow-experimental-h3`
+- `--listen-h3` (real HTTP/3 listener via `quic-go`)
 - `--listen-tcp`
 - `--cert`
 - `--key`
 - `--dashboard`
 - `--dashboard-listen`
+- `--allow-remote-dashboard`
 - `--dashboard-user`
 - `--dashboard-pass`
 - `--max-body-bytes`
 - `--access-log`
 - `--trace-dir`
+
+### Lab
+
+```bash
+triton lab [flags]
+```
+
+`lab` runs the experimental Triton UDP H3 listener in isolation. It enables the experimental path, defaults the listener to `127.0.0.1:4433` when unset, and disables the normal HTTPS/dashboard surfaces so experimental work stays separated from the standard server profile.
 
 ### Probe
 
@@ -269,7 +289,7 @@ Probe target schemes:
 
 - `https://...` uses the standard HTTP client path with HTTP/1.1 or HTTP/2 negotiation
 - `h3://...` forces real HTTP/3 over QUIC
-- `triton://...` uses Triton's in-repo experimental transport
+- `triton://...` uses Triton's in-repo experimental transport and typically expects `triton server --listen ... --allow-experimental-h3`
 
 ### Bench
 
@@ -382,6 +402,7 @@ The embedded dashboard is currently a lightweight scaffold that serves:
 
 - static UI assets
 - `/api/v1/status`
+- `/api/v1/config`
 - `/api/v1/probes`
 - `/api/v1/probes/:id`
 - `/api/v1/benches`
@@ -392,6 +413,9 @@ The embedded dashboard is currently a lightweight scaffold that serves:
 Current hardening features:
 
 - optional HTTP Basic Auth via `server.dashboard_user` / `server.dashboard_pass`
+- remote dashboard binding requires explicit opt-in via `server.allow_remote_dashboard` or `--allow-remote-dashboard`
+- remote dashboard binding also requires dashboard auth credentials
+- experimental UDP H3 requires explicit opt-in via `server.allow_experimental_h3` or `--allow-experimental-h3`
 - defensive security headers on dashboard and HTTPS server responses
 - bounded request body reads for `/echo` and `/upload`
 - benchmark TLS verification enabled by default; `--insecure` is now opt-in

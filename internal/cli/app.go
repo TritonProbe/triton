@@ -49,6 +49,8 @@ func (a *App) Run(args []string) error {
 		return nil
 	case "server":
 		return a.runServer(args[1:])
+	case "lab":
+		return a.runLab(args[1:])
 	case "probe":
 		return a.runProbe(args[1:])
 	case "bench":
@@ -63,6 +65,7 @@ func (a *App) printHelp() {
 	fmt.Fprintln(a.stdout, "")
 	fmt.Fprintln(a.stdout, "Commands:")
 	fmt.Fprintln(a.stdout, "  server   Run the test server with dashboard and TCP fallback")
+	fmt.Fprintln(a.stdout, "  lab      Run the experimental Triton UDP H3 lab listener")
 	fmt.Fprintln(a.stdout, "  probe    Probe an external endpoint and store structured results")
 	fmt.Fprintln(a.stdout, "  bench    Benchmark one target across protocols")
 	fmt.Fprintln(a.stdout, "  version  Print version information")
@@ -133,6 +136,35 @@ func (a *App) runServer(args []string) error {
 		return err
 	}
 	opts.Apply(&cfg)
+	srv, err := server.New(cfg.Server, cfg.Storage.ResultsDir, store)
+	if err != nil {
+		return err
+	}
+	return srv.Run()
+}
+
+func (a *App) runLab(args []string) error {
+	opts, err := parseServerOptions(args)
+	if err != nil {
+		return err
+	}
+	cfg, store, err := loadBaseConfig(opts.ConfigPath)
+	if err != nil {
+		return err
+	}
+	opts.Apply(&cfg)
+
+	cfg.Server.AllowExperimentalH3 = true
+	if cfg.Server.Listen == "" {
+		cfg.Server.Listen = "127.0.0.1:4433"
+	}
+	cfg.Server.ListenTCP = ""
+	cfg.Server.ListenH3 = ""
+	cfg.Server.Dashboard = false
+	cfg.Server.AllowRemoteDashboard = false
+	cfg.Server.DashboardUser = ""
+	cfg.Server.DashboardPass = ""
+
 	srv, err := server.New(cfg.Server, cfg.Storage.ResultsDir, store)
 	if err != nil {
 		return err

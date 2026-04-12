@@ -13,7 +13,7 @@ func TestAppHelp(t *testing.T) {
 	if err := app.Run(nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := out.String(); !strings.Contains(got, "Commands:") {
+	if got := out.String(); !strings.Contains(got, "Commands:") || !strings.Contains(got, "lab") {
 		t.Fatalf("unexpected help output: %q", got)
 	}
 }

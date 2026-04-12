@@ -20,7 +20,9 @@ type Listener struct {
 	nextPN    map[string]uint64
 	addrs     map[string]*net.UDPAddr
 	autoEcho  bool
-	acceptCh  chan *connection.Connection
+	accepted  []*connection.Connection
+	acceptQ   []*connection.Connection
+	connReady chan struct{}
 	closed    chan struct{}
 }
 
@@ -35,7 +37,9 @@ func ListenQUIC(address string) (*Listener, error) {
 		nextPN:    make(map[string]uint64),
 		addrs:     make(map[string]*net.UDPAddr),
 		autoEcho:  true,
-		acceptCh:  make(chan *connection.Connection, 32),
+		accepted:  make([]*connection.Connection, 0, 32),
+		acceptQ:   make([]*connection.Connection, 0, 32),
+		connReady: make(chan struct{}, 1),
 		closed:    make(chan struct{}),
 	}
 	go l.serve()
@@ -47,11 +51,22 @@ func (l *Listener) Addr() *net.UDPAddr {
 }
 
 func (l *Listener) Accept() (*connection.Connection, error) {
-	select {
-	case conn := <-l.acceptCh:
-		return conn, nil
-	case <-l.closed:
-		return nil, errors.New("listener closed")
+	for {
+		l.mu.Lock()
+		if len(l.acceptQ) > 0 {
+			conn := l.acceptQ[0]
+			l.acceptQ[0] = nil
+			l.acceptQ = l.acceptQ[1:]
+			l.mu.Unlock()
+			return conn, nil
+		}
+		l.mu.Unlock()
+
+		select {
+		case <-l.connReady:
+		case <-l.closed:
+			return nil, errors.New("listener closed")
+		}
 	}
 }
 
@@ -91,8 +106,10 @@ func (l *Listener) serve() {
 			_ = conn.Transition(connection.StateHandshake)
 			l.conns[key] = conn
 			l.nextPN[key] = 1
+			l.accepted = append(l.accepted, conn)
+			l.acceptQ = append(l.acceptQ, conn)
 			select {
-			case l.acceptCh <- conn:
+			case l.connReady <- struct{}{}:
 			default:
 			}
 		}
@@ -156,19 +173,30 @@ func (l *Listener) nextPacketNumber(key string) uint64 {
 }
 
 func (l *Listener) WaitForConnections(n int, timeout time.Duration) ([]*connection.Connection, error) {
-	result := make([]*connection.Connection, 0, n)
 	deadline := time.After(timeout)
-	for len(result) < n {
+	for {
+		l.mu.Lock()
+		if len(l.accepted) >= n {
+			result := append([]*connection.Connection(nil), l.accepted[:n]...)
+			l.mu.Unlock()
+			return result, nil
+		}
+		l.mu.Unlock()
+
 		select {
-		case conn := <-l.acceptCh:
-			result = append(result, conn)
+		case <-l.connReady:
 		case <-deadline:
+			l.mu.Lock()
+			result := append([]*connection.Connection(nil), l.accepted...)
+			l.mu.Unlock()
 			return result, errors.New("timeout waiting for connections")
 		case <-l.closed:
+			l.mu.Lock()
+			result := append([]*connection.Connection(nil), l.accepted...)
+			l.mu.Unlock()
 			return result, errors.New("listener closed")
 		}
 	}
-	return result, nil
 }
 
 func (l *Listener) SetAutoEcho(v bool) {

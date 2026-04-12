@@ -13,6 +13,7 @@ import (
 
 func TestRunHTTPSProbeRespectsTLSVerification(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Add("Alt-Svc", `h3=":443"; ma=86400`)
 		w.Header().Set("X-Test", "ok")
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -35,6 +36,16 @@ func TestRunHTTPSProbeRespectsTLSVerification(t *testing.T) {
 	}
 	if result.TLS["cipher"] == "" {
 		t.Fatalf("expected TLS metadata, got %#v", result.TLS)
+	}
+	if result.TLS["version"] == "" || result.TLS["leaf_cert"] == nil {
+		t.Fatalf("expected rich TLS metadata, got %#v", result.TLS)
+	}
+	analysis, ok := result.Analysis["alt_svc"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected alt_svc analysis, got %#v", result.Analysis)
+	}
+	if analysis["present"] != true {
+		t.Fatalf("expected alt_svc present=true, got %#v", analysis)
 	}
 }
 
@@ -80,6 +91,9 @@ func TestRunStandardH3Probe(t *testing.T) {
 	}
 	if result.TLS["alpn"] != "h3" {
 		t.Fatalf("expected h3 ALPN, got %#v", result.TLS)
+	}
+	if result.TLS["version"] != "TLS1.3" {
+		t.Fatalf("expected TLS1.3 metadata, got %#v", result.TLS)
 	}
 	if len(result.TraceFiles) == 0 {
 		t.Fatal("expected trace files to be linked in result")

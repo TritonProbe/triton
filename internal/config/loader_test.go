@@ -10,6 +10,7 @@ import (
 
 func TestLoadAppliesEnvOverrides(t *testing.T) {
 	t.Setenv("TRITON_SERVER_LISTEN", ":5555")
+	t.Setenv("TRITON_SERVER_ALLOW_EXPERIMENTAL_H3", "true")
 	t.Setenv("TRITON_SERVER_LISTEN_H3", ":5556")
 	t.Setenv("TRITON_SERVER_ACCESS_LOG", "logs/access.jsonl")
 	t.Setenv("TRITON_SERVER_TRACE_DIR", "traces/server")
@@ -18,6 +19,7 @@ func TestLoadAppliesEnvOverrides(t *testing.T) {
 	t.Setenv("TRITON_PROBE_TIMEOUT", "4s")
 	t.Setenv("TRITON_BENCH_DEFAULT_PROTOCOLS", "h2, h3")
 	t.Setenv("TRITON_DASHBOARD_ENABLED", "false")
+	t.Setenv("TRITON_SERVER_ALLOW_REMOTE_DASHBOARD", "true")
 
 	cfg, err := Load("")
 	if err != nil {
@@ -27,11 +29,17 @@ func TestLoadAppliesEnvOverrides(t *testing.T) {
 	if cfg.Server.Listen != ":5555" || cfg.Server.ListenH3 != ":5556" {
 		t.Fatalf("server listen env not applied: %+v", cfg.Server)
 	}
+	if !cfg.Server.AllowExperimentalH3 {
+		t.Fatal("expected experimental h3 env opt-in to be applied")
+	}
 	if cfg.Server.AccessLog != "logs/access.jsonl" || cfg.Server.TraceDir != "traces/server" {
 		t.Fatalf("server observability env not applied: %+v", cfg.Server)
 	}
 	if cfg.Server.Dashboard {
 		t.Fatal("expected dashboard env override to disable dashboard")
+	}
+	if !cfg.Server.AllowRemoteDashboard {
+		t.Fatal("expected remote dashboard env override to be applied")
 	}
 	if cfg.Probe.TraceDir != "traces/probe" || cfg.Probe.Timeout != 4*time.Second {
 		t.Fatalf("probe env not applied: %+v", cfg.Probe)
@@ -48,6 +56,7 @@ func TestLoadReadsYAMLFile(t *testing.T) {
 	content := []byte(`
 server:
   listen: ":6001"
+  allow_experimental_h3: true
   listen_h3: ":6002"
   listen_tcp: ":6003"
   dashboard: false

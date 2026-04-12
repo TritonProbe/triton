@@ -18,22 +18,24 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Listen          string        `yaml:"listen"`
-	ListenH3        string        `yaml:"listen_h3"`
-	ListenTCP       string        `yaml:"listen_tcp"`
-	CertFile        string        `yaml:"cert"`
-	KeyFile         string        `yaml:"key"`
-	Dashboard       bool          `yaml:"dashboard"`
-	DashboardListen string        `yaml:"dashboard_listen"`
-	DashboardUser   string        `yaml:"dashboard_user"`
-	DashboardPass   string        `yaml:"dashboard_pass"`
-	ReadTimeout     time.Duration `yaml:"read_timeout"`
-	WriteTimeout    time.Duration `yaml:"write_timeout"`
-	IdleTimeout     time.Duration `yaml:"idle_timeout"`
-	MaxBodyBytes    int64         `yaml:"max_body_bytes"`
-	RateLimit       int           `yaml:"rate_limit"`
-	TraceDir        string        `yaml:"trace_dir"`
-	AccessLog       string        `yaml:"access_log"`
+	Listen               string        `yaml:"listen"`
+	AllowExperimentalH3  bool          `yaml:"allow_experimental_h3"`
+	ListenH3             string        `yaml:"listen_h3"`
+	ListenTCP            string        `yaml:"listen_tcp"`
+	CertFile             string        `yaml:"cert"`
+	KeyFile              string        `yaml:"key"`
+	Dashboard            bool          `yaml:"dashboard"`
+	DashboardListen      string        `yaml:"dashboard_listen"`
+	AllowRemoteDashboard bool          `yaml:"allow_remote_dashboard"`
+	DashboardUser        string        `yaml:"dashboard_user"`
+	DashboardPass        string        `yaml:"dashboard_pass"`
+	ReadTimeout          time.Duration `yaml:"read_timeout"`
+	WriteTimeout         time.Duration `yaml:"write_timeout"`
+	IdleTimeout          time.Duration `yaml:"idle_timeout"`
+	MaxBodyBytes         int64         `yaml:"max_body_bytes"`
+	RateLimit            int           `yaml:"rate_limit"`
+	TraceDir             string        `yaml:"trace_dir"`
+	AccessLog            string        `yaml:"access_log"`
 }
 
 type ProbeConfig struct {
@@ -65,15 +67,17 @@ type StorageConfig struct {
 func Default() Config {
 	return Config{
 		Server: ServerConfig{
-			Listen:          ":4433",
-			ListenH3:        "",
-			ListenTCP:       ":8443",
-			Dashboard:       true,
-			DashboardListen: "127.0.0.1:9090",
-			ReadTimeout:     15 * time.Second,
-			WriteTimeout:    30 * time.Second,
-			IdleTimeout:     30 * time.Second,
-			MaxBodyBytes:    1 << 20,
+			Listen:               "",
+			AllowExperimentalH3:  false,
+			ListenH3:             "",
+			ListenTCP:            ":8443",
+			Dashboard:            true,
+			DashboardListen:      "127.0.0.1:9090",
+			AllowRemoteDashboard: false,
+			ReadTimeout:          15 * time.Second,
+			WriteTimeout:         30 * time.Second,
+			IdleTimeout:          30 * time.Second,
+			MaxBodyBytes:         1 << 20,
 		},
 		Probe: ProbeConfig{
 			Timeout:        10 * time.Second,
@@ -99,20 +103,36 @@ func Default() Config {
 }
 
 func (c Config) Validate() error {
-	if err := validateListen(c.Server.Listen, "server.listen"); err != nil {
-		return err
+	if c.Server.Listen == "" && c.Server.ListenH3 == "" && c.Server.ListenTCP == "" {
+		return errors.New("at least one server listener must be configured")
+	}
+	if c.Server.Listen != "" {
+		if !c.Server.AllowExperimentalH3 {
+			return errors.New("server.listen is experimental and requires server.allow_experimental_h3 to be true")
+		}
+		if err := validateListen(c.Server.Listen, "server.listen"); err != nil {
+			return err
+		}
 	}
 	if c.Server.ListenH3 != "" {
 		if err := validateListen(c.Server.ListenH3, "server.listen_h3"); err != nil {
 			return err
 		}
 	}
-	if err := validateListen(c.Server.ListenTCP, "server.listen_tcp"); err != nil {
-		return err
+	if c.Server.ListenTCP != "" {
+		if err := validateListen(c.Server.ListenTCP, "server.listen_tcp"); err != nil {
+			return err
+		}
 	}
 	if c.Server.Dashboard {
 		if err := validateListen(c.Server.DashboardListen, "server.dashboard_listen"); err != nil {
 			return err
+		}
+		if !c.Server.AllowRemoteDashboard && !isLoopbackListen(c.Server.DashboardListen) {
+			return errors.New("server.dashboard_listen must stay on loopback unless server.allow_remote_dashboard is true")
+		}
+		if c.Server.AllowRemoteDashboard && (c.Server.DashboardUser == "" || c.Server.DashboardPass == "") {
+			return errors.New("server dashboard auth is required when server.allow_remote_dashboard is true")
 		}
 	}
 	if c.Server.ReadTimeout <= 0 || c.Server.WriteTimeout <= 0 || c.Server.IdleTimeout <= 0 {
@@ -168,4 +188,16 @@ func validateListen(value, field string) error {
 		return fmt.Errorf("%s port is required", field)
 	}
 	return nil
+}
+
+func isLoopbackListen(value string) bool {
+	host, _, err := net.SplitHostPort(value)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

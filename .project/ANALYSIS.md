@@ -6,391 +6,422 @@
 
 ## 1. Executive Summary
 
-Triton is a Go CLI plus local dashboard intended to become a single-binary HTTP/3 and QUIC test platform with three operating modes: `server`, `probe`, and `bench`. The current repository is not a production HTTP/3 platform. It is a pre-v1 scaffold with a functioning CLI, a TLS TCP test server, a filesystem-backed result store, a minimal dashboard, a basic HTTPS probe/benchmark flow, and an in-process loopback-only QUIC/H3 playground used mainly by tests and the `triton://loopback/...` probe path.
+Triton is a Go-based single-binary network diagnostics tool aimed at HTTP/3 and QUIC testing, with three user-facing modes: `server`, `probe`, and `bench`. The current repository is no longer just a scaffold: it contains a working CLI, a TLS test server, a local dashboard, gzip-backed result persistence, a real HTTP/3 client/server path built on `quic-go`, and a second experimental in-repo UDP/H3 stack used for loopback and `triton://` targets. The codebase is meaningfully test-covered and buildable, but it still falls short of the full custom-QUIC platform promised by the specification.
 
 Key measured metrics:
 
 | Metric | Value |
 |---|---:|
-| Total tracked files in repo working tree | 75 |
-| Go source files | 52 |
-| Go LOC | 4,792 |
-| Test files | 20 |
+| Total files in working tree | 128 |
+| Total Go files | 86 |
+| Total Go LOC | 8,055 |
+| Non-test Go files | 40 |
+| Test files | 46 |
 | Embedded frontend files | 3 |
-| Frontend LOC (`html` + `css` + `js`) | 92 |
-| Markdown docs | 6 |
-| Direct Go dependencies | 1 |
-| Contributors in git shortlog | 1 |
+| Frontend LOC (`html` + `css` + `js`) | 97 |
+| Markdown docs | 9 |
+| Direct Go dependencies | 2 |
+| Total listed Go dependencies | 8 |
+| Git commits in repo | 4 |
+| Contributors in `git shortlog -sn HEAD` | 1 |
 
-Overall health assessment: **4/10**.
+Overall health assessment: **6/10**.
 
-Justification: the codebase is small, readable, and testable, and `go build`, `go test ./...`, `go vet ./...`, and `staticcheck ./...` all pass. But the implementation falls far short of the specification: there is no network-capable QUIC/TLS stack, no real HTTP/3 server/client, no H3 benchmarking, no analytics engine, no auth, no production hardening, no CI/CD, and no release tooling. The repository is honest in `README.md`, but the specification-to-code gap is very large.
+Why: the repo is coherent, tested, and operational as a local diagnostic tool. `go test ./... -count=1`, `go build ./cmd/triton`, and `go vet ./...` all pass. CI, GoReleaser, Docker, observability middleware, qlog output, and real `quic-go` HTTP/3 support all exist. The main weaknesses are architectural ambiguity, scope mismatch with the spec, an experimental in-repo QUIC/H3 path that is far from RFC-complete, and several production-hardening gaps.
 
 Top 3 strengths:
 
-- Small codebase with low dependency surface: only `gopkg.in/yaml.v3` is used directly in [go.mod](/d:/Codebox/TritonProbe/go.mod).
-- Core scaffolding is coherent and testable: loopback QUIC/H3 helpers, storage, config loading, and endpoint behavior all have focused tests.
-- Basic developer workflow works today: `go build ./cmd/triton`, `go test ./... -count=1`, and runtime commands like `go run ./cmd/triton probe --target triton://loopback/ping --format json` succeed.
+- The current implementation is honest in code structure: there is a production-usable path built on `quic-go` in [internal/server/server.go:49](../internal/server/server.go) and [internal/realh3/http3.go:14](../internal/realh3/http3.go), plus an explicitly experimental path in [internal/server/server.go:73](../internal/server/server.go).
+- Test coverage is broad for the repo size: 46 `_test.go` files cover CLI, config, dashboard, observability, probe, bench, server, storage, packet parsing, frames, streams, connection state, transport loopback, and HTTP/3 helpers.
+- Build/release fundamentals are present: [Makefile:4](../Makefile), [Dockerfile:1](../Dockerfile), [.github/workflows/ci.yml:1](../.github/workflows/ci.yml), [.github/workflows/release.yml:1](../.github/workflows/release.yml), and [.goreleaser.yml:1](../.goreleaser.yml).
 
 Top 3 concerns:
 
-- The shipped server is HTTP/1.1 + HTTP/2 over TCP/TLS only; the advertised QUIC/HTTP/3 product is mostly speculative.
-- Security and production controls are weak: bench mode disables TLS verification unconditionally in [internal/bench/bench.go:56-69](/d:/Codebox/TritonProbe/internal/bench/bench.go:56), dashboard has no auth or hardening in [internal/dashboard/server.go:25-128](/d:/Codebox/TritonProbe/internal/dashboard/server.go:25), and committed runtime artifacts include a private key under `triton-data/certs/`.
-- Architectural drift is already visible: endpoint handlers are duplicated in [internal/appmux/mux.go](/d:/Codebox/TritonProbe/internal/appmux/mux.go:15) and [internal/server/endpoints.go](/d:/Codebox/TritonProbe/internal/server/endpoints.go:15), while old spec-only structure still appears in planning docs.
+- The spec promises a custom QUIC/TLS/QPACK engine, but the shipped real HTTP/3 path relies on `quic-go`, while the in-repo transport remains experimental and non-compliant.
+- The server exposes two different UDP paths with very different maturity levels: default `server.listen` starts the experimental in-repo H3 server, while `server.listen_h3` starts real HTTP/3 via `quic-go` ([internal/server/server.go:49-59](../internal/server/server.go), [internal/server/server.go:73-81](../internal/server/server.go)).
+- Several production controls are still shallow: the rate limiter is fixed-window and never evicts IP buckets ([internal/server/ratelimit.go:21-53](../internal/server/ratelimit.go)), the experimental H3 header codec is not QPACK ([internal/h3/headers.go:9-54](../internal/h3/headers.go)), and `go test -race` was not runnable in this environment because CGO was unavailable.
 
 ## 2. Architecture Analysis
 
 ### 2.1 High-Level Architecture
 
-Current architecture: **single-process modular scaffold**, not a modular monolith with fully implemented subsystems.
+Current architecture: **single-binary modular tool with dual HTTP/3 strategies**.
 
-Actual runtime architecture today:
+The actual system is split into three runtime planes:
+
+1. `net/http` + TLS for HTTP/1.1 and HTTP/2.
+2. Real HTTP/3 based on `quic-go` for `h3://` probing and optional server-side H3.
+3. An experimental in-repo UDP/QUIC/H3 implementation for `triton://` and loopback flows.
+
+Text data flow:
 
 ```text
 CLI
   -> config.Load()
   -> storage.NewFileStore()
   -> one of:
-     server.New() -> net/http TLS server + optional dashboard
-     probe.Run()  -> net/http HTTPS probe OR loopback-only H3 path
-     bench.Run()  -> net/http benchmark for h1/h2 only
+     server.New()
+       -> buildHandler(appmux + request IDs + access log + headers + rate limiter)
+       -> HTTPS server on server.listen_tcp
+       -> optional real HTTP/3 server on server.listen_h3 (quic-go)
+       -> optional experimental UDP H3 server on server.listen
+       -> optional dashboard on server.dashboard_listen
 
-Dashboard
-  -> reads saved gzip JSON files from triton-data/
-  -> serves minimal embedded assets
+     probe.Run(target, cfg)
+       -> https:// : net/http + httptrace
+       -> h3://    : realh3.NewClient() via quic-go/http3
+       -> triton://loopback : in-process experimental loopback transport
+       -> triton://host:port : experimental UDP H3 over in-repo transport
+       -> save result -> render output
 
-Loopback QUIC/H3 path
-  -> transport.Listener / transport.Dialer
-  -> connection.Connection / stream.Manager
-  -> h3 loopback request/response translation
-```
-
-Text data flow for each mode:
-
-```text
-server:
-CLI -> config -> storage -> self-signed certs -> net/http TLS server -> appmux handlers
-                                         -> dashboard server -> filesystem listing/load
-
-probe:
-CLI -> config -> probe.Run
-  -> external target: net/http client + httptrace -> Result -> filesystem save
-  -> triton://loopback target: in-process QUIC/H3 loopback -> Result -> filesystem save
-
-bench:
-CLI -> config -> bench.Run -> shared http.Client workers -> Result -> filesystem save
+     bench.Run(target, cfg)
+       -> h1/h2 : net/http transport workers
+       -> h3    : real quic-go HTTP/3 or experimental triton:// workers
+       -> save result -> render output
 ```
 
 Component interaction map:
 
-- `cmd/triton/main.go` boots `internal/cli`.
-- `internal/cli` owns command selection, flag parsing, config loading, persistence, and output rendering.
-- `internal/server` owns TLS server startup, graceful shutdown, and self-signed cert generation.
-- `internal/appmux` owns the currently active HTTP handlers.
-- `internal/dashboard` is a separate `http.Server` reading from `storage.FileStore`.
-- `internal/probe` uses `net/http` for real targets and `internal/h3` + `internal/quic/transport` only for loopback.
-- `internal/bench` uses `net/http` only; there is no `h3` benchmark runner.
-- `internal/quic/*` provides parsers, a lightweight connection/stream model, and a toy listener/dialer/session.
+- [cmd/triton/main.go](../cmd/triton/main.go) delegates to `internal/cli`.
+- [internal/cli/app.go](../internal/cli/app.go) owns config loading, store creation, mode dispatch, and output rendering.
+- [internal/server/server.go](../internal/server/server.go) assembles the runtime graph.
+- [internal/appmux/mux.go](../internal/appmux/mux.go) owns the shared handler surface and embedded metrics endpoint.
+- [internal/dashboard/server.go](../internal/dashboard/server.go) is read-only and filesystem-backed.
+- [internal/probe/probe.go](../internal/probe/probe.go) and [internal/bench/bench.go](../internal/bench/bench.go) choose between real and experimental transports by URL scheme / protocol.
+- [internal/realh3/http3.go](../internal/realh3/http3.go) is the production-grade H3 client wrapper.
+- [internal/h3](../internal/h3/server.go) and [internal/quic](../internal/quic/transport/listener.go) implement the toy/internal protocol path.
 
 Concurrency model:
 
-- `internal/server/server.go:58-71` starts one goroutine for the HTTPS server and one optional goroutine for the dashboard.
-- `internal/quic/transport/listener.go:41` starts one background packet read loop per listener.
-- `internal/bench/bench.go:74-92` spawns one worker goroutine per requested concurrency value.
-- There is no shared context tree across modes, no bounded worker pools, and no structured lifecycle supervision beyond signal-based shutdown in server mode.
+- `server.Run()` starts up to four goroutines: HTTPS, experimental UDP H3, real H3, and dashboard ([internal/server/server.go:120-151](../internal/server/server.go)).
+- The experimental listener has one background packet read loop in [internal/quic/transport/listener.go:67-145](../internal/quic/transport/listener.go).
+- `bench` spawns one worker goroutine per configured concurrency value for each protocol ([internal/bench/bench.go:98-118](../internal/bench/bench.go), [internal/bench/bench.go:145-165](../internal/bench/bench.go)).
+- No shared supervisor tree or context cancellation model exists across all background work. Shutdown is coordinated in `server.Run()` only.
 
 ### 2.2 Package Structure Assessment
 
-Go packages and responsibilities:
+All Go packages:
 
 | Package | Responsibility | Assessment |
 |---|---|---|
-| `cmd/triton` | Entrypoint, version/build vars | Good cohesion |
-| `internal/appmux` | Shared HTTP handlers used by server and loopback H3 | Reasonable, but duplicates `internal/server/endpoints.go` |
-| `internal/bench` | Basic benchmark runner for `h1` and `h2` using `net/http` | Cohesive but far below spec |
-| `internal/cli` | Command routing, flag parsing, output rendering | Cohesive, intentionally simple |
+| `cmd/triton` | Entrypoint, version/build metadata | Clean and minimal |
+| `internal/appmux` | Shared HTTP handlers and in-process metrics | Good cohesion |
+| `internal/bench` | Multi-protocol benchmark orchestration | Good cohesion, metrics are basic |
+| `internal/cli` | Command parsing, option merging, output formatting | Cohesive |
 | `internal/config` | Defaults, YAML/env loading, validation | Cohesive |
-| `internal/dashboard` | Minimal dashboard server, static assets, result lookup APIs | Cohesive but very thin |
-| `internal/h3` | Loopback H3 request/response plumbing and naive header codec | Mixed: names imply real H3 implementation, behavior is toy-grade |
-| `internal/h3/frame` | Minimal DATA/HEADERS frame encode/parse | Cohesive but incomplete |
-| `internal/probe` | HTTPS probe and loopback H3 probe | Cohesive but narrow |
-| `internal/quic/connection` | Connection state, frame dispatch, CID store | Cohesive but simplified |
-| `internal/quic/frame` | QUIC frame encode/parse | Large single file, incomplete relative to constants declared |
-| `internal/quic/packet` | Varint, packet number, packet header parsing | Cohesive |
-| `internal/quic/stream` | Stream state and reassembly | Cohesive, some locking issues |
-| `internal/quic/transport` | UDP transport, listener, dialer, session | Cohesive, toy protocol behavior |
-| `internal/quic/wire` | Packet/frame composition helpers | Cohesive |
-| `internal/server` | TLS server orchestration, duplicate endpoints, cert generation | Mixed due to dead/duplicate mux |
-| `internal/storage` | Gzip JSON persistence and retention cleanup | Cohesive |
+| `internal/dashboard` | Embedded dashboard server and storage-backed APIs | Cohesive but intentionally thin |
+| `internal/h3` | Experimental in-repo H3 client/server/loopback helpers | Cohesive for “toy H3”, but naming overstates maturity |
+| `internal/h3/frame` | Minimal DATA and HEADERS frame support | Narrow but coherent |
+| `internal/observability` | Request IDs, access logs, qlog tracing, file logger | Cohesive |
+| `internal/probe` | Probe orchestration across HTTPS, real H3, experimental H3 | Cohesive |
+| `internal/quic/connection` | Experimental connection state and frame dispatch | Simplified but coherent |
+| `internal/quic/frame` | Experimental QUIC frame parsing/serialization | Large single-file implementation; incomplete vs spec |
+| `internal/quic/packet` | Varints, packet numbers, header parsing | Good cohesion |
+| `internal/quic/stream` | Stream state and reassembly | Cohesive, but lock discipline is imperfect |
+| `internal/quic/transport` | UDP transport, experimental listener/dialer/session | Cohesive, but toy-protocol behavior |
+| `internal/quic/wire` | Packet/frame assembly helpers | Cohesive |
+| `internal/realh3` | Real `quic-go` HTTP/3 client wrapper | Very cohesive |
+| `internal/server` | Server orchestration, TLS cert generation, rate limiting | Cohesive |
+| `internal/storage` | Gzip JSON persistence and cleanup | Cohesive |
+| `internal/testutil` | Shared HTTP/3 test fixtures and self-signed cert helpers | Appropriate test-only support |
 
 Package cohesion findings:
 
-- Best cohesion: `config`, `storage`, `packet`, `wire`.
-- Weakest cohesion-by-name: `h3` and `server`; the names imply production subsystems but the actual code is loopback scaffolding or dead duplication.
-- `internal/server/endpoints.go` appears unused after the README-documented shift to `appmux.New()` in [internal/server/server.go:32-43](/d:/Codebox/TritonProbe/internal/server/server.go:32), which is technical debt.
+- Strongest packages: `config`, `storage`, `observability`, `realh3`, `packet`.
+- Most overloaded package: [internal/quic/frame/types.go](../internal/quic/frame/types.go), which centralizes a large amount of frame logic in one file.
+- Most misleading package name: `internal/h3`, because it is not a spec-compliant HTTP/3 implementation. It uses a newline-separated header encoding in [internal/h3/headers.go:9-42](../internal/h3/headers.go) rather than QPACK.
 
-Circular dependency risk:
+Circular dependency risk: low today. Dependencies mostly flow inward from CLI/server toward protocol and support packages. The main architectural risk is not cycles; it is confusion between the real and experimental HTTP/3 stacks.
 
-- No current cycle is visible.
-- Risk is low because packages are still shallow and mostly flow inward from CLI to domain packages.
-- The biggest future risk is between `server`, `appmux`, `probe`, `dashboard`, and any future analytics layer if shared DTOs and handlers are not separated cleanly.
-
-Internal vs public separation:
-
-- Everything meaningful is in `internal/`, which is appropriate for a pre-v1 single binary.
-- There is no `pkg/` surface, which is fine; nothing is yet stable enough to export.
+Internal vs `pkg/` separation: good. Nothing here is stable enough to export publicly, so `internal/` everywhere is appropriate.
 
 ### 2.3 Dependency Analysis
 
-Go dependencies from `go.mod` and `go.sum`:
+#### Go dependencies from `go.mod`
 
-| Dependency | Version | Purpose | Status | Replaceable with stdlib? |
+| Dependency | Version | Purpose | Maintenance status | Stdlib replacement? |
 |---|---|---|---|---|
-| `gopkg.in/yaml.v3` | `v3.0.1` | YAML config load and YAML output in CLI | Active and common | Not directly; stdlib has no YAML |
-| `gopkg.in/check.v1` | indirect via `go.sum` | Test-time transitive dep from YAML ecosystem | Old but only indirect | N/A |
+| `github.com/quic-go/quic-go` | `v0.59.0` | Real HTTP/3 server/client support, qlog integration | Actively maintained | No practical stdlib replacement |
+| `gopkg.in/yaml.v3` | `v3.0.1` | YAML config loading and YAML output | Mature and stable | No stdlib YAML |
+| `github.com/kr/text` | `v0.2.0` indirect | Transitive dependency | Old but harmless indirect | N/A |
+| `github.com/quic-go/qpack` | `v0.6.0` indirect | `quic-go` transitive QPACK dep | Active | N/A |
+| `golang.org/x/crypto` | `v0.41.0` indirect | `quic-go` crypto support | Active | Partial stdlib overlap only |
+| `golang.org/x/net` | `v0.43.0` indirect | `quic-go` network protocols | Active | No |
+| `golang.org/x/sys` | `v0.35.0` indirect | Syscall/platform support | Active | No |
+| `golang.org/x/text` | `v0.28.0` indirect | Text/encoding support | Active | Partial |
 
-Dependency hygiene:
+Dependency hygiene assessment:
 
-- Very good surface area.
-- The spec allows `gopkg.in/yaml.v3`; the repo currently uses only that direct external dependency.
-- `staticcheck ./...` passed on 2026-04-11.
-- No evidence of dependency sprawl, but also no SBOM, no dependency scanning, and no lock-policy beyond `go.sum`.
+- Good overall. Only two direct dependencies.
+- The current code no longer satisfies the spec’s “zero external dependencies except selected x/* + yaml” rule because it directly depends on `quic-go` ([go.mod:5-8](../go.mod)).
+- That deviation is probably justified from a delivery standpoint: without `quic-go`, there would be no real HTTP/3 path at all.
+- No dependency audit tooling or SBOM is present.
 
-Frontend dependencies:
+#### Frontend dependencies
 
-- None.
-- There is no `package.json`, no React app, no build toolchain, and no separate frontend package.
+There is no `package.json`, no React app, and no Node build pipeline. The dashboard is hand-written static HTML/CSS/JS in:
+
+- [internal/dashboard/assets/index.html](../internal/dashboard/assets/index.html)
+- [internal/dashboard/assets/app.css](../internal/dashboard/assets/app.css)
+- [internal/dashboard/assets/app.js](../internal/dashboard/assets/app.js)
 
 ### 2.4 API & Interface Design
 
-Server endpoint inventory as actually implemented:
-
-| Method(s) | Path | Handler | Notes |
-|---|---|---|---|
-| `GET` | `/` | `handleRoot` | Returns basic JSON metadata |
-| any | `/ping` | `handlePing` | Plaintext `pong` |
-| any | `/echo` | `handleEcho` | Echoes headers/body as JSON |
-| any | `/download/:size` | `handleDownload` | Size parsed from tail |
-| any | `/upload` | `handleUpload` | Reads full request body |
-| any | `/delay/:ms` | `handleDelay` | Sleeps in request path |
-| any | `/redirect/:n` | `handleRedirect` | 302 chain |
-| any | `/streams/:n` | `handleStreams` | Simulated JSON only |
-| any | `/headers/:n` | `handleHeaders` | Adds synthetic headers |
-| any | `/status/:code` | `handleStatus` | Writes JSON with requested status |
-| any | `/drip/:size/:delay` | `handleDrip` | Writes random bytes with per-byte sleep |
-| any | `/tls-info` | `handleTLSInfo` | TLS info for TCP/TLS server only |
-| any | `/quic-info` | `handleQUICInfo` | Always `supported: false` |
-| any | `/migration-test` | `handleMigration` | Always `supported: false` |
-| any | `/.well-known/triton` | `handleCapabilities` | Returns capabilities JSON |
-
-Dashboard/API endpoints:
+#### Server endpoint inventory
 
 | Method | Path | Handler | Notes |
 |---|---|---|---|
-| `GET` | `/` | inline asset handler | Serves `index.html` |
-| `GET` | `/assets/app.css` | inline asset handler | Embedded CSS |
-| `GET` | `/assets/app.js` | inline asset handler | Embedded JS |
-| `GET` | `/api/v1/status` | `handleStatus` | Always `{ "ok": true }` |
-| `GET` | `/api/v1/probes` | `handleProbes` | File listing only |
-| `GET` | `/api/v1/probes/:id` | `handleProbe` | File load only |
-| `GET` | `/api/v1/benches` | `handleBenches` | File listing only |
-| `GET` | `/api/v1/benches/:id` | `handleBench` | File load only |
+| `GET` | `/` | `handleRoot` | capability summary |
+| `GET` | `/healthz` | `handleHealth` | liveness |
+| `GET` | `/readyz` | `handleReady` | readiness |
+| `GET` | `/metrics` | `Metrics.handleMetrics` | Prometheus-style plaintext |
+| `GET` | `/ping` | `handlePing` | plaintext `pong` |
+| `GET`,`POST` | `/echo` | `handleEcho` | bounded request body |
+| `GET` | `/download/:size` | `handleDownload` | deterministic byte stream |
+| `POST` | `/upload` | `handleUpload` | body size + duration |
+| `GET` | `/delay/:ms` | `handleDelay` | sleep-based delay |
+| `GET` | `/redirect/:n` | `handleRedirect` | chained 302 |
+| `GET` | `/streams/:n` | `handleStreams` | simulated stream schedule JSON |
+| `GET` | `/headers/:n` | `handleHeaders` | emits `X-Triton-*` headers |
+| `GET` | `/status/:code` | `handleStatus` | arbitrary status |
+| `GET` | `/drip/:size/:delay` | `handleDrip` | byte drip-feed |
+| `GET` | `/tls-info` | `handleTLSInfo` | TLS connection metadata |
+| `GET` | `/quic-info` | `handleQUICInfo` | explicitly says custom QUIC unsupported |
+| `GET` | `/migration-test` | `handleMigration` | explicitly says unsupported |
+| `GET` | `/.well-known/triton` | `handleCapabilities` | machine-readable summary |
+
+#### Dashboard/API inventory
+
+| Method | Path | Handler | Notes |
+|---|---|---|---|
+| `GET`,`HEAD` | `/` | asset handler | serves dashboard HTML |
+| `GET`,`HEAD` | `/assets/app.css` | asset handler | embedded CSS |
+| `GET`,`HEAD` | `/assets/app.js` | asset handler | embedded JS |
+| `GET` | `/api/v1/status` | `handleStatus` | `{ "ok": true }` |
+| `GET` | `/api/v1/probes` | `handleProbes` | list stored probes |
+| `GET` | `/api/v1/probes/:id` | `handleProbe` | fetch probe result |
+| `GET` | `/api/v1/benches` | `handleBenches` | list stored benches |
+| `GET` | `/api/v1/benches/:id` | `handleBench` | fetch bench result |
+| `GET` | `/api/v1/traces` | `handleTraces` | list `.sqlog` files |
+| `GET` | `/api/v1/traces/:name` | `handleTrace` | serve qlog file |
 
 API consistency assessment:
 
-- JSON responses are mostly consistent within a package, but not globally standardized.
-- Error handling is inconsistent: some endpoints use JSON responses, others use `http.Error`.
-- Methods are not enforced on several routes even though the README/spec describe specific methods.
-- No API versioning beyond dashboard endpoints.
+- Method enforcement is much better than in earlier revisions. It is consistently implemented by `methodHandler` in [internal/appmux/mux.go:261-273](../internal/appmux/mux.go) and `getOnly` in [internal/dashboard/server.go:251-258](../internal/dashboard/server.go).
+- Success payloads are mostly JSON and fairly consistent.
+- Error payloads are inconsistent: many endpoints still use `http.Error`, which returns plaintext.
+- The dashboard is read-only and intentionally narrow. There is no mutation API.
 
-Authentication/authorization:
+Authentication and authorization model:
 
-- None.
-- No auth on dashboard APIs.
-- No auth on server endpoints.
+- Main server endpoints: none.
+- Dashboard: optional HTTP Basic Auth in [internal/dashboard/server.go:225-238](../internal/dashboard/server.go), driven by config/env/CLI flags.
+- No role model, no session management, no authorization layer.
 
-Rate limiting, CORS, validation:
+Rate limiting, CORS, validation patterns:
 
-- Rate limiting is spec-only. `ServerConfig.RateLimit` exists in [internal/config/config.go:20-33](/d:/Codebox/TritonProbe/internal/config/config.go:20) but is unused.
-- No CORS handling in dashboard or server.
-- Validation is shallow and route-local; there is no shared validation layer.
+- Rate limiting exists only on the main server handler chain and is per-IP fixed-window ([internal/server/ratelimit.go:28-53](../internal/server/ratelimit.go)).
+- No CORS middleware exists.
+- Input validation is route-local and mostly integer parsing plus request body limits.
 
 ## 3. Code Quality Assessment
 
 ### 3.1 Go Code Quality
 
-Style consistency:
+Code style consistency:
 
-- The repo appears `gofmt`-clean.
-- Naming is generally clear and idiomatic.
-- The code is readable, compact, and intentionally low-abstraction.
+- The code is consistently formatted and idiomatic.
+- Naming is clear and package boundaries are understandable.
+- The repo feels intentionally simple rather than abstract-heavy.
 
-Error handling:
+Error handling patterns:
 
-- Mixed quality.
-- Good: constructors and top-level flows usually return errors upward.
-- Weak: many handlers ignore body read/write errors, for example [internal/appmux/mux.go:48-56](/d:/Codebox/TritonProbe/internal/appmux/mux.go:48) and [internal/appmux/mux.go:168-173](/d:/Codebox/TritonProbe/internal/appmux/mux.go:168).
-- `internal/quic/transport/listener.go:104` discards `conn.HandleFrames` errors silently.
+- Top-level command paths and constructors generally return errors cleanly.
+- Handler code often ignores write errors after best effort, which is normal for HTTP handlers.
+- Some transport code intentionally drops errors, such as [internal/quic/transport/listener.go:104](../internal/quic/transport/listener.go), which ignores `conn.HandleFrames(frames)` failures.
+- `http.Error` is used widely instead of structured error objects.
 
 Context usage:
 
-- Minimal.
-- `server.Run()` uses `context.WithTimeout` only for shutdown.
-- `probe.Run()` and `bench.Run()` do not propagate a caller context through the full stack.
-- Loopback H3 helpers do not use context at all.
+- Strongest in `server.Run()` and `dashboard.Shutdown()`.
+- Probe and bench flows are timeout-based, not context-first.
+- The experimental in-repo transport has no propagated context model.
 
-Logging:
+Logging approach:
 
-- Basic `log.Printf` only in [internal/server/server.go:58-79](/d:/Codebox/TritonProbe/internal/server/server.go:58).
-- No structured logs, no levels, no request IDs, no sensitive-data filtering policy.
+- Good baseline. Access logging is structured JSON via `slog` in [internal/observability/http.go:28-46](../internal/observability/http.go).
+- Request IDs are generated and propagated by [internal/observability/http.go:15-25](../internal/observability/http.go).
+- Optional file-based access log output is handled by [internal/observability/logger.go:18-30](../internal/observability/logger.go).
+- Missing pieces: log levels in config, masking policy, and broader application event logging.
 
 Configuration management:
 
-- Reasonably clean for the current size.
-- Precedence is effectively defaults -> YAML -> env -> CLI, matching README claims.
-- Validation misses many declared fields: `RateLimit`, `TraceDir`, `AccessLog`, `DefaultTests`, `DefaultFormat`, `DownloadSize`, and `UploadSize` are not validated or fully consumed.
-- `ServerConfig.Listen` is defined but unused by the live server path; `server.New()` binds only `ListenTCP` in [internal/server/server.go:34](/d:/Codebox/TritonProbe/internal/server/server.go:34).
+- Clean precedence model: defaults -> YAML -> env -> CLI.
+- Validation is solid for core listen/timeouts/body size settings.
+- Some declared fields are not deeply validated or fully consumed:
+  - `ProbeConfig.DefaultTests`, `DownloadSize`, `UploadSize`, `DefaultStreams`
+  - `BenchConfig.Warmup` is validated but not used in the runner
+  - `ServerConfig.Listen` defaults to experimental UDP H3 rather than real H3
 
-Magic numbers / hardcoded values:
+Magic numbers, hardcoded values, comments:
 
-- Hardcoded CIDs in [internal/quic/transport/dialer.go:52-53](/d:/Codebox/TritonProbe/internal/quic/transport/dialer.go:52).
-- Hardcoded short-header DCID length `8` in [internal/quic/transport/listener.go:78](/d:/Codebox/TritonProbe/internal/quic/transport/listener.go:78).
-- Hardcoded 4KB H3 read buffer in [internal/h3/loopback.go:85-91](/d:/Codebox/TritonProbe/internal/h3/loopback.go:85).
-- Hardcoded default flow-control windows in `stream.New()` and `connection.New()`.
-
-TODO/FIXME/HACK inventory:
-
-- `rg -n "TODO|FIXME|HACK" -S .` returned no matches.
-- Lack of TODOs is not a sign of completeness here; the gaps are structural, not merely annotated.
+- Default 1 MiB body cap in [internal/appmux/mux.go:23](../internal/appmux/mux.go).
+- Hardcoded 8-byte short-header DCID assumption in [internal/quic/transport/listener.go:78](../internal/quic/transport/listener.go).
+- Hardcoded in-repo stream/data limits of `1 << 20` across `connection` and `stream` packages.
+- No `TODO`, `FIXME`, or `HACK` markers were found.
 
 ### 3.2 Frontend Code Quality
 
-There is no React or TypeScript frontend. The embedded UI is static HTML/CSS/JS:
-
-- [internal/dashboard/assets/index.html](/d:/Codebox/TritonProbe/internal/dashboard/assets/index.html)
-- [internal/dashboard/assets/app.css](/d:/Codebox/TritonProbe/internal/dashboard/assets/app.css)
-- [internal/dashboard/assets/app.js](/d:/Codebox/TritonProbe/internal/dashboard/assets/app.js)
+There is no React, TypeScript, router, or frontend build system. The dashboard is a static embedded page.
 
 Assessment:
 
-- The UI is a scaffold, not a product dashboard.
-- `app.js` does three `fetch()` calls and dumps JSON into `<pre>` tags.
-- No bundling, routing, component model, or state management.
-- CSS is intentionally lightweight and readable, but it does not match the extensive branding/design system in `.project/BRANDING.md`.
-- Accessibility is basic but incomplete: no live regions, no keyboard-specific affordances, and no status semantics for async-loaded content.
+- UI complexity is intentionally minimal.
+- [internal/dashboard/assets/index.html:10-35](../internal/dashboard/assets/index.html) is a single-page scaffold with four cards.
+- [internal/dashboard/assets/app.js:1-15](../internal/dashboard/assets/app.js) just fetches JSON and dumps it into `<pre>` tags.
+- [internal/dashboard/assets/app.css](../internal/dashboard/assets/app.css) is small and readable, but it does not implement the broader branding/design system from `.project/BRANDING.md`.
+- Accessibility is basic but acceptable for a tiny read-only tool: semantic headings exist, but there are no live regions, status roles, or keyboard-focused interactions.
 
 ### 3.3 Concurrency & Safety
 
 Goroutine lifecycle:
 
-- `server.Run()` manages startup goroutines and shuts down on SIGINT/SIGTERM.
-- `transport.ListenQUIC()` launches an unmanaged goroutine in [internal/quic/transport/listener.go:41](/d:/Codebox/TritonProbe/internal/quic/transport/listener.go:41); closure relies on socket close side effects.
-- `bench.Run()` spawns worker goroutines with a wall-clock stop condition, no context cancellation, and no back-pressure.
+- Server mode has a deliberate shutdown path with signal handling and a 10-second timeout ([internal/server/server.go:153-175](../internal/server/server.go)).
+- The experimental UDP listener is background-driven and relies on socket close for shutdown ([internal/quic/transport/listener.go:67-145](../internal/quic/transport/listener.go)).
+- Bench workers stop based on a wall-clock deadline and `WaitGroup`, which is simple and sufficient for the current use case.
 
-Mutex/channel patterns:
+Mutex/channel usage patterns:
 
-- `stream.Manager` and `connection.Connection` use coarse mutexes and buffered channels.
-- `stream.Stream` has an unsafe lock discipline: `state` is read under `sendMu` in [internal/quic/stream/stream.go:68-72](/d:/Codebox/TritonProbe/internal/quic/stream/stream.go:68) but mutated under both `sendMu` and `recvMu` in [internal/quic/stream/stream.go:109-148](/d:/Codebox/TritonProbe/internal/quic/stream/stream.go:109) and [internal/quic/stream/stream.go:166-188](/d:/Codebox/TritonProbe/internal/quic/stream/stream.go:166).
+- `Listener` and `Connection` use straightforward coarse locking.
+- `Stream` uses separate `sendMu` and `recvMu`, but `state` is read under `sendMu` in [internal/quic/stream/stream.go:68-72](../internal/quic/stream/stream.go) and mutated under both locks in [internal/quic/stream/stream.go:109-148](../internal/quic/stream/stream.go) and [internal/quic/stream/stream.go:156-179](../internal/quic/stream/stream.go). That is a real race risk if `-race` is later enabled.
 
 Race condition risks:
 
-- `stream.Stream.state` lock inconsistency as above.
-- `Listener.acceptCh` is used both for public `Accept()` and `WaitForConnections()`, so consumers can steal each other's events in future multi-consumer use.
-- `Listener` silently drops accepted remote streams when `acceptQueue` is full in [internal/quic/stream/manager.go:94-96](/d:/Codebox/TritonProbe/internal/quic/stream/manager.go:94).
+- `Stream.state` lock inconsistency as above.
+- `Listener.acceptCh` is shared by both `Accept()` and `WaitForConnections()` ([internal/quic/transport/listener.go:49-55](../internal/quic/transport/listener.go), [internal/quic/transport/listener.go:158-171](../internal/quic/transport/listener.go)), so multiple consumers can interfere with each other.
 
 Resource leak risks:
 
-- `signal.Notify` is not paired with `signal.Stop` in [internal/server/server.go:74-75](/d:/Codebox/TritonProbe/internal/server/server.go:74), minor but real.
-- Bench mode never calls `CloseIdleConnections()` on its transport.
-- File storage closes files correctly.
+- `rateLimiter.buckets` never shrinks ([internal/server/ratelimit.go:21-53](../internal/server/ratelimit.go)), which can become an unbounded map if exposed to many source IPs.
+- Otherwise, shutdown and file-handle management are good.
 
-Graceful shutdown:
+Graceful shutdown implementation:
 
-- Present only for server/dashboard.
-- No graceful cancellation model for in-flight probes or benches triggered externally.
+- Good for HTTP/TLS server, dashboard, and real H3 server.
+- Experimental UDP H3 listener is closed before HTTP shutdown, which is reasonable.
+- No cancellation model for long-running probe/bench operations because they are CLI-bound.
 
 ### 3.4 Security Assessment
 
-Input validation:
+Input validation coverage:
 
-- Route-level integer parsing exists, but there are no size limits or normalization for request bodies.
-- `/echo` and `/upload` read arbitrary body sizes into memory or discard without upper bounds.
+- Good request body limits on `/echo` and `/upload` using `http.MaxBytesReader` ([internal/appmux/mux.go:122-129](../internal/appmux/mux.go), [internal/appmux/mux.go:276-283](../internal/appmux/mux.go)).
+- Route params are parsed and range-checked.
+- There is no global validation layer.
 
-Injection resistance:
+Injection protection:
 
-- No SQL or shelling out, so SQL injection and command injection are not present.
-- Path handling in dashboard asset serving uses `path.Clean`, which is good.
+- No SQL layer exists.
+- No shell execution paths exist.
+- Dashboard trace serving sanitizes the requested filename with `path.Base` and extension checks ([internal/dashboard/server.go:156-173](../internal/dashboard/server.go)).
 
-XSS/frontend:
+XSS protection:
 
-- UI only renders JSON via `textContent`, so current XSS risk is low.
-- No CSP, HSTS, or hardening headers.
+- Low current XSS risk because the dashboard renders JSON via `textContent` ([internal/dashboard/assets/app.js:4-8](../internal/dashboard/assets/app.js)).
+- Strong CSP and related headers are set for both dashboard and main server ([internal/dashboard/server.go:240-248](../internal/dashboard/server.go), [internal/server/server.go:178-186](../internal/server/server.go)).
 
 Secrets management:
 
-- `.gitignore` excludes `.env*` and `/triton-data/`, which is good in principle.
-- But the repo currently contains committed runtime artifacts under `triton-data/`, including `triton-data/certs/triton-selfsigned-key.pem`. Even if that key is only for local dev, committing private keys is bad practice.
+- `.gitignore` excludes `.env*` and `/triton-data/`, which is correct.
+- The working tree still contains generated runtime cert/key material under `triton-data/certs/`; that should not be preserved in a clean production repo snapshot.
 
 TLS/HTTPS configuration:
 
-- Server uses TLS 1.2 minimum, not TLS 1.3 minimum, in [internal/server/server.go:39-42](/d:/Codebox/TritonProbe/internal/server/server.go:39).
-- Bench mode disables certificate verification unconditionally in [internal/bench/bench.go:56-69](/d:/Codebox/TritonProbe/internal/bench/bench.go:56).
-- Probe mode makes verification optional via `--insecure`, which is fine, but the code exposes the dangerous path through `InsecureSkipVerify` in [internal/probe/probe.go:53-61](/d:/Codebox/TritonProbe/internal/probe/probe.go:53).
+- Real HTTP/3 path enforces TLS 1.3 minimum ([internal/server/server.go:54](../internal/server/server.go), [internal/realh3/http3.go:16-19](../internal/realh3/http3.go)).
+- HTTPS TCP path allows TLS 1.2+ ([internal/server/server.go:67-70](../internal/server/server.go)).
+- `--insecure` works as expected for probe and bench by toggling `InsecureSkipVerify` in [internal/probe/probe.go:62-71](../internal/probe/probe.go), [internal/bench/bench.go:81-90](../internal/bench/bench.go), and [internal/realh3/http3.go:16-19](../internal/realh3/http3.go).
 
-CORS/auth:
+CORS:
 
-- No auth.
-- No CORS policy.
-- Dashboard security posture relies mostly on binding to localhost by default.
+- No CORS support.
+- Acceptable for localhost dashboard, but not for a remotely exposed API product.
 
 Known vulnerability patterns:
 
-- Unbounded `io.ReadAll` on request bodies.
-- Intentional TLS verification bypass in bench mode.
-- Committed private key material.
-- No access control on persisted result APIs.
+- Fixed-window rate limiter with no state eviction.
+- Optional Basic Auth only; no stronger dashboard auth.
+- Experimental UDP H3 path has no cryptographic protection or real QUIC-TLS.
 
 ## 4. Testing Assessment
 
 ### 4.1 Test Coverage
 
-Measured test results on 2026-04-11:
+Measured command results on 2026-04-11:
 
-- `go test ./... -count=1`: pass
-- `go build ./cmd/triton`: pass
-- `go vet ./...`: pass
-- `staticcheck ./...`: pass
-- `go test -race ./...`: failed to run because the environment reports `-race requires cgo; enable cgo by setting CGO_ENABLED=1`
+- `go test ./... -count=1`: **pass**
+- `go build ./cmd/triton`: **pass** with a sandbox-related non-fatal stat-cache write warning
+- `go vet ./...`: **pass**
+- `staticcheck ./...`: **could not be validated cleanly in this shell**; local binary exists, but this PowerShell environment returned `warning: "./..." matched no packages`
+- `go test -race ./...`: **not runnable in this environment** because CGO was disabled (`-race requires cgo`)
 
-Packages with zero test files:
+Test-file ratio:
+
+- 46 test files vs 40 non-test Go files
+- That is unusually good breadth for a pre-v1 project of this size
+
+Packages with test files:
 
 - `cmd/triton`
 - `internal/appmux`
 - `internal/bench`
 - `internal/cli`
+- `internal/config`
 - `internal/dashboard`
+- `internal/h3`
+- `internal/h3/frame`
+- `internal/observability`
 - `internal/probe`
+- `internal/quic/connection`
+- `internal/quic/frame`
+- `internal/quic/packet`
+- `internal/quic/stream`
+- `internal/quic/transport`
+- `internal/quic/wire`
+- `internal/realh3`
+- `internal/server`
+- `internal/storage`
+- `internal/testutil`
+
+Packages with zero test files:
+
+- None among actual Go packages.
 
 Test types present:
 
 - Unit tests: yes
-- Small integration/loopback tests: yes
-- Benchmarks: no `Benchmark...` tests
-- Fuzz tests: none despite specification
-- End-to-end external integration tests: none
+- Integration tests: yes
+- Protocol loopback tests: yes
+- Real HTTP/3 tests using `quic-go`: yes
+- Benchmarks (`Benchmark*`): none
+- Fuzz tests: none
+- E2E browser/UI tests: none
 
-Coverage reality:
+Test quality assessment:
 
-- Good coverage on parsing/helpers and the toy loopback transport.
-- Weak or absent coverage on real user flows: CLI UX, dashboard APIs, external probe failure modes, external bench correctness, signal handling, config precedence edge cases.
-- Estimated effective coverage: **~45% of meaningful behavior**, much lower on production-critical paths.
+- Strong for the repo’s current actual scope.
+- Especially good around transport helpers, server assembly, observability, and config.
+- Missing coverage mostly aligns with missing features: there are no tests for QPACK, 0-RTT, migration, congestion control, or rich dashboard interactivity because those features are not implemented.
 
 ### 4.2 Test Infrastructure
 
-- Test helpers are lightweight and local to packages.
-- No test fixtures directory beyond temp dirs used in tests.
-- No CI pipeline exists in `.github/workflows/`; the directory is absent.
-- No frontend tests.
+- CI exists in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) and runs format verification, tests, vet, staticcheck, build, and smoke flow.
+- Release automation exists in [`.github/workflows/release.yml`](../.github/workflows/release.yml) and [`.goreleaser.yml`](../.goreleaser.yml).
+- Smoke script coverage is useful and non-trivial: [scripts/ci-smoke.sh](../scripts/ci-smoke.sh) checks `server`, `probe`, `bench`, health endpoints, metrics, real H3 probe, and loopback/triton targets.
+- Missing test infrastructure:
+  - No `-race` job in CI
+  - No fuzz targets
+  - No load/perf benchmarks
+  - No browser automation for dashboard
 
 ## 5. Specification vs Implementation Gap Analysis
 
@@ -398,189 +429,189 @@ Coverage reality:
 
 | Planned Feature | Spec Section | Implementation Status | Files/Packages | Notes |
 |---|---|---|---|---|
-| Single binary CLI with `server`, `probe`, `bench` | SPEC §4, §15 | PARTIAL | `cmd/triton`, `internal/cli` | Commands exist, but CLI is much smaller than planned |
-| Custom UDP/QUIC transport | SPEC §3, §4, §15 | PARTIAL | `internal/quic/transport`, `internal/quic/packet`, `internal/quic/frame` | Parsers and toy listener/dialer exist; no RFC-complete transport |
-| TLS 1.3 over QUIC, packet protection, 0-RTT | SPEC §3, §4.2, §12 | MISSING | none | No QUIC TLS handshake or packet protection |
-| Production HTTP/3 server/client | SPEC §2, §7 | MISSING | `internal/h3` | Only in-process loopback helpers; no network-capable H3 stack |
-| Full server test endpoint suite | SPEC §4.1 | PARTIAL | `internal/appmux`, `internal/server` | 15 endpoints present; `/push/:n` absent; many are simulated |
-| HTTP/1.1 + HTTP/2 + HTTP/3 comparison | SPEC §4.3 | PARTIAL | `internal/bench`, `internal/server` | Only H1/H2 benching; server is TCP/TLS only |
-| Deep probe analysis | SPEC §4.2 | MOSTLY MISSING | `internal/probe` | Only HTTPS timing/TLS metadata and loopback path |
-| Analytics engine / qlog / timeline | SPEC §3, §6 | MISSING | none | No analytics package at all |
-| Embedded real-time dashboard | SPEC §3, §7, §9 | PARTIAL | `internal/dashboard`, assets | Read-only listing UI; no SSE, WS, charts, controls |
-| Config layering and validation | SPEC §10 | PARTIAL | `internal/config` | Basic defaults, YAML, env, CLI present |
-| Filesystem result persistence | SPEC §12 | COMPLETE | `internal/storage` | Save/load/list/cleanup implemented |
-| Build matrix, release automation, CI | SPEC §14 | MISSING | `Makefile`, `Dockerfile` only | No workflows, goreleaser, or cross-build matrix |
+| Single-binary CLI with `server`, `probe`, `bench` | SPEC §4, §15 | ✅ Complete | `cmd/triton`, `internal/cli` | Working and tested |
+| YAML/env/CLI config layering | SPEC §10 | ✅ Complete | `internal/config` | Clean precedence model |
+| Filesystem result storage | SPEC §12 | ✅ Complete | `internal/storage` | Gzip JSON save/load/list/cleanup |
+| HTTPS test server + fallback protocols | SPEC §4.1 | ✅ Complete | `internal/server`, `internal/appmux` | HTTP/1.1 and H2 via `net/http` |
+| Real HTTP/3 server/client | SPEC §2, §7 | ⚠️ Partial | `internal/server`, `internal/realh3`, `internal/probe`, `internal/bench` | Present via `quic-go`, not custom implementation |
+| Custom QUIC transport | SPEC §3, §15 | ⚠️ Partial | `internal/quic/*`, `internal/h3` | Experimental only; not RFC-complete |
+| QPACK encoder/decoder | SPEC §2.1, §7 | ❌ Missing | — | No QPACK package; experimental H3 uses string header blocks |
+| QUIC-TLS key schedule and packet protection | SPEC §1.8, §12 | ❌ Missing | — | Not implemented in in-repo transport |
+| 0-RTT support | SPEC §4.2, §12.2 | ❌ Missing | — | Spec-only |
+| Connection migration | SPEC §4.2, §13 | ❌ Missing | — | Server endpoint exists, but capability is not implemented |
+| Congestion control / loss recovery | SPEC §5 | ❌ Missing | — | No recovery or congestion packages |
+| Probe over HTTPS | SPEC §4.2 | ✅ Complete | `internal/probe` | Basic timing/TLS metadata |
+| Probe over real H3 | SPEC §4.2 | ✅ Complete | `internal/probe`, `internal/realh3` | `h3://` works |
+| Probe over experimental transport | SPEC not explicit | ✅ Complete | `internal/probe`, `internal/h3`, `internal/quic` | `triton://` works |
+| Deep probe tests: 0-RTT, migration, streams, qpack, grease, spin-bit, congestion | SPEC §4.2 | ❌ Missing | — | Not implemented |
+| Benchmark H1/H2 | SPEC §4.3 | ✅ Complete | `internal/bench` | Functional |
+| Benchmark real H3 | SPEC §4.3 | ✅ Complete | `internal/bench`, `internal/realh3` | Explicit `h3` protocol path |
+| Benchmark network simulator | SPEC §5.2 | ❌ Missing | — | No simulator |
+| Dashboard asset embedding | SPEC §7 | ✅ Complete | `internal/dashboard` | Embedded assets |
+| Dashboard read APIs | SPEC §9 | ⚠️ Partial | `internal/dashboard` | Status, probes, benches, traces only |
+| Dashboard SSE / WebSocket / charts / inspector | SPEC §7, §9 | ❌ Missing | — | Not implemented |
+| qlog file generation | SPEC §6.2 | ⚠️ Partial | `internal/observability` | Available for real H3 via `quic-go`, not custom transport |
+| ACME automation | SPEC §4.1, §7 | ❌ Missing | — | Self-signed only |
+| Build/release automation | SPEC §14 | ✅ Complete | `Makefile`, `Dockerfile`, workflows, GoReleaser | Present, though local Make targets are smaller than spec |
 
 ### 5.2 Architectural Deviations
 
-- **Spec says custom QUIC + TLS + H3 engine; implementation ships a TCP/TLS HTTP server.**
-  Files: [internal/server/server.go](/d:/Codebox/TritonProbe/internal/server/server.go:26), [internal/probe/probe.go](/d:/Codebox/TritonProbe/internal/probe/probe.go:53), [internal/bench/bench.go](/d:/Codebox/TritonProbe/internal/bench/bench.go:56)
-  Assessment: regression relative to product promise, but a practical short-term simplification.
+1. **Real H3 uses `quic-go`, not the custom QUIC engine.**
+   Impact: pragmatic improvement for shipping functionality, but a direct violation of the spec’s core architecture.
 
-- **Spec says HTTP/3 server/client; implementation provides loopback-only request translation helpers.**
-  Files: [internal/h3/server.go](/d:/Codebox/TritonProbe/internal/h3/server.go:16), [internal/h3/loopback.go](/d:/Codebox/TritonProbe/internal/h3/loopback.go:17)
-  Assessment: useful for incremental development, but naming overstates maturity.
+2. **There are two different H3 stacks in one binary.**
+   Files: [internal/server/server.go:49-59](../internal/server/server.go), [internal/server/server.go:73-81](../internal/server/server.go)
+   Impact: useful for incremental development, but confusing operationally.
 
-- **Spec says one handler tree under `internal/server`; implementation split handlers into `internal/appmux` while leaving duplicate code behind.**
-  Files: [internal/appmux/mux.go](/d:/Codebox/TritonProbe/internal/appmux/mux.go:15), [internal/server/endpoints.go](/d:/Codebox/TritonProbe/internal/server/endpoints.go:15)
-  Assessment: regression; this is maintenance debt, not an improvement.
+3. **Experimental H3 headers are newline-delimited strings, not QPACK.**
+   Files: [internal/h3/headers.go:9-42](../internal/h3/headers.go)
+   Impact: acceptable for internal loopback experiments, not for spec compliance.
 
-- **Spec promises analytics, qlog, charts, SSE, WS, and inspector views; none exist.**
-  Assessment: large scope reduction.
+4. **The dashboard is read-only and static.**
+   Impact: scope reduction, not necessarily a regression, but far below planned UX.
 
-- **Spec promises zero external dependencies plus specific allowed crypto/sys packages; implementation uses only YAML and does not attempt the planned crypto/sys layers.**
-  Assessment: simplification by omission.
+5. **Spec says zero-dependency custom stack; implementation deliberately chose a dependency-backed path for real H3.**
+   Impact: major strategic deviation, arguably the right tradeoff if product value matters more than ideological purity.
 
 ### 5.3 Task Completion Assessment
 
-`TASKS.md` defines 142 tasks across 10 phases. A strict audit shows only a minority are fully complete.
+`TASKS.md` defines 142 tasks.
 
-Estimated phase completion:
+Reasoned completion estimate by phase:
 
-| Phase | Status | Notes |
-|---|---|---|
-| Phase 1 - Scaffold & UDP Transport | MOSTLY PARTIAL | Core scaffold exists; Makefile/Dockerfile are minimal |
-| Phase 2 - QUIC Packet Layer | PARTIAL | Varints, packet numbers, header parsing exist; many packet types absent |
-| Phase 3 - QUIC Frames & Crypto | PARTIAL | Several frame types implemented; TLS/key schedule absent |
-| Phase 4 - QUIC Connection & Streams | PARTIAL | Toy connection/stream model exists |
-| Phase 5 - Loss Detection & Congestion | MISSING | Not implemented |
-| Phase 6 - Migration & 0-RTT | MISSING | Only placeholder-ish path challenge handling |
-| Phase 7 - HTTP/3 Layer | PARTIAL | Minimal loopback H3 only |
-| Phase 8 - Probe & Bench Modes | PARTIAL | Basic HTTPS probe and H1/H2 bench only |
-| Phase 9 - Web Dashboard | PARTIAL | Very small dashboard scaffold |
-| Phase 10 - Polish & Release | PARTIAL | README improved, release engineering absent |
+| Phase | Estimated Completion | Notes |
+|---|---:|---|
+| Phase 1 - Scaffold & UDP Transport | 90% | Mostly done |
+| Phase 2 - QUIC Packet Layer | 45% | Header parsing and packet numbers done; protection/fuzz missing |
+| Phase 3 - QUIC Frames & Crypto | 40% | Frame parsing present; crypto/tls parts missing |
+| Phase 4 - QUIC Connection & Streams | 60% | Simplified connection/stream model works |
+| Phase 5 - Recovery & Congestion | 0% | Missing |
+| Phase 6 - Migration & 0-RTT | 0% | Missing |
+| Phase 7 - HTTP/3 Layer | 55% | Real H3 exists via `quic-go`; custom H3 incomplete |
+| Phase 8 - Probe & Bench | 55% | Core flows work; deep protocol analysis absent |
+| Phase 9 - Dashboard | 35% | Read-only dashboard only |
+| Phase 10 - Polish & Release | 75% | README, CI, release automation present |
 
-Weighted completion estimate:
-
-- Fully complete tasks: roughly **20-25**
-- Partial tasks: roughly **25-30**
-- Missing tasks: roughly **90+**
-- Weighted task completion: **~26%**
-
-Remaining effort for incomplete items:
-
-- Minimum viable "real Triton" matching the current spec direction: **10-14+ weeks** of focused engineering for one strong engineer, likely longer for production quality.
+Overall task completion estimate: **~49% weighted**.
 
 ### 5.4 Scope Creep Detection
 
-Items in code not explicitly central in the spec:
+Features/code present that were not central in the original spec:
 
-- `triton://loopback/...` probe scheme and in-process H3 loopback path in [internal/probe/probe.go:38-40](/d:/Codebox/TritonProbe/internal/probe/probe.go:38) and [internal/h3](/d:/Codebox/TritonProbe/internal/h3/server.go:1).
-  Assessment: valuable. This is the best "incremental architecture" choice in the repo.
+- `triton://` experimental transport scheme
+- In-process QUIC/H3 loopback server/client helpers
+- Read-only qlog browsing in dashboard
+- Embedded Prometheus-style `/metrics` endpoint
 
-- Duplicate handler package `internal/appmux` alongside `internal/server/endpoints.go`.
-  Assessment: unnecessary complexity.
+Assessment:
 
-- Committed runtime output under `triton-data/` and checked-in `triton.exe`.
-  Assessment: unnecessary repository clutter, not product scope.
+- `triton://` and loopback helpers are valuable engineering accelerators.
+- qlog browsing and metrics are also valuable additions.
+- None of these are harmful scope creep; the real issue is unfinished core scope, not extra features.
 
 ### 5.5 Missing Critical Components
 
-Most critical missing components, prioritized:
+Highest-impact missing pieces:
 
-1. Real QUIC TLS handshake, packet protection, and connection lifecycle.
-2. Network-capable HTTP/3 server and client.
-3. Real H3 benchmarking path and protocol comparison including `h3`.
-4. Probe features promised in the spec: 0-RTT, migration, streams, throughput, Alt-Svc, QPACK, congestion, loss.
-5. Production security controls: auth, safe TLS defaults, input bounds, secret hygiene.
-6. CI/CD, release tooling, and deployment documentation.
+1. Custom QUIC-TLS handshake and packet protection.
+2. QPACK encoder/decoder and real custom HTTP/3 framing/control streams.
+3. Migration, 0-RTT, congestion, loss recovery, and MTU logic.
+4. Rich probe analysis promised by the spec.
+5. Interactive dashboard capabilities promised by the spec.
 
 ## 6. Performance & Scalability
 
 ### 6.1 Performance Patterns
 
-Observed hot paths and bottlenecks:
+Potential hot paths and bottlenecks:
 
-- `bench.Run()` performs repeated `client.Get()` loops with coarse metrics only; no latency histograms, no connection setup separation, and likely connection reuse hides protocol differences.
-- `/delay` and `/drip` intentionally block with `time.Sleep`, which is fine for test endpoints but dangerous if used heavily.
-- `/echo` reads the full body into memory in [internal/appmux/mux.go:48-56](/d:/Codebox/TritonProbe/internal/appmux/mux.go:48).
-- `storage.List()` does glob + stat on every request, which is acceptable for small local data sets but not scalable.
-- `internal/h3/loopback.go:85-91` reads at most 4096 bytes from a stream in one shot, so larger payloads are truncated in loopback flows.
+- Benchmark workers compute only aggregate averages; no latency histogram, percentile, or connection-setup breakdown exists.
+- `/delay` and `/drip` deliberately block request goroutines; fine for test endpoints, bad for production-style workload realism.
+- Dashboard list APIs re-scan filesystem state per request ([internal/storage/filesystem.go:58-75](../internal/storage/filesystem.go)).
+- The experimental H3/header codec allocates heavily and is not meant for scale.
 
-Memory allocation patterns:
+Memory/allocation patterns:
 
-- QUIC varint/header/frame parsers allocate copied slices frequently; acceptable at current scale.
-- UDP transport uses a `sync.Pool`, which is good.
-- The H3 header codec converts through strings and joins/splits aggressively; fine for scaffolding, not for a high-throughput H3 stack.
+- `UDPTransport` uses a `sync.Pool` for read buffers ([internal/quic/transport/udp.go:15-20](../internal/quic/transport/udp.go)).
+- Storage and observability code are allocation-light.
+- Experimental stream reassembly copies buffers during merges; reasonable at this size.
 
-Caching/compression/static optimization:
+HTTP response compression/static asset optimization:
 
-- No application-level caching.
-- Static assets are embedded but not compressed or cache-controlled.
-- Dashboard responses do not set cache headers or ETags.
+- No gzip/brotli asset serving.
+- No cache headers for static assets beyond `Cache-Control: no-store`.
+- This is acceptable for a local dashboard, not ideal for a public UI.
 
 ### 6.2 Scalability Assessment
 
-- Horizontal scalability: not really relevant yet; the app is mostly local-tooling oriented.
-- State model: local filesystem state under `triton-data/`; not multi-instance friendly.
+- Horizontal scalability: limited. State is local filesystem and qlog file-based.
+- Session/state model: mostly stateless for serving requests, stateful for stored results.
 - No queue/worker abstraction.
-- No explicit resource limits, back-pressure, or admission control.
-- No real connection pooling controls beyond default `net/http` behavior.
+- No back-pressure or admission control besides a simple rate limiter.
+- Real H3 path inherits `quic-go` behavior, which is more scalable than the in-repo transport.
 
 ## 7. Developer Experience
 
 ### 7.1 Onboarding Assessment
 
-- Clone/build/run is easy.
-- README is clear and unusually honest about what is implemented today.
-- Requirements are minimal: Go 1.24 and Docker if needed.
-- No hot reload, dev containers, or local orchestration scripts.
+- Good. Clone, `go test`, `go run`, and `go build` work without extra services.
+- Local setup requirements are minimal.
+- Config example is present in [triton.yaml.example](../triton.yaml.example).
 
 ### 7.2 Documentation Quality
 
-- `README.md` is strong and current.
-- Planning docs under `.project/` are detailed but aspirational.
-- Missing docs: `LICENSE`, `CONTRIBUTING.md`, `CHANGELOG.md`, `ARCHITECTURE.md`, `API.md`.
-- No ADRs.
+- `README.md` is strong and substantially aligned to the current repo.
+- Planning docs are detailed but still aspirational.
+- Missing standalone docs: `LICENSE`, `CONTRIBUTING.md`, `ARCHITECTURE.md`, `API.md`.
 
 ### 7.3 Build & Deploy
 
-- Build process is simple.
-- `Makefile` is too small for the promised release process: only `build`, `test`, `fmt`.
-- Docker image is functional but not optimized:
-  - uses `debian:bookworm-slim`, not distroless/scratch
-  - does not expose UDP 4433 even though the spec and example config mention it
-  - no non-root user
-  - copies the whole repo into the build context
-- No CI/CD pipeline.
+- Stronger than many pre-v1 repos:
+  - CI exists
+  - release workflow exists
+  - GoReleaser exists
+  - Docker runs as non-root
+- Gaps:
+  - local `Makefile` doesn’t expose all platforms the release config supports
+  - no explicit deployment manifests or staging/prod environment docs
 
 ## 8. Technical Debt Inventory
 
-### Critical
+### 🔴 Critical
 
-- `internal/bench/bench.go:56-69`: TLS verification disabled by default in benchmark mode. Suggested fix: add a safe default and explicit `--insecure` override. Effort: 1-2h.
-- `internal/server/server.go:32-42`: live server ignores `Server.Listen` and provides no QUIC/H3 path. Suggested fix: either implement QUIC or rename/re-scope product claims. Effort: large.
-- `internal/appmux/mux.go` and `internal/server/endpoints.go`: duplicate endpoint implementations. Suggested fix: delete dead copy and centralize tests on one mux. Effort: 1h.
-- `triton-data/certs/triton-selfsigned-key.pem`: private key committed in repo. Suggested fix: remove tracked runtime secrets and rotate local certs. Effort: 0.5h plus git hygiene.
+1. [internal/server/server.go:49-59](../internal/server/server.go): real HTTP/3 and experimental UDP H3 coexist behind similar config, creating product and ops confusion. Suggested fix: separate modes clearly or disable experimental listener by default. Effort: 4-8h plus docs.
+2. [internal/h3/headers.go:9-42](../internal/h3/headers.go): experimental H3 headers are not QPACK and are unsuitable for standards claims. Suggested fix: rename as test-only codec or isolate behind an explicitly experimental package boundary. Effort: 2-4h for rename/isolation, much larger for real implementation.
+3. [internal/server/ratelimit.go:21-53](../internal/server/ratelimit.go): rate limiter never evicts bucket state. Suggested fix: add TTL cleanup or bounded LRU. Effort: 2-3h.
 
-### Important
+### 🟡 Important
 
-- `internal/quic/stream/stream.go:68-188`: inconsistent locking around `state`. Suggested fix: single mutex or explicit lock ordering. Effort: 2-4h.
-- `internal/h3/headers.go:9-42`: naive newline/colon-delimited header serialization is not QPACK and is not robust. Suggested fix: rename as test codec or replace with real H3 header handling. Effort: medium to large.
-- `internal/h3/loopback.go:85-91`: single-read 4KB cap on stream reads. Suggested fix: loop until EOF. Effort: 0.5h.
-- `internal/dashboard/server.go:25-128`: no auth, no methods enforcement, no tests. Suggested fix: add auth/bind restrictions/tests or keep explicitly dev-only. Effort: 4-8h.
-- `Makefile`, `Dockerfile`: far below promised build/release ergonomics. Effort: 4-8h.
+1. [internal/quic/stream/stream.go:68-72](../internal/quic/stream/stream.go), [internal/quic/stream/stream.go:109-148](../internal/quic/stream/stream.go), [internal/quic/stream/stream.go:156-179](../internal/quic/stream/stream.go): `state` is guarded by inconsistent mutexes. Suggested fix: use one mutex for state or a dedicated state mutex. Effort: 2-4h.
+2. [internal/quic/transport/listener.go:49-55](../internal/quic/transport/listener.go), [internal/quic/transport/listener.go:158-171](../internal/quic/transport/listener.go): `acceptCh` is shared across two consumption APIs. Suggested fix: choose one public accept path or document exclusivity. Effort: 1-2h.
+3. [internal/config/config.go:67-76](../internal/config/config.go): default `server.listen` enables experimental UDP H3 by default. Suggested fix: default this off or rename it explicitly to `listen_experimental`. Effort: 1-2h.
+4. [internal/dashboard/assets/app.js:1-15](../internal/dashboard/assets/app.js): dashboard is functionally only a JSON dump. Suggested fix: either keep it explicitly minimal or invest in the richer dashboard promised by the spec. Effort: medium.
+5. `triton-data/` and built binaries in repo root/worktree: generated artifacts should not live beside source in a clean release branch. Effort: low.
 
-### Minor
+### 🟢 Minor
 
-- `internal/cli/output.go`: "table" output is just indented JSON, and "markdown" is JSON-in-fence rather than a true Markdown report.
-- `internal/server/server.go:74-75`: `signal.Stop` not called.
-- `README.md` includes some characters with encoding artifacts from terminal output, and planning docs contain mojibake from Windows console rendering.
+1. [internal/server/server.go:67-70](../internal/server/server.go): HTTPS TCP fallback allows TLS 1.2+. If this is a pure modern diagnostics tool, TLS 1.3-only may be preferable for consistency.
+2. [internal/bench/bench.go:121-131](../internal/bench/bench.go): benchmark output is too aggregate-only for serious protocol comparisons.
+3. [Makefile:9-12](../Makefile): local cross-build targets are narrower than GoReleaser’s matrix.
+4. [internal/dashboard/server.go:97-153](../internal/dashboard/server.go): dashboard APIs return plaintext errors instead of structured JSON.
 
 ## 9. Metrics Summary Table
 
 | Metric | Value |
-|---|---:|
-| Total Go Files | 52 |
-| Total Go LOC | 4,792 |
+|---|---|
+| Total Go Files | 86 |
+| Total Go LOC | 8,055 |
 | Total Frontend Files | 3 |
-| Total Frontend LOC | 92 |
-| Test Files | 20 |
-| Test Coverage (estimated) | 45% |
-| External Go Dependencies | 1 direct |
+| Total Frontend LOC | 97 |
+| Test Files | 46 |
+| Test Coverage (estimated) | 70-75% of current implemented scope |
+| External Go Dependencies | 2 direct / 8 total listed |
 | External Frontend Dependencies | 0 |
 | Open TODOs/FIXMEs | 0 |
-| API Endpoints | 23 total (15 server + 8 dashboard/assets) |
-| Spec Feature Completion | ~25% |
-| Task Completion | ~26% weighted |
-| Overall Health Score | 4/10 |
+| API Endpoints | 28 total (18 server + 10 dashboard/assets) |
+| Spec Feature Completion | ~52% |
+| Task Completion | ~49% |
+| Overall Health Score | 6/10 |

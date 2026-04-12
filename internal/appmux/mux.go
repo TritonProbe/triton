@@ -14,8 +14,13 @@ import (
 )
 
 type Options struct {
-	MaxBodyBytes int64
-	Metrics      *Metrics
+	MaxBodyBytes         int64
+	Metrics              *Metrics
+	SupportedProtocols   []string
+	Capabilities         []string
+	ExperimentalFeatures []string
+	DeploymentProfile    string
+	Stability            string
 }
 
 func New() http.Handler {
@@ -32,8 +37,22 @@ func NewWithOptions(opts Options) http.Handler {
 	if opts.Metrics == nil {
 		opts.Metrics = NewMetrics()
 	}
+	if len(opts.SupportedProtocols) == 0 {
+		opts.SupportedProtocols = []string{"http/1.1", "h2"}
+	}
+	if len(opts.Capabilities) == 0 {
+		opts.Capabilities = []string{"http1", "http2", "dashboard", "probe-storage", "bench-storage", "healthz", "readyz", "metrics"}
+	}
+	if opts.DeploymentProfile == "" {
+		opts.DeploymentProfile = "standard"
+	}
+	if opts.Stability == "" {
+		opts.Stability = "stable"
+	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", methodHandler(handleRoot, http.MethodGet))
+	mux.HandleFunc("/", methodHandler(func(w http.ResponseWriter, r *http.Request) {
+		handleRoot(w, r, opts)
+	}, http.MethodGet))
 	mux.HandleFunc("/healthz", methodHandler(handleHealth, http.MethodGet))
 	mux.HandleFunc("/readyz", methodHandler(handleReady, http.MethodGet))
 	mux.HandleFunc("/metrics", methodHandler(opts.Metrics.handleMetrics, http.MethodGet))
@@ -54,15 +73,20 @@ func NewWithOptions(opts Options) http.Handler {
 	mux.HandleFunc("/tls-info", methodHandler(handleTLSInfo, http.MethodGet))
 	mux.HandleFunc("/quic-info", methodHandler(handleQUICInfo, http.MethodGet))
 	mux.HandleFunc("/migration-test", methodHandler(handleMigration, http.MethodGet))
-	mux.HandleFunc("/.well-known/triton", methodHandler(handleCapabilities, http.MethodGet))
+	mux.HandleFunc("/.well-known/triton", methodHandler(func(w http.ResponseWriter, r *http.Request) {
+		handleCapabilities(w, r, opts)
+	}, http.MethodGet))
 	return opts.Metrics.middleware(mux)
 }
 
-func handleRoot(w http.ResponseWriter, _ *http.Request) {
+func handleRoot(w http.ResponseWriter, _ *http.Request, opts Options) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"name":         "triton",
-		"mode":         "server",
-		"capabilities": []string{"http1", "http2", "dashboard", "probe-storage", "bench-storage", "healthz", "readyz", "metrics"},
+		"name":               "triton",
+		"mode":               "server",
+		"capabilities":       append([]string(nil), opts.Capabilities...),
+		"protocols":          append([]string(nil), opts.SupportedProtocols...),
+		"deployment_profile": opts.DeploymentProfile,
+		"stability":          opts.Stability,
 	})
 }
 
@@ -249,13 +273,19 @@ func handleMigration(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-func handleCapabilities(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"name":      "triton",
-		"version":   "dev",
-		"protocols": []string{"http/1.1", "h2"},
-		"endpoints": []string{"/healthz", "/readyz", "/metrics", "/ping", "/echo", "/download/:size", "/upload", "/delay/:ms", "/streams/:n", "/headers/:n", "/redirect/:n", "/status/:code", "/drip/:size/:delay"},
-	})
+func handleCapabilities(w http.ResponseWriter, _ *http.Request, opts Options) {
+	payload := map[string]any{
+		"name":               "triton",
+		"version":            "dev",
+		"protocols":          append([]string(nil), opts.SupportedProtocols...),
+		"deployment_profile": opts.DeploymentProfile,
+		"stability":          opts.Stability,
+		"endpoints":          []string{"/healthz", "/readyz", "/metrics", "/ping", "/echo", "/download/:size", "/upload", "/delay/:ms", "/streams/:n", "/headers/:n", "/redirect/:n", "/status/:code", "/drip/:size/:delay", "/tls-info", "/quic-info", "/migration-test", "/.well-known/triton"},
+	}
+	if len(opts.ExperimentalFeatures) > 0 {
+		payload["experimental"] = append([]string(nil), opts.ExperimentalFeatures...)
+	}
+	writeJSON(w, http.StatusOK, payload)
 }
 
 func methodHandler(next http.HandlerFunc, methods ...string) http.HandlerFunc {

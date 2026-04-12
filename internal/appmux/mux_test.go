@@ -92,6 +92,30 @@ func TestRootAndReadyEndpoints(t *testing.T) {
 	}
 }
 
+func TestRootReflectsConfiguredProtocols(t *testing.T) {
+	handler := NewWithOptions(Options{
+		SupportedProtocols:   []string{"http/1.1", "h2", "h3"},
+		Capabilities:         []string{"http1", "http2", "http3"},
+		ExperimentalFeatures: []string{"triton-udp-h3"},
+		DeploymentProfile:    "mixed",
+		Stability:            "mixed-stability",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"h3"`) {
+		t.Fatalf("expected configured protocols in root payload, got %q", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"deployment_profile":"mixed"`) {
+		t.Fatalf("expected deployment profile in root payload, got %q", rec.Body.String())
+	}
+}
+
 func TestDownloadAndUploadEndpoints(t *testing.T) {
 	handler := NewWithOptions(Options{MaxBodyBytes: 32})
 
@@ -131,7 +155,12 @@ func TestRouteValidationErrors(t *testing.T) {
 }
 
 func TestHeadersRedirectStreamsAndCapabilities(t *testing.T) {
-	handler := New()
+	handler := NewWithOptions(Options{
+		SupportedProtocols:   []string{"http/1.1", "h2", "h3"},
+		ExperimentalFeatures: []string{"triton-udp-h3"},
+		DeploymentProfile:    "mixed",
+		Stability:            "mixed-stability",
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/headers/2", nil)
 	rec := httptest.NewRecorder()
@@ -159,6 +188,12 @@ func TestHeadersRedirectStreamsAndCapabilities(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"protocols"`) {
 		t.Fatalf("unexpected capabilities response: code=%d body=%q", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"experimental"`) {
+		t.Fatalf("expected experimental section in capabilities response, got %q", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"stability":"mixed-stability"`) {
+		t.Fatalf("expected stability in capabilities response, got %q", rec.Body.String())
 	}
 }
 

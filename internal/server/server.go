@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -58,16 +60,19 @@ func New(cfg config.ServerConfig, dataDir string, store *storage.FileStore) (*Se
 			},
 		}
 	}
-	srv := &http.Server{
-		Addr:         cfg.ListenTCP,
-		Handler:      withAltSvc(handler, h3real),
-		ReadTimeout:  cfg.ReadTimeout,
-		WriteTimeout: cfg.WriteTimeout,
-		IdleTimeout:  cfg.IdleTimeout,
-		TLSConfig: &tls.Config{
-			MinVersion: tls.VersionTLS12,
-			NextProtos: []string{"h2", "http/1.1"},
-		},
+	var srv *http.Server
+	if cfg.ListenTCP != "" {
+		srv = &http.Server{
+			Addr:         cfg.ListenTCP,
+			Handler:      withAltSvc(handler, h3real),
+			ReadTimeout:  cfg.ReadTimeout,
+			WriteTimeout: cfg.WriteTimeout,
+			IdleTimeout:  cfg.IdleTimeout,
+			TLSConfig: &tls.Config{
+				MinVersion: tls.VersionTLS12,
+				NextProtos: []string{"h2", "http/1.1"},
+			},
+		}
 	}
 
 	var udpListener *transport.Listener
@@ -88,6 +93,7 @@ func New(cfg config.ServerConfig, dataDir string, store *storage.FileStore) (*Se
 			Password: cfg.DashboardPass,
 			Logger:   logger,
 			TraceDir: cfg.TraceDir,
+			Config:   dashboardConfigSnapshot(cfg),
 		})
 	}
 
@@ -97,7 +103,14 @@ func New(cfg config.ServerConfig, dataDir string, store *storage.FileStore) (*Se
 }
 
 func buildHandler(cfg config.ServerConfig, logger *slog.Logger) http.Handler {
-	mux := appmux.NewWithOptions(appmux.Options{MaxBodyBytes: cfg.MaxBodyBytes})
+	mux := appmux.NewWithOptions(appmux.Options{
+		MaxBodyBytes:         cfg.MaxBodyBytes,
+		SupportedProtocols:   supportedProtocols(cfg),
+		Capabilities:         capabilityFlags(cfg),
+		ExperimentalFeatures: experimentalFeatures(cfg),
+		DeploymentProfile:    deploymentProfile(cfg),
+		Stability:            stabilityLevel(cfg),
+	})
 	return observability.WithRequestID(
 		observability.WithAccessLog(
 			logger,
@@ -109,6 +122,59 @@ func buildHandler(cfg config.ServerConfig, logger *slog.Logger) http.Handler {
 	)
 }
 
+func supportedProtocols(cfg config.ServerConfig) []string {
+	protocols := []string{"http/1.1", "h2"}
+	if cfg.ListenH3 != "" {
+		protocols = append(protocols, "h3")
+	}
+	if cfg.Listen != "" && cfg.AllowExperimentalH3 {
+		protocols = append(protocols, "triton-h3")
+	}
+	return protocols
+}
+
+func capabilityFlags(cfg config.ServerConfig) []string {
+	flags := []string{"http1", "http2", "probe-storage", "bench-storage", "healthz", "readyz", "metrics"}
+	if cfg.Dashboard {
+		flags = append(flags, "dashboard")
+	}
+	if cfg.ListenH3 != "" {
+		flags = append(flags, "http3")
+	}
+	if cfg.TraceDir != "" {
+		flags = append(flags, "qlog")
+	}
+	return flags
+}
+
+func experimentalFeatures(cfg config.ServerConfig) []string {
+	features := make([]string, 0, 1)
+	if cfg.Listen != "" && cfg.AllowExperimentalH3 {
+		features = append(features, "triton-udp-h3")
+	}
+	return features
+}
+
+func deploymentProfile(cfg config.ServerConfig) string {
+	if len(experimentalFeatures(cfg)) > 0 {
+		if cfg.ListenH3 != "" || cfg.ListenTCP != "" {
+			return "mixed"
+		}
+		return "experimental"
+	}
+	if cfg.ListenH3 != "" {
+		return "http3"
+	}
+	return "standard"
+}
+
+func stabilityLevel(cfg config.ServerConfig) string {
+	if len(experimentalFeatures(cfg)) > 0 {
+		return "mixed-stability"
+	}
+	return "stable"
+}
+
 func (s *Server) Run() error {
 	errCh := make(chan error, 4)
 	defer func() {
@@ -117,7 +183,15 @@ func (s *Server) Run() error {
 		}
 	}()
 
+	log.Printf("triton server startup: %s", strings.Join(activeListenersSummary(s.cfg), "; "))
+	if len(experimentalFeatures(s.cfg)) > 0 {
+		log.Printf("warning: experimental Triton UDP H3 is enabled; this path is lab-grade and should not be treated as production-stable")
+	}
+
 	go func() {
+		if s.https == nil {
+			return
+		}
 		log.Printf("server listening on https://%s", s.cfg.ListenTCP)
 		if err := s.https.ListenAndServeTLS(s.cfg.CertFile, s.cfg.KeyFile); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
@@ -172,7 +246,64 @@ func (s *Server) Run() error {
 	if s.dashboard != nil {
 		_ = s.dashboard.Shutdown(ctx)
 	}
-	return s.https.Shutdown(ctx)
+	if s.https != nil {
+		return s.https.Shutdown(ctx)
+	}
+	return nil
+}
+
+func activeListenersSummary(cfg config.ServerConfig) []string {
+	parts := make([]string, 0, 4)
+	if cfg.ListenTCP != "" {
+		parts = append(parts, fmt.Sprintf("https/tcp=%s", cfg.ListenTCP))
+	}
+	if cfg.ListenH3 != "" {
+		parts = append(parts, fmt.Sprintf("http3/quic=%s", cfg.ListenH3))
+	}
+	if cfg.Listen != "" {
+		parts = append(parts, fmt.Sprintf("experimental-h3/udp=%s", cfg.Listen))
+	}
+	if cfg.Dashboard {
+		parts = append(parts, fmt.Sprintf("dashboard=%s", cfg.DashboardListen))
+	}
+	if len(parts) == 0 {
+		return []string{"no listeners configured"}
+	}
+	return parts
+}
+
+func dashboardConfigSnapshot(cfg config.ServerConfig) map[string]any {
+	return map[string]any{
+		"listeners": map[string]any{
+			"https_tcp":       cfg.ListenTCP,
+			"http3_quic":      cfg.ListenH3,
+			"experimental_h3": cfg.Listen,
+			"dashboard":       cfg.DashboardListen,
+		},
+		"dashboard": map[string]any{
+			"enabled":                cfg.Dashboard,
+			"allow_remote_dashboard": cfg.AllowRemoteDashboard,
+			"auth_enabled":           cfg.DashboardUser != "" && cfg.DashboardPass != "",
+		},
+		"limits": map[string]any{
+			"max_body_bytes": cfg.MaxBodyBytes,
+			"rate_limit":     cfg.RateLimit,
+		},
+		"timeouts_ms": map[string]any{
+			"read":  cfg.ReadTimeout.Milliseconds(),
+			"write": cfg.WriteTimeout.Milliseconds(),
+			"idle":  cfg.IdleTimeout.Milliseconds(),
+		},
+		"observability": map[string]any{
+			"trace_enabled":        cfg.TraceDir != "",
+			"trace_dir_configured": cfg.TraceDir != "",
+			"access_log_enabled":   cfg.AccessLog != "",
+		},
+		"tls": map[string]any{
+			"cert_configured": cfg.CertFile != "",
+			"key_configured":  cfg.KeyFile != "",
+		},
+	}
 }
 
 func withSecurityHeaders(next http.Handler) http.Handler {

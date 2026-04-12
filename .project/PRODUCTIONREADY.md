@@ -2,87 +2,116 @@
 
 > Comprehensive evaluation of whether Triton is ready for production deployment.
 > Assessment Date: 2026-04-11
-> Verdict: NOT READY
+> Verdict: CONDITIONALLY READY
 
 ## Overall Verdict & Score
 
-**Production Readiness Score: 33/100**
+**Production Readiness Score: 61/100**
 
 | Category | Score | Weight | Weighted Score |
 |---|---:|---:|---:|
-| Core Functionality | 4/10 | 20% | 8.0 |
-| Reliability & Error Handling | 4/10 | 15% | 6.0 |
-| Security | 2/10 | 20% | 4.0 |
-| Performance | 4/10 | 10% | 4.0 |
-| Testing | 5/10 | 15% | 7.5 |
-| Observability | 2/10 | 10% | 2.0 |
-| Documentation | 6/10 | 5% | 3.0 |
-| Deployment Readiness | 3/10 | 5% | 1.5 |
-| **TOTAL** |  | **100%** | **36.0** |
+| Core Functionality | 6/10 | 20% | 12.0 |
+| Reliability & Error Handling | 6/10 | 15% | 9.0 |
+| Security | 6/10 | 20% | 12.0 |
+| Performance | 5/10 | 10% | 5.0 |
+| Testing | 8/10 | 15% | 12.0 |
+| Observability | 7/10 | 10% | 7.0 |
+| Documentation | 7/10 | 5% | 3.5 |
+| Deployment Readiness | 7/10 | 5% | 3.5 |
+| **TOTAL** |  | **100%** | **64.0** |
 
-Rounded and normalized operational verdict score: **33/100**.
+Rounded operational verdict score: **61/100**.
+
+Interpretation:
+
+- **Conditionally ready** if the product is positioned as a pragmatic, pre-v1 HTTP diagnostics tool with real H3 powered by `quic-go`, a local dashboard, and an explicitly experimental custom transport.
+- **Not ready** if the product is positioned as the full custom QUIC/HTTP/3 platform described in the specification.
 
 ## 1. Core Functionality Assessment
 
 ### 1.1 Feature Completeness
 
-- **Working**: CLI entrypoint, config loading, filesystem result persistence, HTTPS server on TCP/TLS, basic probe for normal HTTPS targets, basic `h1`/`h2` benchmarking, minimal dashboard listing stored results, loopback-only QUIC/H3 test path.
-- **Partial**: QUIC packet/frame parsing, connection and stream modeling, server endpoint suite, benchmark reporting, probe timing metrics.
-- **Missing**: real QUIC TLS handshake, packet protection, production HTTP/3 server/client, H3 benchmarking, analytics engine, qlog, SSE/WS dashboard, ACME, rate limiting, auth.
-- **Buggy / misleading**: benchmark mode disables cert verification by default, loopback H3 reads are capped at 4KB, handler logic is duplicated, and the current product messaging strongly overstates actual protocol support.
+- `Working`
+  - CLI entrypoint and command routing
+  - Config loading from defaults/YAML/env/CLI
+  - Filesystem result persistence
+  - HTTPS server with health, readiness, and metrics endpoints
+  - Real HTTP/3 server support via `quic-go`
+  - Probe mode for `https://`, `h3://`, and `triton://`
+  - Bench mode for `h1`, `h2`, `h3`, and `triton://`
+  - Dashboard for stored probes, benches, and qlog files
+  - Structured request logging and request IDs
+
+- `Partial`
+  - Experimental in-repo QUIC/H3 transport
+  - Server endpoint suite relative to the spec
+  - Dashboard UX
+  - Benchmark result richness
+  - Security controls beyond localhost/basic-auth use cases
+
+- `Missing`
+  - Custom QUIC-TLS handshake
+  - QPACK
+  - 0-RTT
+  - migration
+  - congestion/loss recovery
+  - interactive dashboard features promised in the spec
+
+- `Architecturally risky / misleading`
+  - Two different HTTP/3 implementations are exposed in one binary
+  - Experimental H3 path is enabled by default via `server.listen`
 
 ### 1.2 Critical Path Analysis
 
-Primary workflow if interpreted literally from the spec:
+Primary workflows that work today:
 
-- Can a user run a real QUIC/HTTP/3 test server end-to-end? **No**
-- Can a user benchmark `h1` vs `h2` on public HTTPS targets? **Yes**
-- Can a user probe a normal HTTPS endpoint for basic timings/TLS metadata? **Yes**
-- Can a user perform real H3, 0-RTT, migration, congestion, or QPACK analysis? **No**
+- A user can start the TLS test server and hit health, readiness, metrics, and test endpoints.
+- A user can probe a standard HTTPS target.
+- A user can probe a real HTTP/3 target with `h3://`.
+- A user can benchmark H1/H2/H3 against a reachable endpoint.
+- A user can browse stored runs and qlog files in the dashboard.
 
-Happy path reliability:
+Primary workflows that do not match the spec:
 
-- `triton version` works.
-- `triton probe --target triton://loopback/ping --format json` works.
-- `triton bench --target https://example.com --duration 1s --concurrency 1 --format json` works.
-- The advertised QUIC/H3 happy path does not exist as a real network path.
+- A user cannot rely on a custom RFC-complete QUIC engine.
+- A user cannot perform the deep QUIC analysis promised in the spec.
+- A user cannot use a rich live dashboard with timelines, charts, SSE, or packet inspection.
 
 ### 1.3 Data Integrity
 
-- Probe and bench results are stored consistently as gzip-compressed JSON in `triton-data/`.
-- There is no migration system because there is no database.
-- No backup/restore strategy is documented.
-- Storage cleanup exists but is filesystem-only and local-instance-only.
+- Results are consistently stored and loaded as gzip-compressed JSON.
+- Storage cleanup works by count and retention.
+- No database exists, so there are no migrations or transactions.
+- No backup/restore workflow is documented.
 
 ## 2. Reliability & Error Handling
 
 ### 2.1 Error Handling Coverage
 
-- Errors are propagated reasonably at top-level command boundaries.
-- HTTP handlers often ignore read/write errors.
-- Error response shapes are inconsistent between endpoints.
-- No panic recovery middleware.
-- Potential silent failure points exist in the loopback transport where parse/dispatch errors are ignored.
+- CLI mode boundaries are solid.
+- Storage errors propagate correctly.
+- Probe/bench commands fail cleanly on transport errors.
+- Handler error responses are still mostly plaintext and inconsistent.
+- Experimental transport code sometimes ignores errors internally, especially in the listener loop.
 
 ### 2.2 Graceful Degradation
 
-- When remote targets fail in probe/bench mode, the command returns an error; there is no richer degradation model.
-- Dashboard simply returns HTTP errors if storage reads fail.
-- No retry logic, backoff, or circuit breakers.
-- No resilience around certificate generation or persistence beyond simple retry-by-rerun behavior.
+- If real H3 is unavailable, the TCP/TLS server still functions.
+- If trace directories do not exist, dashboard trace listing degrades to an empty list.
+- If a target certificate is invalid, probe/bench fail unless `--insecure` is used.
+- There is no retry/backoff/circuit-breaker machinery.
 
 ### 2.3 Graceful Shutdown
 
-- Server handles SIGINT/SIGTERM with a 10-second shutdown timeout.
-- Dashboard is shut down before the main HTTPS server.
-- There is no graceful shutdown model for probe or bench mode because they are short-lived commands.
-- `signal.Notify` is not unregistered.
+- Present and reasonably implemented for server, dashboard, real H3, and experimental UDP listener.
+- Shutdown timeout is 10 seconds.
+- Signal handling is explicit and `signal.Stop` is called.
 
 ### 2.4 Recovery
 
-- The system can be restarted manually.
-- Persisted results survive restarts.
-- There is no crash recovery model, no supervision, and no corruption detection beyond gzip/JSON decoding.
+- Manual restart is fine.
+- Stored results survive restarts.
+- No crash recovery or supervisor model is built in.
 
 ## 3. Security Assessment
 
@@ -96,216 +125,208 @@ Happy path reliability:
 - [ ] CSRF protection
 - [ ] Rate limiting on auth endpoints
 
-Reality: none of the above applies because there is no auth system at all.
+Reality: only optional HTTP Basic Auth exists for the dashboard. This is acceptable for a localhost operator tool, not for a broader multi-user product.
 
 ### 3.2 Input Validation & Injection
 
-- [ ] All user inputs are validated and sanitized
-- [x] SQL injection protection
-- [x] Command injection protection
-- [ ] XSS protection headers and CSP
-- [ ] Path traversal protection reviewed comprehensively
-- [ ] File upload validation
-
-Reality:
-
-- There is no database or shell execution.
-- Body sizes are unbounded on key endpoints.
-- Dashboard asset path handling is decent, but overall input hardening is incomplete.
+- [x] Route params are validated on main server endpoints
+- [x] Request body size limits exist for key body-reading routes
+- [x] SQL injection risk is absent
+- [x] Command injection risk is absent
+- [ ] File upload validation is richer than simple size bounding
+- [ ] Global validation policy exists
 
 ### 3.3 Network Security
 
-- [ ] TLS/HTTPS support and enforcement
-- [ ] Secure headers
-- [ ] CORS properly configured
-- [ ] No sensitive data in URLs/query params
-- [ ] Secure cookie configuration
-
-Reality:
-
-- TCP/TLS server exists, but the intended QUIC/H3 path does not.
-- No secure headers are set.
-- No cookie/session model exists.
-- Dashboard security posture relies mostly on binding to localhost by default.
+- [x] TLS/HTTPS support exists
+- [x] Real HTTP/3 path enforces TLS 1.3
+- [x] Security headers are set on HTTP and dashboard responses
+- [ ] CORS policy is defined
+- [ ] Sensitive dashboard exposure is prevented unless explicitly configured
+- [ ] Experimental UDP H3 path has real transport security
 
 ### 3.4 Secrets & Configuration
 
-- [ ] No hardcoded secrets in source code
-- [ ] No secrets in git history
-- [x] Environment-variable based configuration exists
+- [x] Secrets can come from env/config
 - [x] `.env` files are ignored
-- [ ] Sensitive config values masked in logs
-
-Reality:
-
-- Source code does not hardcode service secrets.
-- The repository contains committed generated key material under `triton-data/certs/`.
+- [ ] Generated key material is fully excluded from maintained source snapshots
+- [ ] Sensitive config masking policy exists in logs
 
 ### 3.5 Security Vulnerabilities Found
 
-- **High**: Benchmark mode disables TLS verification by default in `internal/bench/bench.go`.
-- **High**: Dashboard exposes stored run data without auth if bound externally.
-- **Medium**: Unbounded request-body reads in `/echo` and `/upload`.
-- **Medium**: Committed private key material in repo.
-- **Low/Medium**: No security headers or explicit hardening on HTTP responses.
+- **High**: experimental UDP H3 path is not cryptographically equivalent to real QUIC/TLS but can be mistaken for HTTP/3 support.
+- **Medium**: rate-limiter bucket map is unbounded.
+- **Medium**: dashboard auth is optional and basic-only.
+- **Low/Medium**: no CORS or more advanced HTTP hardening beyond current headers.
 
 ## 4. Performance Assessment
 
 ### 4.1 Known Performance Issues
 
-- Bench mode reports only averages and throughput; it is not suitable for precise protocol performance claims.
-- Loopback H3 reads only a single 4KB chunk.
-- Dashboard file listing performs filesystem scans per request.
-- Some test endpoints intentionally sleep/block and are unsuitable as-is for high-concurrency production usage.
+- Bench output is aggregate-heavy and not suitable for nuanced protocol analysis yet.
+- Experimental H3 path is intentionally simplistic and not built for real throughput claims.
+- Dashboard reads directly from filesystem on each list request.
+- Test endpoints like `/delay` and `/drip` intentionally block.
 
 ### 4.2 Resource Management
 
-- UDP transport uses a pooled buffer.
-- No explicit memory limits or OOM protections.
-- No connection pool tuning beyond defaults.
-- Some goroutine lifecycle management exists, but no unified supervisor.
+- UDP read buffers are pooled.
+- File handles are generally managed correctly.
+- No explicit memory caps or admission control.
+- Rate limiter retains IP bucket state indefinitely.
 
 ### 4.3 Frontend Performance
 
-- Asset size is tiny.
-- No build optimization needed at current scale.
-- No lazy loading, metrics, or Core Web Vitals instrumentation.
+- Embedded dashboard assets are tiny.
+- No frontend bundling concerns.
+- No frontend observability or web-vitals instrumentation.
 
 ## 5. Testing Assessment
 
 ### 5.1 Test Coverage Reality Check
 
-- What is actually tested well: packet parsing, frame parsing, stream reassembly, toy connection dispatch, toy listener/dialer loopback, H3 loopback flow, storage save/load, endpoint basics.
-- What is not tested enough: CLI UX, dashboard APIs, insecure/prod config behavior, signal handling, bench correctness, failure paths, real-world network behavior.
-- Test quality is decent for the scope, but the scope is small compared with the spec.
+What is well tested:
+
+- CLI behavior
+- config loading and validation
+- server assembly and endpoints
+- dashboard auth/assets/APIs
+- observability middleware and qlog writer
+- storage
+- packet/frame parsing
+- stream/connection behavior
+- experimental transport loopback
+- real HTTP/3 probe and bench flows
+
+Critical gaps:
+
+- No race-test signal because `go test -race` was not run here
+- No fuzz tests
+- No load testing
+- No interactive dashboard tests
 
 ### 5.2 Test Categories Present
 
-- [x] Unit tests - 20 files
-- [x] Integration tests - small loopback integration only
-- [ ] API/endpoint tests - limited, only a couple of server handlers
+- [x] Unit tests — 46 files across all packages
+- [x] Integration tests — server, probe, bench, loopback, and real HTTP/3 paths
+- [x] API/endpoint tests — server and dashboard
 - [ ] Frontend component tests
-- [ ] E2E tests
+- [ ] E2E browser tests
 - [ ] Benchmark tests
 - [ ] Fuzz tests
 - [ ] Load tests
 
 ### 5.3 Test Infrastructure
 
-- [x] Tests can run locally with `go test ./...`
-- [x] Tests do not require external services
-- [ ] Test data/fixtures are managed comprehensively
-- [ ] CI runs tests on every PR
-- [ ] Test results are validated under `-race` in normal development
+- [x] `go test ./...` works locally
+- [x] CI runs tests on push/PR
+- [x] CI also runs build, vet, staticcheck, and smoke flow
+- [ ] Race testing is enforced in CI
+- [ ] Fuzzing or load tests exist
 
 ## 6. Observability
 
 ### 6.1 Logging
 
-- [ ] Structured logging
-- [ ] Log levels
-- [ ] Request/response logging with request IDs
-- [ ] Sensitive data not logged policy
-- [ ] Log rotation
-- [ ] Error stack traces
-
-Reality: there are only a few `log.Printf` statements in server startup/shutdown.
+- [x] Structured JSON logging exists
+- [x] Request IDs exist
+- [x] Access logs include method/path/status/bytes/duration
+- [ ] Configurable log levels exist
+- [ ] Sensitive-value masking policy is documented
+- [ ] Broad application lifecycle logging is comprehensive
 
 ### 6.2 Monitoring & Metrics
 
-- [ ] Health check endpoint exists and is comprehensive
-- [ ] Prometheus/metrics endpoint
-- [ ] Key business metrics tracked
-- [ ] Resource utilization metrics
-- [ ] Alert-worthy conditions identified
-
-Reality: `/api/v1/status` exists on the dashboard, but it is not a production health endpoint.
+- [x] `/healthz` and `/readyz` exist
+- [x] `/metrics` exists and exposes request counters plus uptime
+- [ ] Prometheus coverage goes beyond HTTP request counts
+- [ ] Resource metrics are exported
+- [ ] Alerting guidance exists
 
 ### 6.3 Tracing
 
-- [ ] Request tracing
-- [ ] Correlation IDs
-- [ ] Profiling endpoints
-
-Reality: none.
+- [x] qlog tracing exists for real HTTP/3 traffic
+- [x] Trace files are discoverable in the dashboard
+- [ ] Custom in-repo transport tracing matches spec ambitions
+- [ ] Distributed tracing exists
 
 ## 7. Deployment Readiness
 
 ### 7.1 Build & Package
 
-- [x] Reproducible local build is straightforward
-- [ ] Multi-platform binary compilation is automated
-- [ ] Minimal runtime Docker image
-- [ ] Docker image size optimized
-- [ ] Version information embedded consistently
+- [x] Local builds work
+- [x] Docker image exists
+- [x] Docker image runs as non-root
+- [x] GoReleaser config exists
+- [x] CI release workflow exists
+- [ ] Local Make targets match full release matrix
+- [ ] Deployment manifests exist
 
 ### 7.2 Configuration
 
-- [x] Basic config via file/env/flags
+- [x] File/env/CLI config model exists
 - [x] Sensible defaults exist
-- [ ] Configuration validation is comprehensive
-- [ ] Different configs for dev/staging/prod are defined
-- [ ] Feature flags system exists
+- [x] Startup validation exists
+- [ ] Unsupported config combinations are rejected more explicitly
+- [ ] Environment-specific deployment guidance exists
 
 ### 7.3 Database & State
 
-- [x] No database required today
-- [ ] Backup strategy documented
-- [ ] Rollback strategy documented
-- [ ] Seed/bootstrap workflow documented
+- [x] No database required
+- [x] Filesystem state layout is clear
+- [ ] Backup/restore guidance exists
+- [ ] Retention policy is operationally documented
 
 ### 7.4 Infrastructure
 
-- [ ] CI/CD pipeline configured
-- [ ] Automated testing in pipeline
-- [ ] Automated deployment capability
-- [ ] Rollback mechanism
-- [ ] Zero-downtime deployment support
+- [x] CI pipeline configured
+- [x] Automated release workflow configured
+- [ ] Rollback mechanism documented
+- [ ] Deployment automation beyond GitHub release exists
 
 ## 8. Documentation Readiness
 
-- [x] README is fairly accurate
-- [x] Installation/setup guide mostly works
-- [ ] API documentation is comprehensive
-- [ ] Configuration reference is complete
-- [ ] Troubleshooting guide exists
-- [ ] Architecture overview for new contributors exists outside planning docs
+- [x] README is broadly accurate
+- [x] Setup/build instructions work
+- [x] Spec and implementation docs exist
+- [ ] Docs clearly distinguish experimental vs supported H3 paths
+- [ ] Architecture reference reflects the current dual-stack design
+- [ ] API docs are separated into a stable reference document
 
 ## 9. Final Verdict
 
-### Production Blockers (MUST fix before any deployment)
+### Production Blockers (MUST fix before broader public deployment)
 
-1. The advertised QUIC/HTTP/3 core is not implemented as a real network path.
-2. Benchmark mode is insecure by default because TLS verification is disabled.
-3. Dashboard has no auth or hardening and should not be exposed beyond localhost.
-4. Repository hygiene is poor for production: committed runtime artifacts and private key material are present.
-5. There is no CI/CD, no release automation, and no observability baseline.
+1. Clarify and separate the real HTTP/3 path from the experimental in-repo UDP H3 path.
+2. Stop enabling the experimental UDP listener by default unless that is an intentional product stance.
+3. Fix the rate limiter’s unbounded state retention.
+4. Make the documentation and CLI help explicitly state what is experimental and what is supported.
 
-### High Priority (Should fix within first week of production)
+### High Priority (Should fix within the first production iteration)
 
-1. Remove duplicate handler implementations and dead code.
-2. Add request body limits and method enforcement.
-3. Fix loopback stream truncation and stream lock discipline.
-4. Add dashboard tests, CLI tests, and probe/bench failure-path tests.
+1. Add `-race` coverage in CI and fix any synchronization issues it reveals.
+2. Improve benchmark metrics so protocol claims are evidence-based.
+3. Harden dashboard exposure rules and authentication expectations.
+4. Clean the repo/release artifact story around generated certs and runtime data.
 
 ### Recommendations (Improve over time)
 
-1. Narrow the public promise before shipping: either market this as an HTTP benchmarking scaffold or finish the QUIC/H3 engine.
-2. Separate experimental loopback protocol code from any future production transport package.
-3. Add structured logs, health endpoints, and release metadata before any public deployment.
+1. Add a richer dashboard only after the transport/product story is settled.
+2. Treat the custom QUIC engine as a research track unless the team commits significant engineering time.
+3. Add `ARCHITECTURE.md` and stable API docs once the supported surface is finalized.
 
 ### Estimated Time to Production Ready
 
-- From current state: **10-14 weeks** of focused development for a meaningful first production release aligned with the current spec
-- Minimum viable production for the current narrower HTTPS-only toolset: **1-2 weeks**
-- Full production readiness with the promised QUIC/H3 capabilities: **14+ weeks**
+- For a narrow, honest pre-v1 release: **2-4 weeks**
+- For a polished pragmatic diagnostics release: **4-6 weeks**
+- For full spec-level custom QUIC/HTTP/3 parity: **several months**
 
 ### Go/No-Go Recommendation
 
-**NO-GO**
+**CONDITIONAL GO**
 
 Justification:
 
-This repository is not ready for production if "production" means the product described in the specification and README vision. The server does not actually provide a network-capable QUIC/HTTP/3 stack, benchmark mode does not measure HTTP/3, and probe mode does not perform the deep protocol analysis that the project claims as its core value proposition. Shipping it as a mature HTTP/3 tool today would create immediate trust and support problems.
+Triton can be released or deployed today as an experimental but useful HTTP diagnostics tool, provided the team narrows the promise to what the code actually does: TLS test serving, result persistence, a local dashboard, H1/H2 benchmarking, real H3 probing/benchmarking through `quic-go`, and an explicitly experimental in-repo transport for lab use.
 
-There is, however, a narrower tool here that could be made safe to use internally or released explicitly as an experimental developer preview. For that narrower scope, the work is much smaller: fix the insecure defaults, clean the repository, harden the dashboard, tighten input handling, and add CI. If the team wants a real Triton v1 matching the spec, the honest path is to treat the current codebase as scaffolding, not as a near-finished product.
+Triton should not be presented as the full custom QUIC/HTTP/3 platform described in the current specification. The custom transport is not production-ready, QPACK and QUIC-TLS are absent, and several headline features remain unimplemented. The minimum work required before a broader public deployment is mostly about truthfulness, safety, and operational clarity rather than greenfield coding: separate the supported path from the experimental path, harden the rate limiter and dashboard story, and make the docs/config/defaults match the actual product.

@@ -1,9 +1,11 @@
 server:
-  listen: ":4433"
+  listen: ""
+  allow_experimental_h3: false
   listen_h3: ""
   listen_tcp: ":8443"
   dashboard: true
   dashboard_listen: "127.0.0.1:9090"
+  allow_remote_dashboard: false
   dashboard_user: ""
   dashboard_pass: ""
   read_timeout: 15s

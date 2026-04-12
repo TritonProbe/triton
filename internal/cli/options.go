@@ -10,32 +10,36 @@ import (
 )
 
 type serverOptions struct {
-	ConfigPath      string
-	Listen          string
-	ListenH3        string
-	ListenTCP       string
-	CertFile        string
-	KeyFile         string
-	Dashboard       bool
-	DashboardListen string
-	DashboardUser   string
-	DashboardPass   string
-	MaxBodyBytes    int64
-	AccessLog       string
-	TraceDir        string
+	ConfigPath           string
+	Listen               string
+	AllowExperimentalH3  bool
+	ListenH3             string
+	ListenTCP            string
+	CertFile             string
+	KeyFile              string
+	Dashboard            bool
+	DashboardListen      string
+	AllowRemoteDashboard bool
+	DashboardUser        string
+	DashboardPass        string
+	MaxBodyBytes         int64
+	AccessLog            string
+	TraceDir             string
 }
 
 func parseServerOptions(args []string) (serverOptions, error) {
 	fs := flag.NewFlagSet("server", flag.ContinueOnError)
 	var opts serverOptions
 	fs.StringVar(&opts.ConfigPath, "config", "triton.yaml", "config file path")
-	fs.StringVar(&opts.Listen, "listen", "", "UDP/TLS listen address")
+	fs.StringVar(&opts.Listen, "listen", "", "experimental Triton UDP H3 listen address")
+	fs.BoolVar(&opts.AllowExperimentalH3, "allow-experimental-h3", false, "acknowledge and enable the experimental Triton UDP H3 listener")
 	fs.StringVar(&opts.ListenH3, "listen-h3", "", "real HTTP/3 UDP listen address")
 	fs.StringVar(&opts.ListenTCP, "listen-tcp", "", "TCP fallback listen address")
 	fs.StringVar(&opts.CertFile, "cert", "", "TLS certificate file")
 	fs.StringVar(&opts.KeyFile, "key", "", "TLS private key file")
 	fs.BoolVar(&opts.Dashboard, "dashboard", true, "enable dashboard")
 	fs.StringVar(&opts.DashboardListen, "dashboard-listen", "", "dashboard listen address")
+	fs.BoolVar(&opts.AllowRemoteDashboard, "allow-remote-dashboard", false, "allow dashboard binding on non-loopback interfaces")
 	fs.StringVar(&opts.DashboardUser, "dashboard-user", "", "dashboard basic auth username")
 	fs.StringVar(&opts.DashboardPass, "dashboard-pass", "", "dashboard basic auth password")
 	fs.Int64Var(&opts.MaxBodyBytes, "max-body-bytes", 0, "maximum accepted request body size in bytes")
@@ -51,6 +55,7 @@ func (o serverOptions) Apply(cfg *config.Config) {
 	if o.Listen != "" {
 		cfg.Server.Listen = o.Listen
 	}
+	cfg.Server.AllowExperimentalH3 = cfg.Server.AllowExperimentalH3 || o.AllowExperimentalH3
 	if o.ListenH3 != "" {
 		cfg.Server.ListenH3 = o.ListenH3
 	}
@@ -66,6 +71,7 @@ func (o serverOptions) Apply(cfg *config.Config) {
 	if o.DashboardListen != "" {
 		cfg.Server.DashboardListen = o.DashboardListen
 	}
+	cfg.Server.AllowRemoteDashboard = cfg.Server.AllowRemoteDashboard || o.AllowRemoteDashboard
 	if o.DashboardUser != "" {
 		cfg.Server.DashboardUser = o.DashboardUser
 	}

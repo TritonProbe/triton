@@ -1,133 +1,116 @@
 # Project Roadmap
 
 > Based on comprehensive codebase analysis performed on 2026-04-11
-> This roadmap prioritizes work needed to bring Triton to production quality.
+> This roadmap prioritizes the work needed to turn Triton into a clear, production-grade product instead of a mixed experimental platform.
 
 ## Current State Assessment
 
-Triton is a solid scaffold, not a production-ready QUIC/HTTP/3 platform. The CLI, config system, result persistence, local dashboard, and TCP/TLS test server all work, but the core promise of the product, a real custom QUIC and HTTP/3 test platform, is not implemented yet.
+Triton already works as a local HTTP diagnostics tool. The CLI is usable, storage is solid, CI/release automation exists, the dashboard works as a read-only status surface, H1/H2 benchmarking works, `h3://` probing and benchmarking work through `quic-go`, and `triton://` works through the experimental in-repo transport.
 
-Key blockers for production readiness:
+The core blocker is not "nothing works." The blocker is that the product story is split in two:
 
-- No real QUIC TLS handshake or packet protection
-- No network-capable HTTP/3 server/client
-- No H3 benchmarking path
-- No analytics/qlog/observability layer
-- Weak security defaults and no auth
-- No CI/CD or release automation
+- a real, dependency-backed HTTP/3 path that is useful today
+- an experimental custom QUIC/H3 path that is far from the spec
 
-What is working well:
+The next roadmap should decide which one is the product and which one is the lab.
 
-- Basic CLI workflow
-- File-backed probe/bench persistence
-- TCP/TLS test server
-- Focused unit and loopback tests
-- Small dependency surface
+## Phase 1: Critical Alignment (Week 1-2)
 
-## Phase 1: Critical Fixes (Week 1-2)
+### Must-fix items blocking a clean release story
 
-### Must-fix items blocking basic functionality
+- [ ] Decide product positioning: either ship Triton as a pragmatic HTTP/3 diagnostics tool powered by `quic-go`, or continue marketing it as a custom QUIC engine and explicitly label current releases experimental.
+- [ ] Disable the experimental UDP H3 listener by default or rename `server.listen` to make its status obvious.
+- [ ] Separate “real H3” and “experimental H3” terminology consistently across README, config, CLI help, and dashboard.
+- [ ] Remove generated runtime artifacts and built binaries from the maintained source snapshot.
+- [ ] Add eviction/cleanup to the IP rate limiter to prevent unbounded bucket growth.
 
-- [ ] Remove committed runtime artifacts and key material from `triton-data/` and stop treating generated data as source
-- [ ] Delete or consolidate duplicate handler implementations in `internal/appmux/mux.go` and `internal/server/endpoints.go`
-- [ ] Fix insecure benchmark defaults in `internal/bench/bench.go`; certificate verification must be on by default
-- [ ] Fix H3 loopback stream truncation in `internal/h3/loopback.go`
-- [ ] Fix `stream.Stream` lock discipline in `internal/quic/stream/stream.go`
-- [ ] Make CLI output truthful: either implement real table/markdown formatting or document JSON-only behavior
+## Phase 2: Production Hardening (Week 3-4)
 
-## Phase 2: Core Completion (Week 3-6)
+### Security, reliability, and operator clarity
 
-### Complete missing core features from specification
+- [ ] Add structured JSON error responses for dashboard APIs.
+- [ ] Add explicit config validation for unsupported combinations such as both experimental and real H3 listeners being enabled without clear intent.
+- [ ] Add a startup banner or log summary that clearly states which listeners are real HTTP/3 vs experimental UDP H3.
+- [ ] Add stronger dashboard auth options or hard-lock remote dashboard binding behind explicit opt-in.
+- [ ] Add response/request-size coverage and negative-path tests around upload, drip, and trace download flows.
 
-- [ ] Implement QUIC packet protection and key schedule from SPEC §3 / TASKS 37-41
-- [ ] Replace hardcoded toy dialer/listener handshake with a real transport state machine from TASKS 44-47
-- [ ] Implement network-capable HTTP/3 request/response handling instead of loopback-only H3 helpers
-- [ ] Complete missing server features: true H3 serving, `/push/:n` or remove it from claims, and truthful `quic-info`/`migration-test`
-- [ ] Add actual `h3` protocol support to benchmark mode or remove it from product messaging
-- [ ] Expand probe mode beyond HTTPS timing to at least handshake, TLS, throughput, streams, and Alt-Svc
+## Phase 3: Concurrency & Correctness (Week 5-6)
 
-## Phase 3: Hardening (Week 7-8)
+### Stabilize the experimental in-repo transport
 
-### Security, error handling, edge cases
+- [ ] Fix `stream.Stream` state locking so `-race` can pass reliably.
+- [ ] Resolve `Listener.acceptCh` dual-consumer ambiguity.
+- [ ] Add `go test -race ./...` to CI on a CGO-capable runner.
+- [ ] Add fuzz tests for packet, frame, and H3 frame parsing.
+- [ ] Add transport/property tests for malformed packets and partial frame streams.
 
-- [ ] Add bounded request-body handling for `/echo` and `/upload`
-- [ ] Add dashboard authentication and safe bind defaults
-- [ ] Add strict method enforcement on handlers to match API docs
-- [ ] Introduce structured error responses for dashboard APIs
-- [ ] Move server TLS minimum to 1.3 unless there is a compatibility reason not to
-- [ ] Add config validation for currently unused or weakly validated fields
+## Phase 4: Metrics & Benchmark Fidelity (Week 7-8)
 
-## Phase 4: Testing (Week 9-10)
+### Make results trustworthy
 
-### Comprehensive test coverage
+- [ ] Add percentile latency stats (`p50`, `p95`, `p99`) to bench output.
+- [ ] Split connect time, TLS/H3 handshake time, first-byte time, and transfer time in benchmark results.
+- [ ] Add protocol-specific failure counters and richer error summaries.
+- [ ] Document how `h1`, `h2`, `h3`, and `triton://` measurements differ so users do not compare incomparable transport stacks.
+- [ ] Add optional warmup usage in the actual runner or remove the unused config field.
 
-- [ ] Add tests for `internal/cli`
-- [ ] Add tests for `internal/appmux`
-- [ ] Add tests for `internal/probe` including failure paths
-- [ ] Add tests for `internal/bench`
-- [ ] Add tests for `internal/dashboard`
-- [ ] Enable race testing in CI with CGO-capable runners
-- [ ] Add fuzz tests for packet/frame/header parsing promised in `TASKS.md`
+## Phase 5: Dashboard Evolution (Week 9-10)
 
-## Phase 5: Performance & Optimization (Week 11-12)
+### Upgrade from JSON viewer to operator surface
 
-### Performance tuning and optimization
+- [ ] Replace `<pre>` JSON dumps with typed cards/tables for probes, benches, and traces.
+- [ ] Add filter/sort support for stored runs.
+- [ ] Add trace metadata preview before download.
+- [ ] Add request/trace status indicators and empty-state UX.
+- [ ] Keep the dashboard static and dependency-free unless there is a strong reason to add a frontend toolchain.
 
-- [ ] Replace naive H3 header codec with a real QPACK-aware implementation or explicitly demote current code to test-only
-- [ ] Avoid per-request blocking/sleep pitfalls where they distort benchmark results
-- [ ] Add histogram-based latency measurement instead of averages only
-- [ ] Optimize dashboard asset serving with compression and cache headers
-- [ ] Review allocation behavior in frame/header parsing once the real QUIC path exists
+## Phase 6: Spec Reconciliation (Week 11-14)
 
-## Phase 6: Documentation & DX (Week 13-14)
+### Either narrow the spec or fund the missing engine work
 
-### Documentation and developer experience
+- [ ] Update `.project/SPECIFICATION.md`, `.project/IMPLEMENTATION.md`, and `.project/TASKS.md` so they reflect the current architecture and dependency strategy.
+- [ ] If the custom engine remains in-scope: add a concrete vNext milestone for QUIC-TLS, packet protection, QPACK, and migration.
+- [ ] If the custom engine becomes lab-only: move it under an explicitly experimental namespace and reduce production promises accordingly.
+- [ ] Add `ARCHITECTURE.md` describing the three transport planes now in the repo.
 
-- [ ] Add `LICENSE`
-- [ ] Add `CONTRIBUTING.md`
-- [ ] Add `ARCHITECTURE.md` describing the actual architecture, not only the target one
-- [ ] Add `API.md` for dashboard and server endpoints
-- [ ] Document dev vs prod security posture explicitly
-- [ ] Expand `Makefile` to include lint, race, cross-build, and release targets
+## Phase 7: Deep Protocol Features (Week 15-20)
 
-## Phase 7: Release Preparation (Week 15-16)
+### Only if the custom-engine roadmap remains active
 
-### Final production preparation
-
-- [ ] Add GitHub Actions for build, test, vet, staticcheck, and race runs
-- [ ] Add `.goreleaser.yml`
-- [ ] Rework Docker image to multi-stage minimal runtime, non-root user, and correct exposed ports
-- [ ] Embed version/build metadata consistently
-- [ ] Add observability basics: structured logs, health endpoints, request IDs
-- [ ] Define rollback and support strategy
+- [ ] Implement QUIC-TLS key schedule and packet protection for the in-repo transport.
+- [ ] Add transport parameter handling, loss recovery, and congestion control.
+- [ ] Replace the newline-based experimental H3 header codec with real QPACK.
+- [ ] Implement 0-RTT and migration in either the custom transport or via honest wrappers around `quic-go`.
+- [ ] Expand probe mode to include deep protocol analysis promised in the spec.
 
 ## Beyond v1.0: Future Enhancements
 
-- [ ] Real-time dashboard charts, SSE, and WebSocket controls
-- [ ] qlog export and protocol timeline visualization
-- [ ] Distributed benchmarking
-- [ ] Multipath QUIC and WebTransport exploration
-- [ ] Prometheus/Grafana integration
+- [ ] Real-time dashboard updates via SSE or WebSocket.
+- [ ] Historical comparison views and trend reports.
+- [ ] Prometheus metrics export beyond the embedded `/metrics` surface.
+- [ ] Distributed benchmarking and remote agents.
+- [ ] A true protocol-inspection UI for qlog and packet/frame timelines.
 
 ## Effort Summary
 
 | Phase | Estimated Hours | Priority | Dependencies |
 |---|---:|---|---|
-| Phase 1 | 20h | Critical | None |
-| Phase 2 | 160h | High | Phase 1 |
-| Phase 3 | 40h | High | Phase 2 |
-| Phase 4 | 50h | High | Phase 2 |
-| Phase 5 | 40h | Medium | Phase 2 |
-| Phase 6 | 24h | Medium | Phase 1 |
-| Phase 7 | 36h | High | Phases 2-4 |
-| **Total** | **370h** |  |  |
+| Phase 1 | 24h | Critical | None |
+| Phase 2 | 28h | High | Phase 1 |
+| Phase 3 | 32h | High | Phase 2 |
+| Phase 4 | 32h | High | Phase 2 |
+| Phase 5 | 32h | Medium | Phase 2 |
+| Phase 6 | 24h | High | Phase 1 |
+| Phase 7 | 160h+ | Strategic | Phase 6 |
+| **Total to a strong pragmatic v1** | **140h** |  |  |
+| **Total including custom-engine roadmap** | **300h+** |  |  |
 
 ## Risk Assessment
 
 | Risk | Probability | Impact | Mitigation |
 |---|---|---|---|
-| QUIC/H3 scope remains much larger than current team bandwidth | High | High | Narrow v1 scope or extend schedule before claiming production readiness |
-| Product messaging continues to outrun implementation | High | High | Align README/site/spec with actual shipped capabilities every release |
-| Security shortcuts leak into release builds | Medium | High | Add CI policy checks for `InsecureSkipVerify`, committed keys, and exposed dashboard binds |
-| Loopback scaffolding calcifies into public API | Medium | Medium | Clearly label experimental/test-only code and separate it from production packages |
-| No CI leads to regressions once implementation expands | High | Medium | Add automated pipelines before major feature work continues |
+| Product messaging continues to outrun implementation | High | High | Align docs/config/CLI naming immediately |
+| Experimental H3 path gets mistaken for the real supported server path | High | High | Disable by default or rename aggressively |
+| Race issues surface once `-race` is added to CI | Medium | Medium | Fix stream/accept-channel synchronization before enabling gate |
+| Benchmark numbers are over-interpreted as protocol-science quality | Medium | High | Improve metrics and document methodology |
+| Custom QUIC roadmap absorbs team bandwidth without shipping user value | High | High | Decide early whether it is product-critical or research-only |

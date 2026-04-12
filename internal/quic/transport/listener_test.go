@@ -62,6 +62,37 @@ func TestListenerDialerLoopback(t *testing.T) {
 	}
 }
 
+func TestWaitForConnectionsDoesNotConsumeAcceptQueue(t *testing.T) {
+	listener, err := ListenQUIC("127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	dialer := NewDialer(2 * time.Second)
+	session, err := dialer.DialSession(listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	conns, err := listener.WaitForConnections(1, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(conns) != 1 {
+		t.Fatalf("expected one observed connection, got %d", len(conns))
+	}
+
+	accepted, err := listener.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if accepted != conns[0] {
+		t.Fatal("expected Accept to return the same connection observed by WaitForConnections")
+	}
+}
+
 func acceptStreamWithTimeout(m *stream.Manager, timeout time.Duration) (*stream.Stream, error) {
 	type result struct {
 		s   *stream.Stream

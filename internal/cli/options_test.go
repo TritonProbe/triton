@@ -12,12 +12,14 @@ func TestParseServerOptionsAndApply(t *testing.T) {
 	opts, err := parseServerOptions([]string{
 		"-config", "custom.yaml",
 		"-listen", ":4443",
+		"-allow-experimental-h3",
 		"-listen-h3", ":4444",
 		"-listen-tcp", ":9443",
 		"-cert", "cert.pem",
 		"-key", "key.pem",
 		"-dashboard=false",
-		"-dashboard-listen", "127.0.0.1:9191",
+		"-dashboard-listen", "0.0.0.0:9191",
+		"-allow-remote-dashboard",
 		"-dashboard-user", "admin",
 		"-dashboard-pass", "secret",
 		"-max-body-bytes", "2048",
@@ -37,14 +39,20 @@ func TestParseServerOptionsAndApply(t *testing.T) {
 	if cfg.Server.Listen != ":4443" || cfg.Server.ListenH3 != ":4444" || cfg.Server.ListenTCP != ":9443" {
 		t.Fatalf("server listen options not applied: %+v", cfg.Server)
 	}
+	if !cfg.Server.AllowExperimentalH3 {
+		t.Fatalf("expected experimental h3 opt-in to be applied: %+v", cfg.Server)
+	}
 	if cfg.Server.CertFile != "cert.pem" || cfg.Server.KeyFile != "key.pem" {
 		t.Fatalf("TLS options not applied: %+v", cfg.Server)
 	}
 	if cfg.Server.Dashboard {
 		t.Fatal("expected dashboard to be disabled")
 	}
-	if cfg.Server.DashboardListen != "127.0.0.1:9191" || cfg.Server.DashboardUser != "admin" || cfg.Server.DashboardPass != "secret" {
+	if cfg.Server.DashboardListen != "0.0.0.0:9191" || cfg.Server.DashboardUser != "admin" || cfg.Server.DashboardPass != "secret" {
 		t.Fatalf("dashboard options not applied: %+v", cfg.Server)
+	}
+	if !cfg.Server.AllowRemoteDashboard {
+		t.Fatalf("expected allow remote dashboard option to be applied: %+v", cfg.Server)
 	}
 	if cfg.Server.MaxBodyBytes != 2048 || cfg.Server.AccessLog != "logs/access.log" || cfg.Server.TraceDir != "traces/server" {
 		t.Fatalf("server limits/logging options not applied: %+v", cfg.Server)

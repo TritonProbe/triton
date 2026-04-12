@@ -28,11 +28,13 @@ func Load(path string) (Config, error) {
 
 func applyEnv(cfg *Config) {
 	setString("TRITON_SERVER_LISTEN", &cfg.Server.Listen)
+	setBool("TRITON_SERVER_ALLOW_EXPERIMENTAL_H3", &cfg.Server.AllowExperimentalH3)
 	setString("TRITON_SERVER_LISTEN_H3", &cfg.Server.ListenH3)
 	setString("TRITON_SERVER_LISTEN_TCP", &cfg.Server.ListenTCP)
 	setString("TRITON_SERVER_TLS_CERT", &cfg.Server.CertFile)
 	setString("TRITON_SERVER_TLS_KEY", &cfg.Server.KeyFile)
 	setString("TRITON_SERVER_DASHBOARD_LISTEN", &cfg.Server.DashboardListen)
+	setBool("TRITON_SERVER_ALLOW_REMOTE_DASHBOARD", &cfg.Server.AllowRemoteDashboard)
 	setString("TRITON_SERVER_DASHBOARD_USER", &cfg.Server.DashboardUser)
 	setString("TRITON_SERVER_DASHBOARD_PASS", &cfg.Server.DashboardPass)
 	setBool("TRITON_DASHBOARD_ENABLED", &cfg.Server.Dashboard)

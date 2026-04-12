@@ -2,6 +2,7 @@ package probe
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net"
 	"net/http"
@@ -28,6 +29,7 @@ type Result struct {
 	Timings    map[string]int64 `json:"timings_ms" yaml:"timings_ms"`
 	TLS        map[string]any   `json:"tls" yaml:"tls"`
 	Headers    http.Header      `json:"headers" yaml:"headers"`
+	Analysis   map[string]any   `json:"analysis,omitempty" yaml:"analysis,omitempty"`
 }
 
 func Run(target string, cfg config.ProbeConfig) (*Result, error) {
@@ -98,14 +100,11 @@ func Run(target string, cfg config.ProbeConfig) (*Result, error) {
 			"first_byte": millisBetween(start, gotFirstByte),
 			"total":      time.Since(start).Milliseconds(),
 		},
-		TLS: map[string]any{},
+		TLS:      map[string]any{},
+		Analysis: analyzeHeaders(resp.Header),
 	}
 	if resp.TLS != nil {
-		result.TLS = map[string]any{
-			"version": resp.TLS.Version,
-			"cipher":  tls.CipherSuiteName(resp.TLS.CipherSuite),
-			"alpn":    resp.TLS.NegotiatedProtocol,
-		}
+		result.TLS = tlsMetadata(resp.TLS)
 	}
 	return result, nil
 }
@@ -160,14 +159,11 @@ func runStandardH3Probe(parsed *url.URL, cfg config.ProbeConfig) (*Result, error
 			"first_byte": millisBetween(start, gotFirstByte),
 			"total":      time.Since(start).Milliseconds(),
 		},
-		TLS: map[string]any{},
+		TLS:      map[string]any{},
+		Analysis: analyzeHeaders(resp.Header),
 	}
 	if resp.TLS != nil {
-		result.TLS = map[string]any{
-			"version": resp.TLS.Version,
-			"cipher":  tls.CipherSuiteName(resp.TLS.CipherSuite),
-			"alpn":    resp.TLS.NegotiatedProtocol,
-		}
+		result.TLS = tlsMetadata(resp.TLS)
 	}
 	after, err := observability.ListQLOGFiles(cfg.TraceDir)
 	if err != nil {
@@ -239,6 +235,9 @@ func runLoopbackProbe(parsed *url.URL, cfg config.ProbeConfig) (*Result, error) 
 		TLS: map[string]any{
 			"mode": "in-process-loopback",
 		},
+		Analysis: map[string]any{
+			"transport": "loopback",
+		},
 	}, nil
 }
 
@@ -275,5 +274,73 @@ func runRemoteTritonProbe(parsed *url.URL, cfg config.ProbeConfig) (*Result, err
 		TLS: map[string]any{
 			"mode": "experimental-udp-h3",
 		},
+		Analysis: map[string]any{
+			"transport": "experimental-triton-h3",
+		},
 	}, nil
+}
+
+func tlsMetadata(state *tls.ConnectionState) map[string]any {
+	meta := map[string]any{
+		"version":         tlsVersion(state.Version),
+		"cipher":          tls.CipherSuiteName(state.CipherSuite),
+		"alpn":            state.NegotiatedProtocol,
+		"server_name":     state.ServerName,
+		"peer_certs":      len(state.PeerCertificates),
+		"resumed":         state.DidResume,
+		"handshake_state": "complete",
+	}
+	if len(state.VerifiedChains) > 0 {
+		meta["verified_chains"] = len(state.VerifiedChains)
+	}
+	if len(state.PeerCertificates) > 0 {
+		meta["leaf_cert"] = certificateSummary(state.PeerCertificates[0])
+	}
+	return meta
+}
+
+func certificateSummary(cert *x509.Certificate) map[string]any {
+	if cert == nil {
+		return map[string]any{}
+	}
+	return map[string]any{
+		"subject":     cert.Subject.String(),
+		"issuer":      cert.Issuer.String(),
+		"dns_names":   append([]string(nil), cert.DNSNames...),
+		"not_before":  cert.NotBefore.UTC().Format(time.RFC3339),
+		"not_after":   cert.NotAfter.UTC().Format(time.RFC3339),
+		"is_ca":       cert.IsCA,
+		"serial":      cert.SerialNumber.String(),
+		"fingerprint": fmt.Sprintf("%X", cert.Signature[:min(len(cert.Signature), 8)]),
+	}
+}
+
+func analyzeHeaders(headers http.Header) map[string]any {
+	analysis := map[string]any{}
+	altSvc := headers.Values("Alt-Svc")
+	if len(altSvc) > 0 {
+		analysis["alt_svc"] = map[string]any{
+			"present": true,
+			"values":  append([]string(nil), altSvc...),
+		}
+	}
+	return analysis
+}
+
+func tlsVersion(v uint16) string {
+	switch v {
+	case tls.VersionTLS13:
+		return "TLS1.3"
+	case tls.VersionTLS12:
+		return "TLS1.2"
+	default:
+		return fmt.Sprintf("0x%x", v)
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

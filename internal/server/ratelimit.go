@@ -8,20 +8,28 @@ import (
 )
 
 type rateLimiter struct {
-	mu      sync.Mutex
-	limit   int
-	buckets map[string]bucket
+	mu           sync.Mutex
+	limit        int
+	buckets      map[string]bucket
+	now          func() time.Time
+	sweepEvery   int
+	requestsSeen int
+	maxIdle      time.Duration
 }
 
 type bucket struct {
-	window int64
-	count  int
+	window   int64
+	count    int
+	lastSeen time.Time
 }
 
 func newRateLimiter(limit int) *rateLimiter {
 	return &rateLimiter{
-		limit:   limit,
-		buckets: make(map[string]bucket),
+		limit:      limit,
+		buckets:    make(map[string]bucket),
+		now:        time.Now,
+		sweepEvery: 256,
+		maxIdle:    2 * time.Minute,
 	}
 }
 
@@ -31,15 +39,21 @@ func (r *rateLimiter) middleware(next http.Handler) http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		ip := clientIP(req.RemoteAddr)
-		now := time.Now().Unix()
+		now := r.now()
+		window := now.Unix()
 
 		r.mu.Lock()
+		r.requestsSeen++
+		if r.sweepEvery > 0 && r.requestsSeen%r.sweepEvery == 0 {
+			r.sweepLocked(now)
+		}
 		entry := r.buckets[ip]
-		if entry.window != now {
-			entry.window = now
+		if entry.window != window {
+			entry.window = window
 			entry.count = 0
 		}
 		entry.count++
+		entry.lastSeen = now
 		r.buckets[ip] = entry
 		allowed := entry.count <= r.limit
 		r.mu.Unlock()
@@ -51,6 +65,14 @@ func (r *rateLimiter) middleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, req)
 	})
+}
+
+func (r *rateLimiter) sweepLocked(now time.Time) {
+	for ip, entry := range r.buckets {
+		if now.Sub(entry.lastSeen) > r.maxIdle {
+			delete(r.buckets, ip)
+		}
+	}
 }
 
 func clientIP(remoteAddr string) string {
