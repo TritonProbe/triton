@@ -32,15 +32,210 @@ type Result struct {
 	Proto      string           `json:"proto" yaml:"proto"`
 	TraceFiles []string         `json:"trace_files,omitempty" yaml:"trace_files,omitempty"`
 	Timings    map[string]int64 `json:"timings_ms" yaml:"timings_ms"`
-	TLS        map[string]any   `json:"tls" yaml:"tls"`
+	TLS        any              `json:"tls" yaml:"tls"`
 	Headers    http.Header      `json:"headers" yaml:"headers"`
 	Analysis   map[string]any   `json:"analysis,omitempty" yaml:"analysis,omitempty"`
+}
+
+type SupportEntry struct {
+	Requested bool   `json:"requested" yaml:"requested"`
+	Coverage  string `json:"coverage,omitempty" yaml:"coverage,omitempty"`
+	State     string `json:"state,omitempty" yaml:"state,omitempty"`
+	Summary   string `json:"summary,omitempty" yaml:"summary,omitempty"`
+	Mode      string `json:"mode,omitempty" yaml:"mode,omitempty"`
+}
+
+type SupportSummary struct {
+	RequestedTests int     `json:"requested_tests" yaml:"requested_tests"`
+	Available      int     `json:"available" yaml:"available"`
+	NotRun         int     `json:"not_run" yaml:"not_run"`
+	Unavailable    int     `json:"unavailable" yaml:"unavailable"`
+	Full           int     `json:"full" yaml:"full"`
+	Partial        int     `json:"partial" yaml:"partial"`
+	CoverageRatio  float64 `json:"coverage_ratio" yaml:"coverage_ratio"`
+}
+
+type SkippedTest struct {
+	Name   string `json:"name" yaml:"name"`
+	Reason string `json:"reason" yaml:"reason"`
+}
+
+type TestPlan struct {
+	Requested []string      `json:"requested" yaml:"requested"`
+	Executed  []string      `json:"executed" yaml:"executed"`
+	Skipped   []SkippedTest `json:"skipped,omitempty" yaml:"skipped,omitempty"`
+}
+
+type ResponseAnalysis struct {
+	BodyBytes          int64   `json:"body_bytes" yaml:"body_bytes"`
+	ThroughputBytesSec float64 `json:"throughput_bytes_sec" yaml:"throughput_bytes_sec"`
+	ThroughputBitsSec  float64 `json:"throughput_bits_sec" yaml:"throughput_bits_sec"`
+	StatusClass        int     `json:"status_class" yaml:"status_class"`
+}
+
+type LatencyAnalysis struct {
+	Samples   int       `json:"samples" yaml:"samples"`
+	AverageMS float64   `json:"avg_ms" yaml:"avg_ms"`
+	P50       float64   `json:"p50" yaml:"p50"`
+	P95       float64   `json:"p95" yaml:"p95"`
+	P99       float64   `json:"p99" yaml:"p99"`
+	Errors    int       `json:"errors" yaml:"errors"`
+	SamplesMS []float64 `json:"samples_ms,omitempty" yaml:"samples_ms,omitempty"`
+}
+
+type StreamAnalysis struct {
+	Attempted       int            `json:"attempted" yaml:"attempted"`
+	Successful      int            `json:"successful" yaml:"successful"`
+	Errors          int            `json:"errors" yaml:"errors"`
+	SuccessRate     float64        `json:"success_rate" yaml:"success_rate"`
+	AverageLatency  float64        `json:"avg_latency_ms" yaml:"avg_latency_ms"`
+	P95Latency      float64        `json:"p95_latency_ms" yaml:"p95_latency_ms"`
+	ThroughputBytes int64          `json:"throughput_bytes" yaml:"throughput_bytes"`
+	StatusClasses   map[string]int `json:"status_classes,omitempty" yaml:"status_classes,omitempty"`
+	ErrorCategories map[string]int `json:"error_categories,omitempty" yaml:"error_categories,omitempty"`
+}
+
+type CertificateSummary struct {
+	Subject     string   `json:"subject" yaml:"subject"`
+	Issuer      string   `json:"issuer" yaml:"issuer"`
+	DNSNames    []string `json:"dns_names,omitempty" yaml:"dns_names,omitempty"`
+	NotBefore   string   `json:"not_before" yaml:"not_before"`
+	NotAfter    string   `json:"not_after" yaml:"not_after"`
+	IsCA        bool     `json:"is_ca" yaml:"is_ca"`
+	Serial      string   `json:"serial" yaml:"serial"`
+	Fingerprint string   `json:"fingerprint" yaml:"fingerprint"`
+}
+
+type TLSMetadata struct {
+	Mode           string              `json:"mode,omitempty" yaml:"mode,omitempty"`
+	Version        string              `json:"version,omitempty" yaml:"version,omitempty"`
+	Cipher         string              `json:"cipher,omitempty" yaml:"cipher,omitempty"`
+	ALPN           string              `json:"alpn,omitempty" yaml:"alpn,omitempty"`
+	ServerName     string              `json:"server_name,omitempty" yaml:"server_name,omitempty"`
+	PeerCerts      int                 `json:"peer_certs,omitempty" yaml:"peer_certs,omitempty"`
+	Resumed        bool                `json:"resumed" yaml:"resumed"`
+	HandshakeState string              `json:"handshake_state,omitempty" yaml:"handshake_state,omitempty"`
+	VerifiedChains int                 `json:"verified_chains,omitempty" yaml:"verified_chains,omitempty"`
+	LeafCert       *CertificateSummary `json:"leaf_cert,omitempty" yaml:"leaf_cert,omitempty"`
+}
+
+type AltSvcAnalysis struct {
+	Present bool     `json:"present" yaml:"present"`
+	Values  []string `json:"values,omitempty" yaml:"values,omitempty"`
+}
+
+type QPACKAnalysis struct {
+	Supported         bool    `json:"supported" yaml:"supported"`
+	Mode              string  `json:"mode" yaml:"mode"`
+	HeaderCount       int     `json:"header_count" yaml:"header_count"`
+	RawBytes          int     `json:"raw_bytes" yaml:"raw_bytes"`
+	EstimatedBlock    int     `json:"estimated_block" yaml:"estimated_block"`
+	EstimatedRatio    float64 `json:"estimated_ratio" yaml:"estimated_ratio"`
+	CompressionSaving int     `json:"compression_saving" yaml:"compression_saving"`
+	Note              string  `json:"note,omitempty" yaml:"note,omitempty"`
+}
+
+type VersionAnalysis struct {
+	Supported       bool   `json:"supported" yaml:"supported"`
+	Mode            string `json:"mode" yaml:"mode"`
+	ObservedProto   string `json:"observed_proto" yaml:"observed_proto"`
+	ALPN            string `json:"alpn,omitempty" yaml:"alpn,omitempty"`
+	QUICVersion     string `json:"quic_version" yaml:"quic_version"`
+	NegotiationSeen bool   `json:"negotiation_seen" yaml:"negotiation_seen"`
+	Note            string `json:"note,omitempty" yaml:"note,omitempty"`
+}
+
+type RetryAnalysis struct {
+	Supported     bool   `json:"supported" yaml:"supported"`
+	Mode          string `json:"mode" yaml:"mode"`
+	ObservedProto string `json:"observed_proto" yaml:"observed_proto"`
+	ALPN          string `json:"alpn,omitempty" yaml:"alpn,omitempty"`
+	RetryObserved bool   `json:"retry_observed" yaml:"retry_observed"`
+	ConnectMS     int64  `json:"connect_ms" yaml:"connect_ms"`
+	TLSMS         int64  `json:"tls_ms" yaml:"tls_ms"`
+	Visibility    string `json:"visibility" yaml:"visibility"`
+	Note          string `json:"note,omitempty" yaml:"note,omitempty"`
+}
+
+type ECNAnalysis struct {
+	Supported     bool   `json:"supported" yaml:"supported"`
+	Mode          string `json:"mode" yaml:"mode"`
+	ObservedProto string `json:"observed_proto" yaml:"observed_proto"`
+	ALPN          string `json:"alpn,omitempty" yaml:"alpn,omitempty"`
+	ECNVisible    bool   `json:"ecn_visible" yaml:"ecn_visible"`
+	PacketMarks   string `json:"packet_marks" yaml:"packet_marks"`
+	Note          string `json:"note,omitempty" yaml:"note,omitempty"`
+}
+
+type SpinBitAnalysis struct {
+	Supported     bool    `json:"supported" yaml:"supported"`
+	Mode          string  `json:"mode" yaml:"mode"`
+	RTTEstimateMS float64 `json:"rtt_estimate_ms" yaml:"rtt_estimate_ms"`
+	P95MS         float64 `json:"p95_ms" yaml:"p95_ms"`
+	Stability     string  `json:"stability" yaml:"stability"`
+	SpinObserved  bool    `json:"spin_observed" yaml:"spin_observed"`
+	Note          string  `json:"note,omitempty" yaml:"note,omitempty"`
+}
+
+type LossAnalysis struct {
+	Supported         bool           `json:"supported" yaml:"supported"`
+	Mode              string         `json:"mode" yaml:"mode"`
+	Signal            string         `json:"signal" yaml:"signal"`
+	LatencyErrors     int            `json:"latency_errors" yaml:"latency_errors"`
+	LatencySamples    int            `json:"latency_samples" yaml:"latency_samples"`
+	StreamAttempts    int            `json:"stream_attempts" yaml:"stream_attempts"`
+	StreamErrors      int            `json:"stream_errors" yaml:"stream_errors"`
+	SuccessRate       float64        `json:"success_rate" yaml:"success_rate"`
+	ErrorCategories   map[string]int `json:"error_categories,omitempty" yaml:"error_categories,omitempty"`
+	TimeoutIndicators int            `json:"timeout_indicators" yaml:"timeout_indicators"`
+	Note              string         `json:"note,omitempty" yaml:"note,omitempty"`
+}
+
+type CongestionAnalysis struct {
+	Supported          bool    `json:"supported" yaml:"supported"`
+	Mode               string  `json:"mode" yaml:"mode"`
+	Signal             string  `json:"signal" yaml:"signal"`
+	P50MS              float64 `json:"p50_ms" yaml:"p50_ms"`
+	P95MS              float64 `json:"p95_ms" yaml:"p95_ms"`
+	JitterMS           float64 `json:"jitter_ms" yaml:"jitter_ms"`
+	SpreadRatio        float64 `json:"spread_ratio" yaml:"spread_ratio"`
+	StreamAverageMS    float64 `json:"stream_avg_ms" yaml:"stream_avg_ms"`
+	StreamP95MS        float64 `json:"stream_p95_ms" yaml:"stream_p95_ms"`
+	ConcurrentAttempts int     `json:"concurrent_attempts" yaml:"concurrent_attempts"`
+	SuccessRate        float64 `json:"success_rate" yaml:"success_rate"`
+	Note               string  `json:"note,omitempty" yaml:"note,omitempty"`
+}
+
+type ZeroRTTAnalysis struct {
+	Supported      bool    `json:"supported" yaml:"supported"`
+	Mode           string  `json:"mode" yaml:"mode"`
+	InitialMS      float64 `json:"initial_ms,omitempty" yaml:"initial_ms,omitempty"`
+	ResumedMS      float64 `json:"resumed_ms,omitempty" yaml:"resumed_ms,omitempty"`
+	InitialResumed bool    `json:"initial_resumed,omitempty" yaml:"initial_resumed,omitempty"`
+	Resumed        bool    `json:"resumed,omitempty" yaml:"resumed,omitempty"`
+	TimeSavedMS    float64 `json:"time_saved_ms,omitempty" yaml:"time_saved_ms,omitempty"`
+	Requested0RTT  bool    `json:"requested_0rtt" yaml:"requested_0rtt"`
+	Note           string  `json:"note,omitempty" yaml:"note,omitempty"`
+	Error          string  `json:"error,omitempty" yaml:"error,omitempty"`
+}
+
+type MigrationAnalysis struct {
+	Supported      bool    `json:"supported" yaml:"supported"`
+	Mode           string  `json:"mode" yaml:"mode"`
+	Target         string  `json:"target,omitempty" yaml:"target,omitempty"`
+	StatusClass    int     `json:"status_class,omitempty" yaml:"status_class,omitempty"`
+	BodyBytes      int     `json:"body_bytes,omitempty" yaml:"body_bytes,omitempty"`
+	DurationMS     float64 `json:"duration_ms,omitempty" yaml:"duration_ms,omitempty"`
+	RequestedCheck bool    `json:"requested_check" yaml:"requested_check"`
+	Note           string  `json:"note,omitempty" yaml:"note,omitempty"`
+	Message        string  `json:"message,omitempty" yaml:"message,omitempty"`
+	Error          string  `json:"error,omitempty" yaml:"error,omitempty"`
 }
 
 type testPlan struct {
 	requested []string
 	executed  []string
-	skipped   []map[string]any
+	skipped   []SkippedTest
 }
 
 type testDefinition struct {
@@ -121,7 +316,12 @@ var probeTestDefinitions = map[string]testDefinition{
 	},
 }
 
+const maxProbeResponseBodyBytes int64 = 1 << 20
+
 func Run(target string, cfg config.ProbeConfig) (*Result, error) {
+	if cfg.Insecure && !cfg.AllowInsecureTLS {
+		return nil, fmt.Errorf("probe insecure TLS requires allow_insecure_tls")
+	}
 	plan := newTestPlan(cfg.DefaultTests)
 	parsed, err := url.Parse(target)
 	if err != nil {
@@ -155,7 +355,8 @@ func Run(target string, cfg config.ProbeConfig) (*Result, error) {
 		Timeout: cfg.Timeout,
 		Transport: &http.Transport{
 			ForceAttemptHTTP2: true,
-			TLSClientConfig:   &tls.Config{InsecureSkipVerify: cfg.Insecure, NextProtos: []string{"h2", "http/1.1"}},
+			// #nosec G402 -- cfg.Insecure is gated by explicit allow_insecure_tls validation for lab use.
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: cfg.Insecure, NextProtos: []string{"h2", "http/1.1"}},
 			DialContext: (&net.Dialer{
 				Timeout: cfg.Timeout,
 			}).DialContext,
@@ -194,7 +395,7 @@ func Run(target string, cfg config.ProbeConfig) (*Result, error) {
 			"first_byte": millisBetween(start, gotFirstByte),
 			"total":      time.Since(start).Milliseconds(),
 		},
-		TLS:      map[string]any{},
+		TLS:      TLSMetadata{},
 		Analysis: analyzeHeaders(resp.Header, plan),
 	}
 	if resp.TLS != nil && plan.shouldRun("tls") {
@@ -297,7 +498,7 @@ func runStandardH3Probe(parsed *url.URL, cfg config.ProbeConfig) (*Result, error
 			"first_byte": millisBetween(start, gotFirstByte),
 			"total":      time.Since(start).Milliseconds(),
 		},
-		TLS:      map[string]any{},
+		TLS:      TLSMetadata{},
 		Analysis: analyzeHeaders(resp.Header, plan),
 	}
 	if resp.TLS != nil && plan.shouldRun("tls") {
@@ -438,8 +639,8 @@ func runLoopbackProbe(parsed *url.URL, cfg config.ProbeConfig) (*Result, error) 
 		Timings: map[string]int64{
 			"total": time.Since(start).Milliseconds(),
 		},
-		TLS: map[string]any{
-			"mode": "in-process-loopback",
+		TLS: TLSMetadata{
+			Mode: "in-process-loopback",
 		},
 		Analysis: map[string]any{
 			"transport": "loopback",
@@ -558,8 +759,8 @@ func runRemoteTritonProbe(parsed *url.URL, cfg config.ProbeConfig, plan testPlan
 		Timings: map[string]int64{
 			"total": time.Since(start).Milliseconds(),
 		},
-		TLS: map[string]any{
-			"mode": "experimental-udp-h3",
+		TLS: TLSMetadata{
+			Mode: "experimental-udp-h3",
 		},
 		Analysis: map[string]any{
 			"transport": "experimental-triton-h3",
@@ -688,14 +889,18 @@ func doStandardRequestBody(client *http.Client, target string) (int, []byte, err
 		return 0, nil, err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	limited := &io.LimitedReader{R: resp.Body, N: maxProbeResponseBodyBytes + 1}
+	body, err := io.ReadAll(limited)
 	if err != nil {
 		return 0, nil, err
+	}
+	if int64(len(body)) > maxProbeResponseBodyBytes {
+		return resp.StatusCode, nil, fmt.Errorf("response body exceeds limit of %d bytes", maxProbeResponseBodyBytes)
 	}
 	return resp.StatusCode, body, nil
 }
 
-func measureH3Resumption(target string, cfg config.ProbeConfig) (map[string]any, bool) {
+func measureH3Resumption(target string, cfg config.ProbeConfig) (ZeroRTTAnalysis, bool) {
 	cache := tls.NewLRUClientSessionCache(8)
 
 	firstClient, firstTransport := realh3.NewClientWithSessionCache(cfg.Timeout, cfg.Insecure, "", cache)
@@ -703,14 +908,22 @@ func measureH3Resumption(target string, cfg config.ProbeConfig) (map[string]any,
 	firstStart := time.Now()
 	firstResp, err := firstClient.Get(target)
 	if err != nil {
-		return map[string]any{
-			"supported": false,
-			"error":     err.Error(),
-			"mode":      "tls-resumption-check",
+		return ZeroRTTAnalysis{
+			Supported:     false,
+			Error:         err.Error(),
+			Mode:          "tls-resumption-check",
+			Requested0RTT: true,
 		}, true
 	}
 	_, _ = io.Copy(io.Discard, firstResp.Body)
-	firstResp.Body.Close()
+	if err := firstResp.Body.Close(); err != nil {
+		return ZeroRTTAnalysis{
+			Supported:     false,
+			Error:         err.Error(),
+			Mode:          "tls-resumption-check",
+			Requested0RTT: true,
+		}, true
+	}
 	firstDuration := time.Since(firstStart)
 	firstResumed := firstResp.TLS != nil && firstResp.TLS.DidResume
 
@@ -719,40 +932,51 @@ func measureH3Resumption(target string, cfg config.ProbeConfig) (map[string]any,
 	secondStart := time.Now()
 	secondResp, err := secondClient.Get(target)
 	if err != nil {
-		return map[string]any{
-			"supported":       false,
-			"initial_ms":      float64(firstDuration) / float64(time.Millisecond),
-			"initial_resumed": firstResumed,
-			"error":           err.Error(),
-			"mode":            "tls-resumption-check",
+		return ZeroRTTAnalysis{
+			Supported:      false,
+			InitialMS:      float64(firstDuration) / float64(time.Millisecond),
+			InitialResumed: firstResumed,
+			Error:          err.Error(),
+			Mode:           "tls-resumption-check",
+			Requested0RTT:  true,
 		}, true
 	}
 	_, _ = io.Copy(io.Discard, secondResp.Body)
-	secondResp.Body.Close()
+	if err := secondResp.Body.Close(); err != nil {
+		return ZeroRTTAnalysis{
+			Supported:      false,
+			InitialMS:      float64(firstDuration) / float64(time.Millisecond),
+			InitialResumed: firstResumed,
+			Error:          err.Error(),
+			Mode:           "tls-resumption-check",
+			Requested0RTT:  true,
+		}, true
+	}
 	secondDuration := time.Since(secondStart)
 	secondResumed := secondResp.TLS != nil && secondResp.TLS.DidResume
 
 	saved := firstDuration - secondDuration
-	return map[string]any{
-		"supported":       secondResumed,
-		"mode":            "tls-resumption-check",
-		"initial_ms":      float64(firstDuration) / float64(time.Millisecond),
-		"resumed_ms":      float64(secondDuration) / float64(time.Millisecond),
-		"initial_resumed": firstResumed,
-		"resumed":         secondResumed,
-		"time_saved_ms":   float64(saved) / float64(time.Millisecond),
-		"requested_0rtt":  true,
-		"note":            "measures HTTP/3 connection resumption; true early data is not exposed at this layer",
+	return ZeroRTTAnalysis{
+		Supported:      secondResumed,
+		Mode:           "tls-resumption-check",
+		InitialMS:      float64(firstDuration) / float64(time.Millisecond),
+		ResumedMS:      float64(secondDuration) / float64(time.Millisecond),
+		InitialResumed: firstResumed,
+		Resumed:        secondResumed,
+		TimeSavedMS:    float64(saved) / float64(time.Millisecond),
+		Requested0RTT:  true,
+		Note:           "measures HTTP/3 connection resumption; true early data is not exposed at this layer",
 	}, true
 }
 
-func measureHTTPMigration(target string, cfg config.ProbeConfig) (map[string]any, bool) {
+func measureHTTPMigration(target string, cfg config.ProbeConfig) (MigrationAnalysis, bool) {
 	parsed, err := url.Parse(target)
 	if err != nil {
-		return map[string]any{
-			"supported": false,
-			"error":     err.Error(),
-			"mode":      "endpoint-capability-check",
+		return MigrationAnalysis{
+			Supported:      false,
+			Error:          err.Error(),
+			Mode:           "endpoint-capability-check",
+			RequestedCheck: true,
 		}, true
 	}
 	parsed.Path = "/migration-test"
@@ -762,77 +986,78 @@ func measureHTTPMigration(target string, cfg config.ProbeConfig) (map[string]any
 		Timeout: cfg.Timeout,
 		Transport: &http.Transport{
 			ForceAttemptHTTP2: true,
-			TLSClientConfig:   &tls.Config{InsecureSkipVerify: cfg.Insecure, NextProtos: []string{"h2", "http/1.1"}},
+			// #nosec G402 -- cfg.Insecure is gated by explicit allow_insecure_tls validation for lab use.
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: cfg.Insecure, NextProtos: []string{"h2", "http/1.1"}},
 			DialContext: (&net.Dialer{
 				Timeout: cfg.Timeout,
 			}).DialContext,
 		},
 	}
 	status, body, err := doStandardRequestBody(client, parsed.String())
-	result := map[string]any{
-		"mode":            "endpoint-capability-check",
-		"target":          parsed.String(),
-		"status_class":    status / 100,
-		"body_bytes":      len(body),
-		"requested_check": true,
-		"note":            "checks the migration endpoint contract; it does not perform live path rebinding",
+	result := MigrationAnalysis{
+		Mode:           "endpoint-capability-check",
+		Target:         parsed.String(),
+		StatusClass:    status / 100,
+		BodyBytes:      len(body),
+		RequestedCheck: true,
+		Note:           "checks the migration endpoint contract; it does not perform live path rebinding",
 	}
 	if err != nil {
-		result["supported"] = false
-		result["error"] = err.Error()
+		result.Supported = false
+		result.Error = err.Error()
 		return result, true
 	}
-	mergeMigrationContract(result, body, status/100 == 2)
+	mergeMigrationContract(&result, body, status/100 == 2)
 	return result, true
 }
 
-func measureLoopbackMigration(cfg config.ProbeConfig) (map[string]any, bool) {
+func measureLoopbackMigration(cfg config.ProbeConfig) (MigrationAnalysis, bool) {
 	start := time.Now()
 	resp, err := runSingleProbeH3Request("loopback", "/migration-test", cfg.Timeout, true)
-	result := map[string]any{
-		"mode":            "endpoint-capability-check",
-		"target":          "triton://loopback/migration-test",
-		"requested_check": true,
-		"note":            "checks the migration endpoint contract; it does not perform live path rebinding",
+	result := MigrationAnalysis{
+		Mode:           "endpoint-capability-check",
+		Target:         "triton://loopback/migration-test",
+		RequestedCheck: true,
+		Note:           "checks the migration endpoint contract; it does not perform live path rebinding",
 	}
 	if err != nil {
-		result["supported"] = false
-		result["error"] = err.Error()
+		result.Supported = false
+		result.Error = err.Error()
 		return result, true
 	}
-	result["status_class"] = resp.StatusCode / 100
-	result["body_bytes"] = len(resp.Body)
-	result["duration_ms"] = float64(time.Since(start)) / float64(time.Millisecond)
-	mergeMigrationContract(result, resp.Body, resp.StatusCode/100 == 2)
+	result.StatusClass = resp.StatusCode / 100
+	result.BodyBytes = len(resp.Body)
+	result.DurationMS = float64(time.Since(start)) / float64(time.Millisecond)
+	mergeMigrationContract(&result, resp.Body, resp.StatusCode/100 == 2)
 	return result, true
 }
 
-func measureRemoteTritonMigration(address string, cfg config.ProbeConfig) (map[string]any, bool) {
+func measureRemoteTritonMigration(address string, cfg config.ProbeConfig) (MigrationAnalysis, bool) {
 	start := time.Now()
 	resp, err := h3.RoundTripAddress(address, http.MethodGet, "/migration-test", nil, cfg.Timeout)
-	result := map[string]any{
-		"mode":            "endpoint-capability-check",
-		"target":          "triton://" + address + "/migration-test",
-		"requested_check": true,
-		"note":            "checks the migration endpoint contract; it does not perform live path rebinding",
+	result := MigrationAnalysis{
+		Mode:           "endpoint-capability-check",
+		Target:         "triton://" + address + "/migration-test",
+		RequestedCheck: true,
+		Note:           "checks the migration endpoint contract; it does not perform live path rebinding",
 	}
 	if err != nil {
-		result["supported"] = false
-		result["error"] = err.Error()
+		result.Supported = false
+		result.Error = err.Error()
 		return result, true
 	}
-	result["status_class"] = resp.StatusCode / 100
-	result["body_bytes"] = len(resp.Body)
-	result["duration_ms"] = float64(time.Since(start)) / float64(time.Millisecond)
-	mergeMigrationContract(result, resp.Body, resp.StatusCode/100 == 2)
+	result.StatusClass = resp.StatusCode / 100
+	result.BodyBytes = len(resp.Body)
+	result.DurationMS = float64(time.Since(start)) / float64(time.Millisecond)
+	mergeMigrationContract(&result, resp.Body, resp.StatusCode/100 == 2)
 	return result, true
 }
 
-func mergeMigrationContract(result map[string]any, body []byte, fallbackSupported bool) {
+func mergeMigrationContract(result *MigrationAnalysis, body []byte, fallbackSupported bool) {
 	if result == nil {
 		return
 	}
-	result["supported"] = fallbackSupported
+	result.Supported = fallbackSupported
 	if len(body) == 0 {
 		return
 	}
@@ -845,14 +1070,14 @@ func mergeMigrationContract(result map[string]any, body []byte, fallbackSupporte
 		return
 	}
 	if payload.Supported != nil {
-		result["supported"] = *payload.Supported
+		result.Supported = *payload.Supported
 	}
 	if payload.Message != "" {
-		result["message"] = payload.Message
+		result.Message = payload.Message
 	}
 }
 
-func estimateQPACKAnalysis(headers http.Header, status int) map[string]any {
+func estimateQPACKAnalysis(headers http.Header, status int) QPACKAnalysis {
 	blockHeaders := map[string]string{
 		":status": fmt.Sprintf("%d", status),
 	}
@@ -874,48 +1099,48 @@ func estimateQPACKAnalysis(headers http.Header, status int) map[string]any {
 		ratio = float64(encodedBytes) / float64(rawBytes)
 	}
 
-	return map[string]any{
-		"supported":          true,
-		"mode":               "header-block-estimate",
-		"header_count":       headerCount,
-		"raw_bytes":          rawBytes,
-		"estimated_block":    encodedBytes,
-		"estimated_ratio":    ratio,
-		"compression_saving": rawBytes - encodedBytes,
-		"note":               "approximates header block size from serialized H3 headers; it does not inspect real QPACK dynamic table behavior",
+	return QPACKAnalysis{
+		Supported:         true,
+		Mode:              "header-block-estimate",
+		HeaderCount:       headerCount,
+		RawBytes:          rawBytes,
+		EstimatedBlock:    encodedBytes,
+		EstimatedRatio:    ratio,
+		CompressionSaving: rawBytes - encodedBytes,
+		Note:              "approximates header block size from serialized H3 headers; it does not inspect real QPACK dynamic table behavior",
 	}
 }
 
-func estimateVersionAnalysis(proto string, tlsMeta map[string]any) map[string]any {
-	alpn, _ := tlsMeta["alpn"].(string)
-	return map[string]any{
-		"supported":        true,
-		"mode":             "protocol-observation",
-		"observed_proto":   proto,
-		"alpn":             alpn,
-		"quic_version":     "not_exposed",
-		"negotiation_seen": false,
-		"note":             "approximates QUIC version state from observed HTTP/3 protocol and ALPN; packet-level version negotiation is not exposed here",
+func estimateVersionAnalysis(proto string, tlsMeta any) VersionAnalysis {
+	alpn := tlsALPN(tlsMeta)
+	return VersionAnalysis{
+		Supported:       true,
+		Mode:            "protocol-observation",
+		ObservedProto:   proto,
+		ALPN:            alpn,
+		QUICVersion:     "not_exposed",
+		NegotiationSeen: false,
+		Note:            "approximates QUIC version state from observed HTTP/3 protocol and ALPN; packet-level version negotiation is not exposed here",
 	}
 }
 
-func estimateRetryAnalysis(proto string, tlsMeta map[string]any, connectMS, tlsMS int64) map[string]any {
-	alpn, _ := tlsMeta["alpn"].(string)
-	return map[string]any{
-		"supported":            true,
-		"mode":                 "handshake-observation",
-		"observed_proto":       proto,
-		"alpn":                 alpn,
-		"retry_observed":       false,
-		"connect_ms":           connectMS,
-		"tls_ms":               tlsMS,
-		"visibility":           "client-layer-limited",
-		"note":                 "approximates Retry behavior from successful handshake observation; actual Retry packets are not exposed at this layer",
+func estimateRetryAnalysis(proto string, tlsMeta any, connectMS, tlsMS int64) RetryAnalysis {
+	alpn := tlsALPN(tlsMeta)
+	return RetryAnalysis{
+		Supported:     true,
+		Mode:          "handshake-observation",
+		ObservedProto: proto,
+		ALPN:          alpn,
+		RetryObserved: false,
+		ConnectMS:     connectMS,
+		TLSMS:         tlsMS,
+		Visibility:    "client-layer-limited",
+		Note:          "approximates Retry behavior from successful handshake observation; actual Retry packets are not exposed at this layer",
 	}
 }
 
-func estimateECNAnalysis(headers http.Header, proto string, tlsMeta map[string]any) map[string]any {
-	alpn, _ := tlsMeta["alpn"].(string)
+func estimateECNAnalysis(headers http.Header, proto string, tlsMeta any) ECNAnalysis {
+	alpn := tlsALPN(tlsMeta)
 	observedSignal := false
 	for key := range headers {
 		lower := strings.ToLower(key)
@@ -924,36 +1149,36 @@ func estimateECNAnalysis(headers http.Header, proto string, tlsMeta map[string]a
 			break
 		}
 	}
-	return map[string]any{
-		"supported":        true,
-		"mode":             "metadata-observation",
-		"observed_proto":   proto,
-		"alpn":             alpn,
-		"ecn_visible":      observedSignal,
-		"packet_marks":     "not_exposed",
-		"note":             "approximates ECN visibility from observable protocol metadata and headers; packet-level ECN markings are not exposed here",
+	return ECNAnalysis{
+		Supported:     true,
+		Mode:          "metadata-observation",
+		ObservedProto: proto,
+		ALPN:          alpn,
+		ECNVisible:    observedSignal,
+		PacketMarks:   "not_exposed",
+		Note:          "approximates ECN visibility from observable protocol metadata and headers; packet-level ECN markings are not exposed here",
 	}
 }
 
-func estimateSpinBitAnalysis(cfg config.ProbeConfig, request func() (int, int64, error)) map[string]any {
+func estimateSpinBitAnalysis(cfg config.ProbeConfig, request func() (int, int64, error)) SpinBitAnalysis {
 	latency := sampleLatencyProfile(cfg, request)
 	rttEstimate := latency.P50
 	stability := "steady"
 	if latency.P95-latency.P50 > latency.P50 {
 		stability = "variable"
 	}
-	return map[string]any{
-		"supported":        true,
-		"mode":             "rtt-sampling-estimate",
-		"rtt_estimate_ms":  rttEstimate,
-		"p95_ms":           latency.P95,
-		"stability":        stability,
-		"spin_observed":    false,
-		"note":             "approximates spin-bit style RTT visibility from sampled request timings; actual packet-level spin-bit observation is not exposed here",
+	return SpinBitAnalysis{
+		Supported:     true,
+		Mode:          "rtt-sampling-estimate",
+		RTTEstimateMS: rttEstimate,
+		P95MS:         latency.P95,
+		Stability:     stability,
+		SpinObserved:  false,
+		Note:          "approximates spin-bit style RTT visibility from sampled request timings; actual packet-level spin-bit observation is not exposed here",
 	}
 }
 
-func estimateLossAnalysis(cfg config.ProbeConfig, request func() (int, int64, error)) map[string]any {
+func estimateLossAnalysis(cfg config.ProbeConfig, request func() (int, int64, error)) LossAnalysis {
 	latency := sampleLatencyProfile(cfg, request)
 	streams := runConcurrentSamples(minInt(cfg.DefaultStreams, 4), request)
 	signal := "low"
@@ -964,22 +1189,22 @@ func estimateLossAnalysis(cfg config.ProbeConfig, request func() (int, int64, er
 		signal = "high"
 	}
 
-	return map[string]any{
-		"supported":           true,
-		"mode":                "request-error-signal",
-		"signal":              signal,
-		"latency_errors":      latency.Errors,
-		"latency_samples":     latency.Samples,
-		"stream_attempts":     streams.Attempts,
-		"stream_errors":       streams.Errors,
-		"success_rate":        streams.SuccessRate,
-		"error_categories":    streams.ErrorCategories,
-		"timeout_indicators":  streams.ErrorCategories["timeout"],
-		"note":                "approximates packet-loss pressure from repeated request failures and timeout/error categories; it does not inspect packet-level recovery",
+	return LossAnalysis{
+		Supported:         true,
+		Mode:              "request-error-signal",
+		Signal:            signal,
+		LatencyErrors:     latency.Errors,
+		LatencySamples:    latency.Samples,
+		StreamAttempts:    streams.Attempts,
+		StreamErrors:      streams.Errors,
+		SuccessRate:       streams.SuccessRate,
+		ErrorCategories:   copyIntMap(streams.ErrorCategories),
+		TimeoutIndicators: streams.ErrorCategories["timeout"],
+		Note:              "approximates packet-loss pressure from repeated request failures and timeout/error categories; it does not inspect packet-level recovery",
 	}
 }
 
-func estimateCongestionAnalysis(cfg config.ProbeConfig, request func() (int, int64, error)) map[string]any {
+func estimateCongestionAnalysis(cfg config.ProbeConfig, request func() (int, int64, error)) CongestionAnalysis {
 	latency := sampleLatencyProfile(cfg, request)
 	streams := runConcurrentSamples(minInt(cfg.DefaultStreams, 4), request)
 	jitter := latency.P95 - latency.P50
@@ -995,54 +1220,55 @@ func estimateCongestionAnalysis(cfg config.ProbeConfig, request func() (int, int
 		signal = "high"
 	}
 
-	return map[string]any{
-		"supported":           true,
-		"mode":                "latency-spread-estimate",
-		"signal":              signal,
-		"p50_ms":              latency.P50,
-		"p95_ms":              latency.P95,
-		"jitter_ms":           jitter,
-		"spread_ratio":        spreadRatio,
-		"stream_avg_ms":       streams.AverageMS,
-		"stream_p95_ms":       streams.P95,
-		"concurrent_attempts": streams.Attempts,
-		"success_rate":        streams.SuccessRate,
-		"note":                "approximates congestion pressure from latency spread and concurrent request slowdown; it does not read congestion-window telemetry",
+	return CongestionAnalysis{
+		Supported:          true,
+		Mode:               "latency-spread-estimate",
+		Signal:             signal,
+		P50MS:              latency.P50,
+		P95MS:              latency.P95,
+		JitterMS:           jitter,
+		SpreadRatio:        spreadRatio,
+		StreamAverageMS:    streams.AverageMS,
+		StreamP95MS:        streams.P95,
+		ConcurrentAttempts: streams.Attempts,
+		SuccessRate:        streams.SuccessRate,
+		Note:               "approximates congestion pressure from latency spread and concurrent request slowdown; it does not read congestion-window telemetry",
 	}
 }
 
-func tlsMetadata(state *tls.ConnectionState) map[string]any {
-	meta := map[string]any{
-		"version":         tlsVersion(state.Version),
-		"cipher":          tls.CipherSuiteName(state.CipherSuite),
-		"alpn":            state.NegotiatedProtocol,
-		"server_name":     state.ServerName,
-		"peer_certs":      len(state.PeerCertificates),
-		"resumed":         state.DidResume,
-		"handshake_state": "complete",
+func tlsMetadata(state *tls.ConnectionState) TLSMetadata {
+	meta := TLSMetadata{
+		Version:        tlsVersion(state.Version),
+		Cipher:         tls.CipherSuiteName(state.CipherSuite),
+		ALPN:           state.NegotiatedProtocol,
+		ServerName:     state.ServerName,
+		PeerCerts:      len(state.PeerCertificates),
+		Resumed:        state.DidResume,
+		HandshakeState: "complete",
 	}
 	if len(state.VerifiedChains) > 0 {
-		meta["verified_chains"] = len(state.VerifiedChains)
+		meta.VerifiedChains = len(state.VerifiedChains)
 	}
 	if len(state.PeerCertificates) > 0 {
-		meta["leaf_cert"] = certificateSummary(state.PeerCertificates[0])
+		leaf := certificateSummary(state.PeerCertificates[0])
+		meta.LeafCert = &leaf
 	}
 	return meta
 }
 
-func certificateSummary(cert *x509.Certificate) map[string]any {
+func certificateSummary(cert *x509.Certificate) CertificateSummary {
 	if cert == nil {
-		return map[string]any{}
+		return CertificateSummary{}
 	}
-	return map[string]any{
-		"subject":     cert.Subject.String(),
-		"issuer":      cert.Issuer.String(),
-		"dns_names":   append([]string(nil), cert.DNSNames...),
-		"not_before":  cert.NotBefore.UTC().Format(time.RFC3339),
-		"not_after":   cert.NotAfter.UTC().Format(time.RFC3339),
-		"is_ca":       cert.IsCA,
-		"serial":      cert.SerialNumber.String(),
-		"fingerprint": fmt.Sprintf("%X", cert.Signature[:min(len(cert.Signature), 8)]),
+	return CertificateSummary{
+		Subject:     cert.Subject.String(),
+		Issuer:      cert.Issuer.String(),
+		DNSNames:    append([]string(nil), cert.DNSNames...),
+		NotBefore:   cert.NotBefore.UTC().Format(time.RFC3339),
+		NotAfter:    cert.NotAfter.UTC().Format(time.RFC3339),
+		IsCA:        cert.IsCA,
+		Serial:      cert.SerialNumber.String(),
+		Fingerprint: fmt.Sprintf("%X", cert.Signature[:min(len(cert.Signature), 8)]),
 	}
 }
 
@@ -1050,12 +1276,24 @@ func analyzeHeaders(headers http.Header, plan testPlan) map[string]any {
 	analysis := map[string]any{}
 	altSvc := headers.Values("Alt-Svc")
 	if len(altSvc) > 0 && plan.shouldRun("alt-svc") {
-		analysis["alt_svc"] = map[string]any{
-			"present": true,
-			"values":  append([]string(nil), altSvc...),
+		analysis["alt_svc"] = AltSvcAnalysis{
+			Present: true,
+			Values:  append([]string(nil), altSvc...),
 		}
 	}
 	return analysis
+}
+
+func tlsALPN(meta any) string {
+	switch typed := meta.(type) {
+	case TLSMetadata:
+		return typed.ALPN
+	case map[string]any:
+		alpn, _ := typed["alpn"].(string)
+		return alpn
+	default:
+		return ""
+	}
 }
 
 func newTestPlan(requested []string) testPlan {
@@ -1100,24 +1338,24 @@ func finalizeTestPlan(result *Result, plan testPlan) {
 		}
 		definition, ok := probeTestDefinitions[requested]
 		if !ok {
-			plan.skipped = append(plan.skipped, map[string]any{
-				"name":   requested,
-				"reason": "unknown probe test",
+			plan.skipped = append(plan.skipped, SkippedTest{
+				Name:   requested,
+				Reason: "unknown probe test",
 			})
 			continue
 		}
 		if definition.Reason == "" {
 			continue
 		}
-		plan.skipped = append(plan.skipped, map[string]any{
-			"name":   requested,
-			"reason": definition.Reason,
+		plan.skipped = append(plan.skipped, SkippedTest{
+			Name:   requested,
+			Reason: definition.Reason,
 		})
 	}
-	result.Analysis["test_plan"] = map[string]any{
-		"requested": append([]string(nil), plan.requested...),
-		"executed":  append([]string(nil), plan.executed...),
-		"skipped":   append([]map[string]any(nil), plan.skipped...),
+	result.Analysis["test_plan"] = TestPlan{
+		Requested: append([]string(nil), plan.requested...),
+		Executed:  append([]string(nil), plan.executed...),
+		Skipped:   append([]SkippedTest(nil), plan.skipped...),
 	}
 	support := buildSupportSummary(result.Analysis, plan)
 	if len(support) > 0 {
@@ -1126,8 +1364,8 @@ func finalizeTestPlan(result *Result, plan testPlan) {
 	}
 }
 
-func buildSupportSummary(analysis map[string]any, plan testPlan) map[string]any {
-	support := map[string]any{}
+func buildSupportSummary(analysis map[string]any, plan testPlan) map[string]SupportEntry {
+	support := map[string]SupportEntry{}
 	for _, name := range expandRequestedTests(plan.requested) {
 		addSupportEntry(support, name, analysis[name], true, containsString(plan.executed, name))
 	}
@@ -1137,13 +1375,13 @@ func buildSupportSummary(analysis map[string]any, plan testPlan) map[string]any 
 	return support
 }
 
-func addSupportEntry(dst map[string]any, name string, value any, requested, executed bool) {
+func addSupportEntry(dst map[string]SupportEntry, name string, value any, requested, executed bool) {
 	if dst == nil || !requested {
 		return
 	}
 
-	entry := map[string]any{
-		"requested": requested,
+	entry := SupportEntry{
+		Requested: requested,
 	}
 
 	definition, known := probeTestDefinitions[name]
@@ -1155,15 +1393,15 @@ func addSupportEntry(dst map[string]any, name string, value any, requested, exec
 			coverage = definition.Coverage
 			summary = definition.Summary
 		}
-		entry["coverage"] = coverage
-		entry["state"] = "not_run"
+		entry.Coverage = coverage
+		entry.State = "not_run"
 		if known && coverage == "unavailable" {
-			entry["state"] = "unavailable"
+			entry.State = "unavailable"
 		}
 		if executed {
-			entry["state"] = "available"
+			entry.State = "available"
 		}
-		entry["summary"] = summary
+		entry.Summary = summary
 		dst[name] = entry
 		return
 	}
@@ -1172,28 +1410,24 @@ func addSupportEntry(dst map[string]any, name string, value any, requested, exec
 	message, _ := details["message"].(string)
 	note, _ := details["note"].(string)
 	supported, _ := details["supported"].(bool)
-	entry["mode"] = mode
+	entry.Mode = mode
 
 	switch {
 	case known && definition.Coverage != "":
-		entry["coverage"] = definition.Coverage
+		entry.Coverage = definition.Coverage
 	case mode == "tls-resumption-check", mode == "endpoint-capability-check":
-		entry["coverage"] = "partial"
+		entry.Coverage = "partial"
 	default:
-		entry["coverage"] = "full"
+		entry.Coverage = "full"
 		if mode == "" {
-			entry["coverage"] = "observed"
+			entry.Coverage = "observed"
 		}
 	}
 
-	switch mode {
-	case "tls-resumption-check", "endpoint-capability-check":
-	}
-
 	if supported {
-		entry["state"] = "available"
+		entry.State = "available"
 	} else {
-		entry["state"] = "unavailable"
+		entry.State = "unavailable"
 	}
 
 	summary := message
@@ -1206,7 +1440,7 @@ func addSupportEntry(dst map[string]any, name string, value any, requested, exec
 	if summary == "" && mode != "" {
 		summary = mode
 	}
-	entry["summary"] = summary
+	entry.Summary = summary
 	dst[name] = entry
 }
 
@@ -1217,48 +1451,40 @@ func expandRequestedTests(requested []string) []string {
 	return append([]string(nil), requested...)
 }
 
-func buildSupportRollup(support map[string]any) map[string]any {
-	summary := map[string]any{
-		"requested_tests": 0,
-		"available":       0,
-		"not_run":         0,
-		"unavailable":     0,
-		"full":            0,
-		"partial":         0,
-	}
+func buildSupportRollup(support map[string]SupportEntry) SupportSummary {
+	summary := SupportSummary{}
 	if len(support) == 0 {
 		return summary
 	}
 
 	for _, key := range sortedProbeKeys(support) {
-		entry, ok := support[key].(map[string]any)
-		if !ok {
-			continue
+		entry := support[key]
+		summary.RequestedTests++
+		switch entry.Coverage {
+		case "full":
+			summary.Full++
+		case "partial":
+			summary.Partial++
 		}
-		summary["requested_tests"] = summary["requested_tests"].(int) + 1
-		if coverage, _ := entry["coverage"].(string); coverage != "" {
-			if _, ok := summary[coverage]; ok {
-				summary[coverage] = summary[coverage].(int) + 1
-			}
-		}
-		if state, _ := entry["state"].(string); state != "" {
-			if _, ok := summary[state]; ok {
-				summary[state] = summary[state].(int) + 1
-			}
+		switch entry.State {
+		case "available":
+			summary.Available++
+		case "not_run":
+			summary.NotRun++
+		case "unavailable":
+			summary.Unavailable++
 		}
 	}
 
-	requested := summary["requested_tests"].(int)
-	available := summary["available"].(int)
+	requested := summary.RequestedTests
+	available := summary.Available
 	if requested > 0 {
-		summary["coverage_ratio"] = float64(available) / float64(requested)
-	} else {
-		summary["coverage_ratio"] = 0.0
+		summary.CoverageRatio = float64(available) / float64(requested)
 	}
 	return summary
 }
 
-func sortedProbeKeys(input map[string]any) []string {
+func sortedProbeKeys(input map[string]SupportEntry) []string {
 	keys := make([]string, 0, len(input))
 	for key := range input {
 		keys = append(keys, key)
@@ -1287,11 +1513,11 @@ func enrichResponseAnalysis(result *Result, bodyBytes int64) {
 	if result.Duration > 0 {
 		throughput = float64(bodyBytes) / result.Duration.Seconds()
 	}
-	result.Analysis["response"] = map[string]any{
-		"body_bytes":           bodyBytes,
-		"throughput_bytes_sec": throughput,
-		"throughput_bits_sec":  throughput * 8,
-		"status_class":         result.Status / 100,
+	result.Analysis["response"] = ResponseAnalysis{
+		BodyBytes:          bodyBytes,
+		ThroughputBytesSec: throughput,
+		ThroughputBitsSec:  throughput * 8,
+		StatusClass:        result.Status / 100,
 	}
 }
 
@@ -1306,14 +1532,14 @@ func enrichLatencyAnalysis(result *Result, cfg config.ProbeConfig, request func(
 	if result.Analysis == nil {
 		result.Analysis = map[string]any{}
 	}
-	result.Analysis["latency"] = map[string]any{
-		"samples":    latency.Samples,
-		"avg_ms":     latency.AverageMS,
-		"p50":        latency.P50,
-		"p95":        latency.P95,
-		"p99":        latency.P99,
-		"errors":     latency.Errors,
-		"samples_ms": append([]float64(nil), latency.SamplesMS...),
+	result.Analysis["latency"] = LatencyAnalysis{
+		Samples:   latency.Samples,
+		AverageMS: latency.AverageMS,
+		P50:       latency.P50,
+		P95:       latency.P95,
+		P99:       latency.P99,
+		Errors:    latency.Errors,
+		SamplesMS: append([]float64(nil), latency.SamplesMS...),
 	}
 }
 
@@ -1328,17 +1554,28 @@ func enrichStreamAnalysis(result *Result, cfg config.ProbeConfig, request func()
 	if result.Analysis == nil {
 		result.Analysis = map[string]any{}
 	}
-	result.Analysis["streams"] = map[string]any{
-		"attempted":        streams.Attempts,
-		"successful":       streams.Successes,
-		"errors":           streams.Errors,
-		"success_rate":     streams.SuccessRate,
-		"avg_latency_ms":   streams.AverageMS,
-		"p95_latency_ms":   streams.P95,
-		"throughput_bytes": streams.TotalBytes,
-		"status_classes":   streams.StatusClasses,
-		"error_categories": streams.ErrorCategories,
+	result.Analysis["streams"] = StreamAnalysis{
+		Attempted:       streams.Attempts,
+		Successful:      streams.Successes,
+		Errors:          streams.Errors,
+		SuccessRate:     streams.SuccessRate,
+		AverageLatency:  streams.AverageMS,
+		P95Latency:      streams.P95,
+		ThroughputBytes: streams.TotalBytes,
+		StatusClasses:   copyIntMap(streams.StatusClasses),
+		ErrorCategories: copyIntMap(streams.ErrorCategories),
 	}
+}
+
+func copyIntMap(input map[string]int) map[string]int {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
 }
 
 type latencyProfile struct {

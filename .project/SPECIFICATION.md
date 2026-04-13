@@ -2,12 +2,14 @@
 
 ## HTTP/3 (QUIC) Test Server & Benchmarking Platform
 
-**Version:** 1.0.0
-**Status:** SPECIFICATION COMPLETE
+**Version:** 1.1.0
+**Status:** TARGET SPEC WITH CURRENT-STATE ADDENDUM
 **Repository:** github.com/tritonprobe/triton
 **Website:** tritonprobe.com
 **License:** MIT
 **Tagline:** "Three Prongs. One Binary. Every Packet."
+
+> Current-state note (2026-04-12): this document remains the target-state specification. The current repo already ships a working diagnostics tool, but the supported HTTP/3 path uses `quic-go`, the in-repo `internal/quic` / `internal/h3` stacks remain experimental lab-only transport research, the dashboard is a lightweight operator surface rather than the full live workbench described below, and several advanced probe features are partial approximations rather than packet-level implementations. Read this spec together with [ANALYSIS.md](./ANALYSIS.md), [ROADMAP.md](./ROADMAP.md), and [PRODUCTIONREADY.md](./PRODUCTIONREADY.md) for the actual implementation boundary.
 
 ---
 

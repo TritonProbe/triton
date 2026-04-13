@@ -28,21 +28,22 @@ var fullProbeTestSuite = []string{
 }
 
 type serverOptions struct {
-	ConfigPath           string
-	Listen               string
-	AllowExperimentalH3  bool
-	ListenH3             string
-	ListenTCP            string
-	CertFile             string
-	KeyFile              string
-	Dashboard            bool
-	DashboardListen      string
-	AllowRemoteDashboard bool
-	DashboardUser        string
-	DashboardPass        string
-	MaxBodyBytes         int64
-	AccessLog            string
-	TraceDir             string
+	ConfigPath                string
+	Listen                    string
+	AllowExperimentalH3       bool
+	AllowRemoteExperimentalH3 bool
+	ListenH3                  string
+	ListenTCP                 string
+	CertFile                  string
+	KeyFile                   string
+	Dashboard                 bool
+	DashboardListen           string
+	AllowRemoteDashboard      bool
+	DashboardUser             string
+	DashboardPass             string
+	MaxBodyBytes              int64
+	AccessLog                 string
+	TraceDir                  string
 }
 
 func parseServerOptions(args []string) (serverOptions, error) {
@@ -51,6 +52,7 @@ func parseServerOptions(args []string) (serverOptions, error) {
 	fs.StringVar(&opts.ConfigPath, "config", "triton.yaml", "config file path")
 	fs.StringVar(&opts.Listen, "listen", "", "experimental Triton UDP H3 listen address")
 	fs.BoolVar(&opts.AllowExperimentalH3, "allow-experimental-h3", false, "acknowledge and enable the experimental Triton UDP H3 listener")
+	fs.BoolVar(&opts.AllowRemoteExperimentalH3, "allow-remote-experimental-h3", false, "allow the experimental Triton UDP H3 listener to bind on non-loopback interfaces")
 	fs.StringVar(&opts.ListenH3, "listen-h3", "", "real HTTP/3 UDP listen address")
 	fs.StringVar(&opts.ListenTCP, "listen-tcp", "", "TCP fallback listen address")
 	fs.StringVar(&opts.CertFile, "cert", "", "TLS certificate file")
@@ -74,6 +76,7 @@ func (o serverOptions) Apply(cfg *config.Config) {
 		cfg.Server.Listen = o.Listen
 	}
 	cfg.Server.AllowExperimentalH3 = cfg.Server.AllowExperimentalH3 || o.AllowExperimentalH3
+	cfg.Server.AllowRemoteExperimentalH3 = cfg.Server.AllowRemoteExperimentalH3 || o.AllowRemoteExperimentalH3
 	if o.ListenH3 != "" {
 		cfg.Server.ListenH3 = o.ListenH3
 	}
@@ -109,17 +112,18 @@ func (o serverOptions) Apply(cfg *config.Config) {
 }
 
 type probeOptions struct {
-	ConfigPath string
-	Target     string
-	Format     string
-	Timeout    time.Duration
-	Insecure   bool
-	TraceDir   string
-	Streams    int
-	Tests      string
-	Full       bool
-	ZeroRTT    bool
-	Migration  bool
+	ConfigPath       string
+	Target           string
+	Format           string
+	Timeout          time.Duration
+	Insecure         bool
+	AllowInsecureTLS bool
+	TraceDir         string
+	Streams          int
+	Tests            string
+	Full             bool
+	ZeroRTT          bool
+	Migration        bool
 }
 
 func parseProbeOptions(args []string) (probeOptions, error) {
@@ -130,6 +134,7 @@ func parseProbeOptions(args []string) (probeOptions, error) {
 	fs.StringVar(&opts.Format, "format", "", "output format: table|json|yaml|markdown")
 	fs.DurationVar(&opts.Timeout, "timeout", 0, "request timeout")
 	fs.BoolVar(&opts.Insecure, "insecure", false, "skip certificate verification")
+	fs.BoolVar(&opts.AllowInsecureTLS, "allow-insecure-tls", false, "explicitly allow insecure TLS for lab probing")
 	fs.StringVar(&opts.TraceDir, "trace-dir", "", "directory for client qlog trace files")
 	fs.IntVar(&opts.Streams, "streams", 0, "number of concurrent probe streams/samples")
 	fs.StringVar(&opts.Tests, "tests", "", "comma-separated probe tests")
@@ -155,6 +160,7 @@ func (o probeOptions) Apply(cfg *config.Config) {
 	if tests := o.selectedTests(cfg.Probe.DefaultTests); len(tests) > 0 {
 		cfg.Probe.DefaultTests = tests
 	}
+	cfg.Probe.AllowInsecureTLS = cfg.Probe.AllowInsecureTLS || o.AllowInsecureTLS
 	cfg.Probe.Insecure = cfg.Probe.Insecure || o.Insecure
 }
 
@@ -202,14 +208,15 @@ func (o probeOptions) FormatOrDefault(defaultFormat string) string {
 }
 
 type benchOptions struct {
-	ConfigPath  string
-	Target      string
-	Format      string
-	Duration    time.Duration
-	Concurrency int
-	Protocols   string
-	Insecure    bool
-	TraceDir    string
+	ConfigPath       string
+	Target           string
+	Format           string
+	Duration         time.Duration
+	Concurrency      int
+	Protocols        string
+	Insecure         bool
+	AllowInsecureTLS bool
+	TraceDir         string
 }
 
 func parseBenchOptions(args []string) (benchOptions, error) {
@@ -222,6 +229,7 @@ func parseBenchOptions(args []string) (benchOptions, error) {
 	fs.IntVar(&opts.Concurrency, "concurrency", 0, "concurrent workers")
 	fs.StringVar(&opts.Protocols, "protocols", "", "comma-separated protocols")
 	fs.BoolVar(&opts.Insecure, "insecure", false, "skip certificate verification")
+	fs.BoolVar(&opts.AllowInsecureTLS, "allow-insecure-tls", false, "explicitly allow insecure TLS for lab benchmarking")
 	fs.StringVar(&opts.TraceDir, "trace-dir", "", "directory for client qlog trace files")
 	if err := fs.Parse(args); err != nil {
 		return opts, err
@@ -242,6 +250,7 @@ func (o benchOptions) Apply(cfg *config.Config) {
 	if o.TraceDir != "" {
 		cfg.Bench.TraceDir = o.TraceDir
 	}
+	cfg.Bench.AllowInsecureTLS = cfg.Bench.AllowInsecureTLS || o.AllowInsecureTLS
 	cfg.Bench.Insecure = cfg.Bench.Insecure || o.Insecure
 }
 

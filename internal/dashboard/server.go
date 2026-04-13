@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"context"
+	"crypto/subtle"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -31,6 +32,97 @@ type Server struct {
 	startedAt time.Time
 }
 
+type TraceMetadata struct {
+	Name        string `json:"name"`
+	SizeBytes   int64  `json:"size_bytes"`
+	ModifiedAt  string `json:"modified_at"`
+	DownloadURL string `json:"download_url"`
+	MetaURL     string `json:"meta_url"`
+	Preview     string `json:"preview"`
+}
+
+type ProbeSummary struct {
+	ID           string            `json:"id"`
+	Target       string            `json:"target"`
+	Timestamp    string            `json:"timestamp"`
+	Status       int               `json:"status"`
+	Proto        string            `json:"proto"`
+	Duration     string            `json:"duration"`
+	ModTime      string            `json:"mod_time"`
+	Size         int64             `json:"size"`
+	Analysis     map[string]any    `json:"analysis,omitempty"`
+	AnalysisView ProbeAnalysisView `json:"analysis_view,omitempty"`
+	TraceFiles   []string          `json:"trace_files,omitempty"`
+}
+
+type ProbeAnalysisView struct {
+	Response       *probe.ResponseAnalysis       `json:"response,omitempty"`
+	Latency        *probe.LatencyAnalysis        `json:"latency,omitempty"`
+	Streams        *probe.StreamAnalysis         `json:"streams,omitempty"`
+	AltSvc         *probe.AltSvcAnalysis         `json:"alt_svc,omitempty"`
+	ZeroRTT        *probe.ZeroRTTAnalysis        `json:"0rtt,omitempty"`
+	Migration      *probe.MigrationAnalysis      `json:"migration,omitempty"`
+	QPACK          *probe.QPACKAnalysis          `json:"qpack,omitempty"`
+	Loss           *probe.LossAnalysis           `json:"loss,omitempty"`
+	Congestion     *probe.CongestionAnalysis     `json:"congestion,omitempty"`
+	Version        *probe.VersionAnalysis        `json:"version,omitempty"`
+	Retry          *probe.RetryAnalysis          `json:"retry,omitempty"`
+	ECN            *probe.ECNAnalysis            `json:"ecn,omitempty"`
+	SpinBit        *probe.SpinBitAnalysis        `json:"spin-bit,omitempty"`
+	Support        map[string]probe.SupportEntry `json:"support,omitempty"`
+	SupportSummary *probe.SupportSummary         `json:"support_summary,omitempty"`
+	TestPlan       *probe.TestPlan               `json:"test_plan,omitempty"`
+}
+
+type BenchSummary struct {
+	ID          string                 `json:"id"`
+	Target      string                 `json:"target"`
+	Timestamp   string                 `json:"timestamp"`
+	Duration    string                 `json:"duration"`
+	Concurrency int                    `json:"concurrency"`
+	Protocols   []string               `json:"protocols"`
+	Summary     bench.Summary          `json:"summary"`
+	Stats       map[string]bench.Stats `json:"stats"`
+	StatsView   []BenchProtocolView    `json:"stats_view,omitempty"`
+	ModTime     string                 `json:"mod_time"`
+	Size        int64                  `json:"size"`
+	TraceFiles  []string               `json:"trace_files,omitempty"`
+}
+
+type BenchProtocolView struct {
+	Protocol string      `json:"protocol"`
+	Stats    bench.Stats `json:"stats"`
+}
+
+type StatusResponse struct {
+	Status    string          `json:"status"`
+	Dashboard DashboardStatus `json:"dashboard"`
+	Storage   StorageStatus   `json:"storage"`
+}
+
+type DashboardStatus struct {
+	StartedAt     string `json:"started_at"`
+	UptimeSeconds int64  `json:"uptime_seconds"`
+	TraceEnabled  bool   `json:"trace_enabled"`
+}
+
+type StorageStatus struct {
+	Probes  int `json:"probes"`
+	Benches int `json:"benches"`
+	Traces  int `json:"traces"`
+}
+
+type APIErrorResponse struct {
+	Status string         `json:"status"`
+	Error  APIErrorDetail `json:"error"`
+}
+
+type APIErrorDetail struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Detail  string `json:"detail,omitempty"`
+}
+
 type Options struct {
 	Username string
 	Password string
@@ -46,15 +138,14 @@ func New(addr string, store *storage.FileStore, opts Options) *Server {
 		logger = &observability.ManagedLogger{}
 	}
 	s := &Server{
-		http: &http.Server{Addr: addr, Handler: observability.WithRequestID(
-			observability.WithAccessLog(
-				logger.Logger,
-				"dashboard",
-				withSecurityHeaders(
-					withOptionalBasicAuth(mux, opts),
-				),
-			),
-		)},
+		http: &http.Server{
+			Addr:              addr,
+			Handler:           observability.WithRequestID(observability.WithAccessLog(logger.Logger, "dashboard", withSecurityHeaders(withOptionalBasicAuth(mux, opts)))),
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       15 * time.Second,
+			WriteTimeout:      15 * time.Second,
+			IdleTimeout:       60 * time.Second,
+		},
 		store:     store,
 		trace:     opts.TraceDir,
 		config:    cloneMap(opts.Config),
@@ -119,17 +210,17 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 		writeAPIError(w, http.StatusInternalServerError, "failed to list traces", err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"status": "ok",
-		"dashboard": map[string]any{
-			"started_at":     s.startedAt.Format(time.RFC3339),
-			"uptime_seconds": int64(time.Since(s.startedAt).Seconds()),
-			"trace_enabled":  s.trace != "",
+	writeJSON(w, StatusResponse{
+		Status: "ok",
+		Dashboard: DashboardStatus{
+			StartedAt:     s.startedAt.Format(time.RFC3339),
+			UptimeSeconds: int64(time.Since(s.startedAt).Seconds()),
+			TraceEnabled:  s.trace != "",
 		},
-		"storage": map[string]any{
-			"probes":  len(probes),
-			"benches": len(benches),
-			"traces":  len(traces),
+		Storage: StorageStatus{
+			Probes:  len(probes),
+			Benches: len(benches),
+			Traces:  len(traces),
 		},
 	})
 }
@@ -144,7 +235,7 @@ func (s *Server) handleProbes(w http.ResponseWriter, _ *http.Request) {
 		writeAPIError(w, http.StatusInternalServerError, "failed to list probes", err)
 		return
 	}
-	summaries := make([]map[string]any, 0, len(items))
+	summaries := make([]ProbeSummary, 0, len(items))
 	for _, item := range items {
 		summary, err := s.probeSummary(item)
 		if err != nil {
@@ -161,7 +252,7 @@ func (s *Server) handleBenches(w http.ResponseWriter, _ *http.Request) {
 		writeAPIError(w, http.StatusInternalServerError, "failed to list benches", err)
 		return
 	}
-	summaries := make([]map[string]any, 0, len(items))
+	summaries := make([]BenchSummary, 0, len(items))
 	for _, item := range items {
 		summary, err := s.benchSummary(item)
 		if err != nil {
@@ -235,19 +326,19 @@ func (s *Server) handleAPINotFound(w http.ResponseWriter, r *http.Request) {
 	writeAPIError(w, http.StatusNotFound, "api route not found", nil)
 }
 
-func (s *Server) listTraces() ([]map[string]any, error) {
+func (s *Server) listTraces() ([]TraceMetadata, error) {
 	if s.trace == "" {
-		return []map[string]any{}, nil
+		return []TraceMetadata{}, nil
 	}
 	entries, err := os.ReadDir(s.trace)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []map[string]any{}, nil
+			return []TraceMetadata{}, nil
 		}
 		return nil, err
 	}
 
-	items := make([]map[string]any, 0, len(entries))
+	items := make([]TraceMetadata, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".sqlog" {
 			continue
@@ -259,17 +350,17 @@ func (s *Server) listTraces() ([]map[string]any, error) {
 		items = append(items, item)
 	}
 	sort.Slice(items, func(i, j int) bool {
-		return items[i]["name"].(string) < items[j]["name"].(string)
+		return items[i].Name < items[j].Name
 	})
 	return items, nil
 }
 
-func (s *Server) traceMetadata(name string) (map[string]any, error) {
+func (s *Server) traceMetadata(name string) (TraceMetadata, error) {
 	if name == "." || name == "" || strings.Contains(name, "/") || filepath.Ext(name) != ".sqlog" {
-		return nil, os.ErrNotExist
+		return TraceMetadata{}, os.ErrNotExist
 	}
 	if s.trace == "" {
-		return nil, os.ErrNotExist
+		return TraceMetadata{}, os.ErrNotExist
 	}
 	fullPath := filepath.Join(s.trace, name)
 	info, err := os.Stat(fullPath)
@@ -277,59 +368,161 @@ func (s *Server) traceMetadata(name string) (map[string]any, error) {
 		if err == nil {
 			err = os.ErrNotExist
 		}
-		return nil, err
+		return TraceMetadata{}, err
 	}
 	preview, err := readTracePreview(fullPath)
 	if err != nil {
-		return nil, err
+		return TraceMetadata{}, err
 	}
-	return map[string]any{
-		"name":         name,
-		"size_bytes":   info.Size(),
-		"modified_at":  info.ModTime().UTC().Format(time.RFC3339),
-		"download_url": "/api/v1/traces/" + name,
-		"meta_url":     "/api/v1/traces/meta/" + name,
-		"preview":      preview,
+	return TraceMetadata{
+		Name:        name,
+		SizeBytes:   info.Size(),
+		ModifiedAt:  info.ModTime().UTC().Format(time.RFC3339),
+		DownloadURL: "/api/v1/traces/" + name,
+		MetaURL:     "/api/v1/traces/meta/" + name,
+		Preview:     preview,
 	}, nil
 }
 
-func (s *Server) probeSummary(item storage.Item) (map[string]any, error) {
+func (s *Server) probeSummary(item storage.Item) (ProbeSummary, error) {
 	var result probe.Result
 	if err := s.store.Load("probes", item.ID, &result); err != nil {
-		return nil, err
+		return ProbeSummary{}, err
 	}
-	return map[string]any{
-		"id":          item.ID,
-		"target":      result.Target,
-		"timestamp":   result.Timestamp.UTC().Format(time.RFC3339),
-		"status":      result.Status,
-		"proto":       result.Proto,
-		"duration":    result.Duration.String(),
-		"mod_time":    item.ModTime.UTC().Format(time.RFC3339),
-		"size":        item.Size,
-		"analysis":    result.Analysis,
-		"trace_files": append([]string(nil), result.TraceFiles...),
+	return ProbeSummary{
+		ID:           item.ID,
+		Target:       result.Target,
+		Timestamp:    result.Timestamp.UTC().Format(time.RFC3339),
+		Status:       result.Status,
+		Proto:        result.Proto,
+		Duration:     result.Duration.String(),
+		ModTime:      item.ModTime.UTC().Format(time.RFC3339),
+		Size:         item.Size,
+		Analysis:     result.Analysis,
+		AnalysisView: buildProbeAnalysisView(result.Analysis),
+		TraceFiles:   append([]string(nil), result.TraceFiles...),
 	}, nil
 }
 
-func (s *Server) benchSummary(item storage.Item) (map[string]any, error) {
+func buildProbeAnalysisView(analysis map[string]any) ProbeAnalysisView {
+	if len(analysis) == 0 {
+		return ProbeAnalysisView{}
+	}
+	return ProbeAnalysisView{
+		Response:       decodeAnalysis[probe.ResponseAnalysis](analysis["response"]),
+		Latency:        decodeAnalysis[probe.LatencyAnalysis](analysis["latency"]),
+		Streams:        decodeAnalysis[probe.StreamAnalysis](analysis["streams"]),
+		AltSvc:         decodeAnalysis[probe.AltSvcAnalysis](analysis["alt_svc"]),
+		ZeroRTT:        decodeAnalysis[probe.ZeroRTTAnalysis](analysis["0rtt"]),
+		Migration:      decodeAnalysis[probe.MigrationAnalysis](analysis["migration"]),
+		QPACK:          decodeAnalysis[probe.QPACKAnalysis](analysis["qpack"]),
+		Loss:           decodeAnalysis[probe.LossAnalysis](analysis["loss"]),
+		Congestion:     decodeAnalysis[probe.CongestionAnalysis](analysis["congestion"]),
+		Version:        decodeAnalysis[probe.VersionAnalysis](analysis["version"]),
+		Retry:          decodeAnalysis[probe.RetryAnalysis](analysis["retry"]),
+		ECN:            decodeAnalysis[probe.ECNAnalysis](analysis["ecn"]),
+		SpinBit:        decodeAnalysis[probe.SpinBitAnalysis](analysis["spin-bit"]),
+		Support:        decodeSupportEntries(analysis["support"]),
+		SupportSummary: decodeAnalysis[probe.SupportSummary](analysis["support_summary"]),
+		TestPlan:       decodeAnalysis[probe.TestPlan](analysis["test_plan"]),
+	}
+}
+
+func decodeSupportEntries(value any) map[string]probe.SupportEntry {
+	switch typed := value.(type) {
+	case map[string]probe.SupportEntry:
+		if len(typed) == 0 {
+			return nil
+		}
+		out := make(map[string]probe.SupportEntry, len(typed))
+		for key, entry := range typed {
+			out[key] = entry
+		}
+		return out
+	case map[string]any:
+		if len(typed) == 0 {
+			return nil
+		}
+		out := make(map[string]probe.SupportEntry, len(typed))
+		for key, item := range typed {
+			switch entry := item.(type) {
+			case probe.SupportEntry:
+				out[key] = entry
+			case map[string]any:
+				decoded := decodeAnalysis[probe.SupportEntry](entry)
+				if decoded != nil {
+					out[key] = *decoded
+				}
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func decodeAnalysis[T any](value any) *T {
+	if value == nil {
+		return nil
+	}
+	switch typed := value.(type) {
+	case T:
+		out := typed
+		return &out
+	default:
+		data, err := json.Marshal(typed)
+		if err != nil {
+			return nil
+		}
+		var out T
+		if err := json.Unmarshal(data, &out); err != nil {
+			return nil
+		}
+		return &out
+	}
+}
+
+func (s *Server) benchSummary(item storage.Item) (BenchSummary, error) {
 	var result bench.Result
 	if err := s.store.Load("benches", item.ID, &result); err != nil {
-		return nil, err
+		return BenchSummary{}, err
 	}
-	return map[string]any{
-		"id":          item.ID,
-		"target":      result.Target,
-		"timestamp":   result.Timestamp.UTC().Format(time.RFC3339),
-		"duration":    result.Duration.String(),
-		"concurrency": result.Concurrency,
-		"protocols":   append([]string(nil), result.Protocols...),
-		"summary":     result.Summary,
-		"stats":       result.Stats,
-		"mod_time":    item.ModTime.UTC().Format(time.RFC3339),
-		"size":        item.Size,
-		"trace_files": append([]string(nil), result.TraceFiles...),
+	return BenchSummary{
+		ID:          item.ID,
+		Target:      result.Target,
+		Timestamp:   result.Timestamp.UTC().Format(time.RFC3339),
+		Duration:    result.Duration.String(),
+		Concurrency: result.Concurrency,
+		Protocols:   append([]string(nil), result.Protocols...),
+		Summary:     result.Summary,
+		Stats:       result.Stats,
+		StatsView:   buildBenchStatsView(result.Stats),
+		ModTime:     item.ModTime.UTC().Format(time.RFC3339),
+		Size:        item.Size,
+		TraceFiles:  append([]string(nil), result.TraceFiles...),
 	}, nil
+}
+
+func buildBenchStatsView(stats map[string]bench.Stats) []BenchProtocolView {
+	if len(stats) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(stats))
+	for protocol := range stats {
+		keys = append(keys, protocol)
+	}
+	sort.Strings(keys)
+	out := make([]BenchProtocolView, 0, len(keys))
+	for _, protocol := range keys {
+		out = append(out, BenchProtocolView{
+			Protocol: protocol,
+			Stats:    stats[protocol],
+		})
+	}
+	return out
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
@@ -338,6 +531,7 @@ func writeJSON(w http.ResponseWriter, v any) {
 }
 
 func readTracePreview(fullPath string) (string, error) {
+	// #nosec G304 -- fullPath is derived from validated trace metadata constrained to s.trace.
 	file, err := os.Open(fullPath)
 	if err != nil {
 		return "", err
@@ -364,15 +558,15 @@ func cloneMap(in map[string]any) map[string]any {
 }
 
 func writeAPIError(w http.ResponseWriter, status int, message string, err error) {
-	payload := map[string]any{
-		"status": "error",
-		"error": map[string]any{
-			"code":    status,
-			"message": message,
+	payload := APIErrorResponse{
+		Status: "error",
+		Error: APIErrorDetail{
+			Code:    status,
+			Message: message,
 		},
 	}
 	if err != nil {
-		payload["error"].(map[string]any)["detail"] = err.Error()
+		payload.Error.Detail = "see server logs"
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
@@ -386,6 +580,7 @@ func serveAsset(w http.ResponseWriter, name, contentType string) {
 		return
 	}
 	w.Header().Set("Content-Type", contentType)
+	// #nosec G705 -- embedded assets are static, trusted bytes from go:embed.
 	_, _ = w.Write(data)
 }
 
@@ -395,7 +590,9 @@ func withOptionalBasicAuth(next http.Handler, opts Options) http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user, pass, ok := r.BasicAuth()
-		if !ok || user != opts.Username || pass != opts.Password {
+		userOK := subtle.ConstantTimeCompare([]byte(user), []byte(opts.Username)) == 1
+		passOK := subtle.ConstantTimeCompare([]byte(pass), []byte(opts.Password)) == 1
+		if !ok || !userOK || !passOK {
 			w.Header().Set("WWW-Authenticate", `Basic realm="triton-dashboard"`)
 			if strings.HasPrefix(r.URL.Path, "/api/") {
 				writeAPIError(w, http.StatusUnauthorized, "unauthorized", nil)

@@ -301,6 +301,9 @@ func (f MaxDataFrame) Serialize(w io.Writer) error {
 }
 
 func (f NewConnectionIDFrame) Serialize(w io.Writer) error {
+	if len(f.ConnectionID) > 255 {
+		return fmt.Errorf("new connection id payload too large")
+	}
 	if _, err := packet.WriteVarInt(w, uint64(FrameTypeNewConnectionID)); err != nil {
 		return err
 	}
@@ -310,6 +313,7 @@ func (f NewConnectionIDFrame) Serialize(w io.Writer) error {
 	if _, err := packet.WriteVarInt(w, f.RetirePriorTo); err != nil {
 		return err
 	}
+	// #nosec G115 -- connection ID length is bounded to <=255 above.
 	if _, err := w.Write([]byte{byte(len(f.ConnectionID))}); err != nil {
 		return err
 	}

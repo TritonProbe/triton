@@ -3,6 +3,7 @@ package probe
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +11,159 @@ import (
 	"github.com/tritonprobe/triton/internal/observability"
 	"github.com/tritonprobe/triton/internal/testutil"
 )
+
+func supportEntriesFromAnalysis(t *testing.T, analysis map[string]any) map[string]SupportEntry {
+	t.Helper()
+	support, ok := analysis["support"].(map[string]SupportEntry)
+	if !ok {
+		t.Fatalf("expected typed support summary, got %#v", analysis)
+	}
+	return support
+}
+
+func supportSummaryFromAnalysis(t *testing.T, analysis map[string]any) SupportSummary {
+	t.Helper()
+	summary, ok := analysis["support_summary"].(SupportSummary)
+	if !ok {
+		t.Fatalf("expected typed support rollup, got %#v", analysis)
+	}
+	return summary
+}
+
+func testPlanFromAnalysis(t *testing.T, analysis map[string]any) TestPlan {
+	t.Helper()
+	plan, ok := analysis["test_plan"].(TestPlan)
+	if !ok {
+		t.Fatalf("expected typed test plan, got %#v", analysis)
+	}
+	return plan
+}
+
+func responseAnalysisFromResult(t *testing.T, result *Result) ResponseAnalysis {
+	t.Helper()
+	response, ok := result.Analysis["response"].(ResponseAnalysis)
+	if !ok {
+		t.Fatalf("expected typed response analysis, got %#v", result.Analysis)
+	}
+	return response
+}
+
+func latencyAnalysisFromResult(t *testing.T, result *Result) LatencyAnalysis {
+	t.Helper()
+	latency, ok := result.Analysis["latency"].(LatencyAnalysis)
+	if !ok {
+		t.Fatalf("expected typed latency analysis, got %#v", result.Analysis)
+	}
+	return latency
+}
+
+func streamAnalysisFromResult(t *testing.T, result *Result) StreamAnalysis {
+	t.Helper()
+	streams, ok := result.Analysis["streams"].(StreamAnalysis)
+	if !ok {
+		t.Fatalf("expected typed stream analysis, got %#v", result.Analysis)
+	}
+	return streams
+}
+
+func tlsMetadataFromResult(t *testing.T, result *Result) TLSMetadata {
+	t.Helper()
+	meta, ok := result.TLS.(TLSMetadata)
+	if !ok {
+		t.Fatalf("expected typed TLS metadata, got %#v", result.TLS)
+	}
+	return meta
+}
+
+func altSvcAnalysisFromResult(t *testing.T, result *Result) AltSvcAnalysis {
+	t.Helper()
+	analysis, ok := result.Analysis["alt_svc"].(AltSvcAnalysis)
+	if !ok {
+		t.Fatalf("expected typed alt_svc analysis, got %#v", result.Analysis)
+	}
+	return analysis
+}
+
+func qpackAnalysisFromResult(t *testing.T, result *Result) QPACKAnalysis {
+	t.Helper()
+	analysis, ok := result.Analysis["qpack"].(QPACKAnalysis)
+	if !ok {
+		t.Fatalf("expected typed qpack analysis, got %#v", result.Analysis)
+	}
+	return analysis
+}
+
+func lossAnalysisFromResult(t *testing.T, result *Result) LossAnalysis {
+	t.Helper()
+	analysis, ok := result.Analysis["loss"].(LossAnalysis)
+	if !ok {
+		t.Fatalf("expected typed loss analysis, got %#v", result.Analysis)
+	}
+	return analysis
+}
+
+func congestionAnalysisFromResult(t *testing.T, result *Result) CongestionAnalysis {
+	t.Helper()
+	analysis, ok := result.Analysis["congestion"].(CongestionAnalysis)
+	if !ok {
+		t.Fatalf("expected typed congestion analysis, got %#v", result.Analysis)
+	}
+	return analysis
+}
+
+func versionAnalysisFromResult(t *testing.T, result *Result) VersionAnalysis {
+	t.Helper()
+	analysis, ok := result.Analysis["version"].(VersionAnalysis)
+	if !ok {
+		t.Fatalf("expected typed version analysis, got %#v", result.Analysis)
+	}
+	return analysis
+}
+
+func retryAnalysisFromResult(t *testing.T, result *Result) RetryAnalysis {
+	t.Helper()
+	analysis, ok := result.Analysis["retry"].(RetryAnalysis)
+	if !ok {
+		t.Fatalf("expected typed retry analysis, got %#v", result.Analysis)
+	}
+	return analysis
+}
+
+func ecnAnalysisFromResult(t *testing.T, result *Result) ECNAnalysis {
+	t.Helper()
+	analysis, ok := result.Analysis["ecn"].(ECNAnalysis)
+	if !ok {
+		t.Fatalf("expected typed ecn analysis, got %#v", result.Analysis)
+	}
+	return analysis
+}
+
+func spinBitAnalysisFromResult(t *testing.T, result *Result) SpinBitAnalysis {
+	t.Helper()
+	analysis, ok := result.Analysis["spin-bit"].(SpinBitAnalysis)
+	if !ok {
+		t.Fatalf("expected typed spin-bit analysis, got %#v", result.Analysis)
+	}
+	return analysis
+}
+
+func zeroRTTAnalysisFromResult(t *testing.T, result *Result) ZeroRTTAnalysis {
+	t.Helper()
+	analysis, ok := result.Analysis["0rtt"].(ZeroRTTAnalysis)
+	if !ok {
+		t.Fatalf("expected typed 0rtt analysis, got %#v", result.Analysis)
+	}
+	return analysis
+}
+
+func migrationAnalysisFromResult(t *testing.T, result *Result) MigrationAnalysis {
+	t.Helper()
+	analysis, ok := result.Analysis["migration"].(MigrationAnalysis)
+	if !ok {
+		t.Fatalf("expected typed migration analysis, got %#v", result.Analysis)
+	}
+	return analysis
+}
 
 func TestRunHTTPSProbeRespectsTLSVerification(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -26,9 +180,10 @@ func TestRunHTTPSProbeRespectsTLSVerification(t *testing.T) {
 	}
 
 	result, err := Run(srv.URL, config.ProbeConfig{
-		Timeout:        2 * time.Second,
-		Insecure:       true,
-		DefaultStreams: 4,
+		Timeout:          2 * time.Second,
+		Insecure:         true,
+		AllowInsecureTLS: true,
+		DefaultStreams:   4,
 	})
 	if err != nil {
 		t.Fatalf("expected insecure probe to succeed: %v", err)
@@ -36,40 +191,51 @@ func TestRunHTTPSProbeRespectsTLSVerification(t *testing.T) {
 	if result.Status != http.StatusOK {
 		t.Fatalf("unexpected status: %d", result.Status)
 	}
-	if result.TLS["cipher"] == "" {
+	tlsMeta := tlsMetadataFromResult(t, result)
+	if tlsMeta.Cipher == "" {
 		t.Fatalf("expected TLS metadata, got %#v", result.TLS)
 	}
-	if result.TLS["version"] == "" || result.TLS["leaf_cert"] == nil {
+	if tlsMeta.Version == "" || tlsMeta.LeafCert == nil {
 		t.Fatalf("expected rich TLS metadata, got %#v", result.TLS)
 	}
-	analysis, ok := result.Analysis["alt_svc"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected alt_svc analysis, got %#v", result.Analysis)
-	}
-	if analysis["present"] != true {
+	analysis := altSvcAnalysisFromResult(t, result)
+	if !analysis.Present {
 		t.Fatalf("expected alt_svc present=true, got %#v", analysis)
 	}
-	response, ok := result.Analysis["response"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected response analysis, got %#v", result.Analysis)
+	response := responseAnalysisFromResult(t, result)
+	if response.BodyBytes != int64(5) {
+		t.Fatalf("expected body_bytes=5, got %#v", response.BodyBytes)
 	}
-	if response["body_bytes"] != int64(5) {
-		t.Fatalf("expected body_bytes=5, got %#v", response["body_bytes"])
-	}
-	latency, ok := result.Analysis["latency"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected latency analysis, got %#v", result.Analysis)
-	}
-	if latency["samples"].(int) == 0 {
+	latency := latencyAnalysisFromResult(t, result)
+	if latency.Samples == 0 {
 		t.Fatalf("expected latency samples, got %#v", latency)
 	}
-	testPlan, ok := result.Analysis["test_plan"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected test plan, got %#v", result.Analysis)
-	}
-	requested, ok := testPlan["requested"].([]string)
-	if !ok || len(requested) == 0 {
+	testPlan := testPlanFromAnalysis(t, result.Analysis)
+	requested := testPlan.Requested
+	if len(requested) == 0 {
 		t.Fatalf("expected requested tests, got %#v", testPlan)
+	}
+}
+
+func TestDoStandardRequestBodyRejectsOversizedBodies(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(strings.Repeat("a", int(maxProbeResponseBodyBytes)+1)))
+	}))
+	defer srv.Close()
+
+	status, body, err := doStandardRequestBody(&http.Client{Timeout: 2 * time.Second}, srv.URL)
+	if err == nil {
+		t.Fatal("expected oversized response body error")
+	}
+	if status != http.StatusOK {
+		t.Fatalf("expected status=%d, got %d", http.StatusOK, status)
+	}
+	if body != nil {
+		t.Fatalf("expected nil body on oversized response, got %d bytes", len(body))
+	}
+	if !strings.Contains(err.Error(), "response body exceeds limit") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -84,14 +250,11 @@ func TestRunLoopbackProbe(t *testing.T) {
 	if result.Proto != "HTTP/3-loopback" {
 		t.Fatalf("unexpected proto: %q", result.Proto)
 	}
-	streams, ok := result.Analysis["streams"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected stream analysis, got %#v", result.Analysis)
-	}
-	if streams["attempted"].(int) != 4 {
+	streams := streamAnalysisFromResult(t, result)
+	if streams.Attempted != 4 {
 		t.Fatalf("expected attempted=4, got %#v", streams)
 	}
-	if _, ok := result.Analysis["qpack"].(map[string]any); ok {
+	if _, ok := result.Analysis["qpack"].(QPACKAnalysis); ok {
 		t.Fatalf("did not expect qpack analysis unless requested, got %#v", result.Analysis)
 	}
 }
@@ -110,11 +273,12 @@ func TestRunStandardH3Probe(t *testing.T) {
 	}
 
 	result, err := Run("h3://"+addr+"/ping", config.ProbeConfig{
-		Timeout:        2 * time.Second,
-		Insecure:       true,
-		TraceDir:       traceDir,
-		DefaultStreams: 3,
-		DefaultTests:   []string{"handshake", "tls", "latency", "throughput", "streams", "ecn", "spin-bit", "version", "retry", "qpack", "loss", "congestion", "0rtt", "migration"},
+		Timeout:          2 * time.Second,
+		Insecure:         true,
+		AllowInsecureTLS: true,
+		TraceDir:         traceDir,
+		DefaultStreams:   3,
+		DefaultTests:     []string{"handshake", "tls", "latency", "throughput", "streams", "ecn", "spin-bit", "version", "retry", "qpack", "loss", "congestion", "0rtt", "migration"},
 	})
 	if err != nil {
 		t.Fatalf("expected h3 probe to succeed: %v", err)
@@ -125,127 +289,104 @@ func TestRunStandardH3Probe(t *testing.T) {
 	if result.Proto == "" {
 		t.Fatal("expected protocol string")
 	}
-	if result.TLS["alpn"] != "h3" {
+	tlsMeta := tlsMetadataFromResult(t, result)
+	if tlsMeta.ALPN != "h3" {
 		t.Fatalf("expected h3 ALPN, got %#v", result.TLS)
 	}
-	if result.TLS["version"] != "TLS1.3" {
+	if tlsMeta.Version != "TLS1.3" {
 		t.Fatalf("expected TLS1.3 metadata, got %#v", result.TLS)
 	}
-	response, ok := result.Analysis["response"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected response analysis, got %#v", result.Analysis)
+	response := responseAnalysisFromResult(t, result)
+	if response.StatusClass != 2 {
+		t.Fatalf("expected 2xx status class, got %#v", response.StatusClass)
 	}
-	if response["status_class"] != 2 {
-		t.Fatalf("expected 2xx status class, got %#v", response["status_class"])
-	}
-	latency, ok := result.Analysis["latency"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected latency analysis, got %#v", result.Analysis)
-	}
-	if latency["p95"].(float64) < 0 {
+	latency := latencyAnalysisFromResult(t, result)
+	if latency.P95 < 0 {
 		t.Fatalf("expected non-negative latency p95, got %#v", latency)
 	}
-	testPlan, ok := result.Analysis["test_plan"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected test plan, got %#v", result.Analysis)
-	}
-	executed, ok := testPlan["executed"].([]string)
-	if !ok || len(executed) == 0 {
+	testPlan := testPlanFromAnalysis(t, result.Analysis)
+	executed := testPlan.Executed
+	if len(executed) == 0 {
 		t.Fatalf("expected executed tests, got %#v", testPlan)
 	}
-	zeroRTT, ok := result.Analysis["0rtt"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected 0rtt analysis, got %#v", result.Analysis)
-	}
-	if zeroRTT["mode"] != "tls-resumption-check" {
+	zeroRTT := zeroRTTAnalysisFromResult(t, result)
+	if zeroRTT.Mode != "tls-resumption-check" {
 		t.Fatalf("expected resumption mode note, got %#v", zeroRTT)
 	}
-	support, ok := result.Analysis["support"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected support summary, got %#v", result.Analysis)
-	}
-	supportSummary, ok := result.Analysis["support_summary"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected support rollup, got %#v", result.Analysis)
-	}
-	if supportSummary["requested_tests"].(int) < 1 || supportSummary["available"].(int) < 1 {
+	support := supportEntriesFromAnalysis(t, result.Analysis)
+	supportSummary := supportSummaryFromAnalysis(t, result.Analysis)
+	if supportSummary.RequestedTests < 1 || supportSummary.Available < 1 {
 		t.Fatalf("expected support rollup counts, got %#v", supportSummary)
 	}
-	zeroRTTSupport, ok := support["0rtt"].(map[string]any)
-	if !ok || zeroRTTSupport["coverage"] != "partial" {
+	zeroRTTSupport, ok := support["0rtt"]
+	if !ok || zeroRTTSupport.Coverage != "partial" {
 		t.Fatalf("expected partial 0rtt support summary, got %#v", support)
 	}
-	qpack, ok := result.Analysis["qpack"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected qpack analysis, got %#v", result.Analysis)
-	}
-	if qpack["mode"] != "header-block-estimate" {
+	qpack := qpackAnalysisFromResult(t, result)
+	if qpack.Mode != "header-block-estimate" {
 		t.Fatalf("expected qpack estimate mode, got %#v", qpack)
 	}
-	qpackSupport, ok := support["qpack"].(map[string]any)
-	if !ok || qpackSupport["coverage"] != "partial" || qpackSupport["state"] != "available" {
+	qpackSupport, ok := support["qpack"]
+	if !ok || qpackSupport.Coverage != "partial" || qpackSupport.State != "available" {
 		t.Fatalf("expected partial available qpack support summary, got %#v", support)
 	}
-	loss, ok := result.Analysis["loss"].(map[string]any)
-	if !ok || loss["mode"] != "request-error-signal" {
+	loss := lossAnalysisFromResult(t, result)
+	if loss.Mode != "request-error-signal" {
 		t.Fatalf("expected loss analysis, got %#v", result.Analysis)
 	}
-	lossSupport, ok := support["loss"].(map[string]any)
-	if !ok || lossSupport["coverage"] != "partial" || lossSupport["state"] != "available" {
+	lossSupport, ok := support["loss"]
+	if !ok || lossSupport.Coverage != "partial" || lossSupport.State != "available" {
 		t.Fatalf("expected partial available loss support summary, got %#v", support)
 	}
-	congestion, ok := result.Analysis["congestion"].(map[string]any)
-	if !ok || congestion["mode"] != "latency-spread-estimate" {
+	congestion := congestionAnalysisFromResult(t, result)
+	if congestion.Mode != "latency-spread-estimate" {
 		t.Fatalf("expected congestion analysis, got %#v", result.Analysis)
 	}
-	congestionSupport, ok := support["congestion"].(map[string]any)
-	if !ok || congestionSupport["coverage"] != "partial" || congestionSupport["state"] != "available" {
+	congestionSupport, ok := support["congestion"]
+	if !ok || congestionSupport.Coverage != "partial" || congestionSupport.State != "available" {
 		t.Fatalf("expected partial available congestion support summary, got %#v", support)
 	}
-	version, ok := result.Analysis["version"].(map[string]any)
-	if !ok || version["mode"] != "protocol-observation" {
+	version := versionAnalysisFromResult(t, result)
+	if version.Mode != "protocol-observation" {
 		t.Fatalf("expected version analysis, got %#v", result.Analysis)
 	}
-	versionSupport, ok := support["version"].(map[string]any)
-	if !ok || versionSupport["coverage"] != "partial" || versionSupport["state"] != "available" {
+	versionSupport, ok := support["version"]
+	if !ok || versionSupport.Coverage != "partial" || versionSupport.State != "available" {
 		t.Fatalf("expected partial available version support summary, got %#v", support)
 	}
-	retry, ok := result.Analysis["retry"].(map[string]any)
-	if !ok || retry["mode"] != "handshake-observation" {
+	retry := retryAnalysisFromResult(t, result)
+	if retry.Mode != "handshake-observation" {
 		t.Fatalf("expected retry analysis, got %#v", result.Analysis)
 	}
-	retrySupport, ok := support["retry"].(map[string]any)
-	if !ok || retrySupport["coverage"] != "partial" || retrySupport["state"] != "available" {
+	retrySupport, ok := support["retry"]
+	if !ok || retrySupport.Coverage != "partial" || retrySupport.State != "available" {
 		t.Fatalf("expected partial available retry support summary, got %#v", support)
 	}
-	ecn, ok := result.Analysis["ecn"].(map[string]any)
-	if !ok || ecn["mode"] != "metadata-observation" {
+	ecn := ecnAnalysisFromResult(t, result)
+	if ecn.Mode != "metadata-observation" {
 		t.Fatalf("expected ecn analysis, got %#v", result.Analysis)
 	}
-	ecnSupport, ok := support["ecn"].(map[string]any)
-	if !ok || ecnSupport["coverage"] != "partial" || ecnSupport["state"] != "available" {
+	ecnSupport, ok := support["ecn"]
+	if !ok || ecnSupport.Coverage != "partial" || ecnSupport.State != "available" {
 		t.Fatalf("expected partial available ecn support summary, got %#v", support)
 	}
-	spin, ok := result.Analysis["spin-bit"].(map[string]any)
-	if !ok || spin["mode"] != "rtt-sampling-estimate" {
+	spin := spinBitAnalysisFromResult(t, result)
+	if spin.Mode != "rtt-sampling-estimate" {
 		t.Fatalf("expected spin-bit analysis, got %#v", result.Analysis)
 	}
-	spinSupport, ok := support["spin-bit"].(map[string]any)
-	if !ok || spinSupport["coverage"] != "partial" || spinSupport["state"] != "available" {
+	spinSupport, ok := support["spin-bit"]
+	if !ok || spinSupport.Coverage != "partial" || spinSupport.State != "available" {
 		t.Fatalf("expected partial available spin-bit support summary, got %#v", support)
 	}
-	migration, ok := result.Analysis["migration"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected migration analysis, got %#v", result.Analysis)
-	}
-	if migration["mode"] != "endpoint-capability-check" {
+	migration := migrationAnalysisFromResult(t, result)
+	if migration.Mode != "endpoint-capability-check" {
 		t.Fatalf("expected migration endpoint check mode, got %#v", migration)
 	}
-	if migration["supported"] != false {
+	if migration.Supported != false {
 		t.Fatalf("expected migration supported=false from endpoint contract, got %#v", migration)
 	}
-	if migration["message"] == "" {
-		t.Fatalf("expected migration message from endpoint contract, got %#v", migration)
+	if migration.Message == "" && migration.Error == "" {
+		t.Fatalf("expected migration message or error detail, got %#v", migration)
 	}
 	if len(result.TraceFiles) == 0 {
 		t.Fatal("expected trace files to be linked in result")
@@ -273,35 +414,27 @@ func TestRunProbeReportsSkippedUnsupportedTests(t *testing.T) {
 	defer srv.Close()
 
 	result, err := Run(srv.URL, config.ProbeConfig{
-		Timeout:      2 * time.Second,
-		Insecure:     true,
-		DefaultTests: []string{"latency", "0rtt", "migration"},
+		Timeout:          2 * time.Second,
+		Insecure:         true,
+		AllowInsecureTLS: true,
+		DefaultTests:     []string{"latency", "0rtt", "migration"},
 	})
 	if err != nil {
 		t.Fatalf("expected probe to succeed: %v", err)
 	}
-	testPlan, ok := result.Analysis["test_plan"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected test plan, got %#v", result.Analysis)
-	}
-	skipped, ok := testPlan["skipped"].([]map[string]any)
-	if !ok || len(skipped) < 1 {
+	testPlan := testPlanFromAnalysis(t, result.Analysis)
+	skipped := testPlan.Skipped
+	if len(skipped) < 1 {
 		t.Fatalf("expected skipped unsupported tests, got %#v", testPlan)
 	}
-	if _, ok := result.Analysis["migration"].(map[string]any); !ok {
-		t.Fatalf("expected migration capability analysis, got %#v", result.Analysis)
-	}
-	migration := result.Analysis["migration"].(map[string]any)
-	if migration["supported"] != false {
+	migration := migrationAnalysisFromResult(t, result)
+	if migration.Supported != false {
 		t.Fatalf("expected migration supported=false from endpoint contract, got %#v", migration)
 	}
-	support, ok := result.Analysis["support"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected support summary, got %#v", result.Analysis)
-	}
-	migrationSupport, ok := support["migration"].(map[string]any)
-	if !ok || migrationSupport["coverage"] != "partial" || migrationSupport["state"] != "unavailable" {
-		t.Fatalf("expected partial unavailable migration support summary, got %#v", support)
+	support := supportEntriesFromAnalysis(t, result.Analysis)
+	migrationSupport, ok := support["migration"]
+	if !ok || migrationSupport.Coverage != "partial" || migrationSupport.State != "available" {
+		t.Fatalf("expected partial available migration support summary, got %#v", support)
 	}
 }
 
@@ -313,14 +446,11 @@ func TestRunLoopbackProbeMigrationReadsContractBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	migration, ok := result.Analysis["migration"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected migration analysis, got %#v", result.Analysis)
-	}
-	if migration["supported"] != false {
+	migration := migrationAnalysisFromResult(t, result)
+	if migration.Supported != false {
 		t.Fatalf("expected migration supported=false from loopback endpoint contract, got %#v", migration)
 	}
-	if migration["message"] == "" {
+	if migration.Message == "" {
 		t.Fatalf("expected migration message from loopback endpoint contract, got %#v", migration)
 	}
 }
@@ -333,54 +463,56 @@ func TestRunProbeSupportMatrixReportsUnavailableAdvancedTests(t *testing.T) {
 	defer srv.Close()
 
 	result, err := Run(srv.URL, config.ProbeConfig{
-		Timeout:      2 * time.Second,
-		Insecure:     true,
-		DefaultTests: []string{"qpack", "loss", "congestion", "retry", "version", "spin-bit", "ecn"},
+		Timeout:          2 * time.Second,
+		Insecure:         true,
+		AllowInsecureTLS: true,
+		DefaultTests:     []string{"qpack", "loss", "congestion", "retry", "version", "spin-bit", "ecn"},
 	})
 	if err != nil {
 		t.Fatalf("expected probe to succeed: %v", err)
 	}
-	testPlan, ok := result.Analysis["test_plan"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected test plan, got %#v", result.Analysis)
-	}
-	skipped, ok := testPlan["skipped"].([]map[string]any)
-	if !ok || len(skipped) < 5 {
+	testPlan := testPlanFromAnalysis(t, result.Analysis)
+	skipped := testPlan.Skipped
+	if len(skipped) < 5 {
 		t.Fatalf("expected skipped advanced tests, got %#v", testPlan)
 	}
-	executed, ok := testPlan["executed"].([]string)
-	if !ok || !containsString(executed, "loss") || !containsString(executed, "congestion") {
+	executed := testPlan.Executed
+	if !containsString(executed, "loss") || !containsString(executed, "congestion") {
 		t.Fatalf("expected loss and congestion to execute, got %#v", testPlan)
 	}
-	support, ok := result.Analysis["support"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected support summary, got %#v", result.Analysis)
-	}
-	if _, ok := result.Analysis["support_summary"].(map[string]any); !ok {
-		t.Fatalf("expected support rollup, got %#v", result.Analysis)
-	}
+	support := supportEntriesFromAnalysis(t, result.Analysis)
+	_ = supportSummaryFromAnalysis(t, result.Analysis)
 	for _, name := range []string{"qpack", "loss", "congestion", "retry", "version", "spin-bit", "ecn"} {
-		entry, ok := support[name].(map[string]any)
+		entry, ok := support[name]
 		if !ok {
 			t.Fatalf("expected support entry for %s, got %#v", name, support)
 		}
 		switch name {
 		case "qpack":
-			if entry["coverage"] != "partial" || entry["state"] != "not_run" {
+			if entry.Coverage != "partial" || entry.State != "not_run" {
 				t.Fatalf("expected partial not_run qpack support entry, got %#v", entry)
 			}
 		case "retry", "version", "spin-bit", "ecn":
-			if entry["coverage"] != "partial" || entry["state"] != "not_run" {
+			if entry.Coverage != "partial" || entry.State != "not_run" {
 				t.Fatalf("expected partial not_run support entry for %s, got %#v", name, entry)
 			}
 		case "loss", "congestion":
-			if entry["coverage"] != "partial" || entry["state"] != "available" {
+			if entry.Coverage != "partial" || entry.State != "available" {
 				t.Fatalf("expected partial available support entry for %s, got %#v", name, entry)
 			}
 		default:
-			if entry["coverage"] != "unavailable" || entry["state"] != "unavailable" {
+			if entry.Coverage != "unavailable" || entry.State != "unavailable" {
 				t.Fatalf("expected unavailable support entry for %s, got %#v", name, entry)
 			}
 		}
+	}
+}
+
+func TestRunProbeRejectsInsecureTLSWithoutOptIn(t *testing.T) {
+	if _, err := Run("https://example.com", config.ProbeConfig{
+		Timeout:  time.Second,
+		Insecure: true,
+	}); err == nil {
+		t.Fatal("expected insecure probe without opt-in to fail")
 	}
 }

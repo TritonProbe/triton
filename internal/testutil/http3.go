@@ -50,7 +50,7 @@ func GenerateSelfSignedCertFiles(t *testing.T) (string, string) {
 	keyFile := filepath.Join(dir, "key.pem")
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
-	if err := os.WriteFile(certFile, certPEM, 0o644); err != nil {
+	if err := os.WriteFile(certFile, certPEM, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(keyFile, keyPEM, 0o600); err != nil {

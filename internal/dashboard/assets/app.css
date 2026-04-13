@@ -38,6 +38,10 @@ body {
   margin-top: 36px;
 }
 
+.overview {
+  margin-top: 28px;
+}
+
 .card {
   background: rgba(15, 23, 42, 0.72);
   border: 1px solid rgba(125, 211, 252, 0.2);

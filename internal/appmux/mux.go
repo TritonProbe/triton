@@ -1,12 +1,13 @@
 package appmux
 
 import (
+	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
@@ -163,7 +164,9 @@ func handleDelay(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid delay", http.StatusBadRequest)
 		return
 	}
-	time.Sleep(time.Duration(ms) * time.Millisecond)
+	if !sleepWithContext(r.Context(), time.Duration(ms)*time.Millisecond) {
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"delay_ms": ms})
 }
 
@@ -236,11 +239,37 @@ func handleDrip(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	flusher, _ := w.(http.Flusher)
 	for i := 0; i < size; i++ {
-		_, _ = w.Write([]byte{byte('a' + rand.Intn(26))})
+		var b [1]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			http.Error(w, "failed to generate drip payload", http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write([]byte{'a' + (b[0] % 26)})
 		if flusher != nil {
 			flusher.Flush()
 		}
-		time.Sleep(time.Duration(delay) * time.Millisecond)
+		if !sleepWithContext(r.Context(), time.Duration(delay)*time.Millisecond) {
+			return
+		}
+	}
+}
+
+func sleepWithContext(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		select {
+		case <-ctx.Done():
+			return false
+		default:
+			return true
+		}
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-ctx.Done():
+		return false
 	}
 }
 

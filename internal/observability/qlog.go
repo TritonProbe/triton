@@ -32,7 +32,7 @@ func NewQLOGTracer(traceDir string) func(context.Context, bool, quic.ConnectionI
 		return nil
 	}
 	return func(_ context.Context, isClient bool, connID quic.ConnectionID) qlogwriter.Trace {
-		if err := os.MkdirAll(traceDir, 0o755); err != nil {
+		if err := os.MkdirAll(traceDir, 0o750); err != nil {
 			return nil
 		}
 		role := "server"
@@ -40,6 +40,7 @@ func NewQLOGTracer(traceDir string) func(context.Context, bool, quic.ConnectionI
 			role = "client"
 		}
 		path := filepath.Join(traceDir, fmt.Sprintf("%s_%s.sqlog", connID, role))
+		// #nosec G304 -- traceDir is explicit operator configuration and connID/role are generated locally.
 		file, err := os.Create(path)
 		if err != nil {
 			return nil

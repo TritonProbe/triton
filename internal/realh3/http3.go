@@ -18,7 +18,8 @@ func NewClient(timeout time.Duration, insecure bool, traceDir string) (*http.Cli
 func NewClientWithSessionCache(timeout time.Duration, insecure bool, traceDir string, cache tls.ClientSessionCache) (*http.Client, *quichttp3.Transport) {
 	transport := &quichttp3.Transport{
 		TLSClientConfig: &tls.Config{
-			MinVersion:         tls.VersionTLS13,
+			MinVersion: tls.VersionTLS13,
+			// #nosec G402 -- insecure TLS is guarded by higher-level allow_insecure_tls validation for lab use.
 			InsecureSkipVerify: insecure,
 			ClientSessionCache: cache,
 		},

@@ -1,6 +1,7 @@
 server:
   listen: ""
   allow_experimental_h3: false
+  allow_remote_experimental_h3: false
   listen_h3: ""
   listen_tcp: ":8443"
   dashboard: true
@@ -18,6 +19,7 @@ server:
 probe:
   timeout: 10s
   insecure: false
+  allow_insecure_tls: false
   trace_dir: ""
   default_tests:
     - handshake
@@ -37,6 +39,7 @@ bench:
     - h1
     - h2
   insecure: false
+  allow_insecure_tls: false
   # use h3 explicitly with loopback targets, e.g. triton://loopback/ping
 
 storage:

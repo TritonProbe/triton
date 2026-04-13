@@ -20,7 +20,7 @@ func ensureCertificate(cfg config.ServerConfig, dataDir string) (string, string,
 	}
 
 	certDir := filepath.Join(dataDir, "certs")
-	if err := os.MkdirAll(certDir, 0o755); err != nil {
+	if err := os.MkdirAll(certDir, 0o750); err != nil {
 		return "", "", err
 	}
 	certFile := filepath.Join(certDir, "triton-selfsigned.pem")
@@ -52,7 +52,7 @@ func ensureCertificate(cfg config.ServerConfig, dataDir string) (string, string,
 	if err != nil {
 		return "", "", err
 	}
-	if err := os.WriteFile(certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644); err != nil {
+	if err := os.WriteFile(certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
 		return "", "", err
 	}
 	keyBytes := x509.MarshalPKCS1PrivateKey(priv)

@@ -14,61 +14,68 @@ The core blocker is not "nothing works." The blocker is that the product story i
 
 The next roadmap should decide which one is the product and which one is the lab.
 
+## Completed Since Initial Audit
+
+- Experimental UDP H3 is no longer a default-style product path; it now requires explicit opt-in and has a dedicated `triton lab` flow.
+- Dashboard APIs now return structured summaries for status/config/probes/benches/traces, including trace metadata preview.
+- Dashboard UI now renders typed cards, probe support summaries, bench health rollups, and a top-level overview panel instead of raw JSON-style scaffolding.
+- Probe mode now emits partial-but-explicit support for `0rtt`, `migration`, `qpack`, `loss`, `congestion`, `retry`, `version`, `ecn`, and `spin-bit`, plus a `support_summary` rollup.
+- Bench mode now emits a per-run `summary` rollup with healthy/degraded/failed protocol counts and best/risk protocol classification.
+- Dashboard exposure is now materially safer: remote bind requires explicit opt-in plus auth, constant-time credential checks, and request timeouts.
+- Insecure probe/bench TLS now requires explicit `allow_insecure_tls` opt-in, storage path traversal is blocked, and `gosec ./...` now passes with `0 issues`.
+- CI now includes a dedicated CGO-capable `go test -race ./...` job, and parser fuzz targets plus targeted connection/stream/transport concurrency tests are in place for the experimental QUIC surface.
+
+The roadmap below should now be read as the remaining work after those improvements.
+
 ## Phase 1: Critical Alignment (Week 1-2)
 
 ### Must-fix items blocking a clean release story
 
 - [ ] Decide product positioning: either ship Triton as a pragmatic HTTP/3 diagnostics tool powered by `quic-go`, or continue marketing it as a custom QUIC engine and explicitly label current releases experimental.
-- [ ] Disable the experimental UDP H3 listener by default or rename `server.listen` to make its status obvious.
+- [ ] Finish the product-language cleanup so “real H3” and “experimental/lab H3” are unmistakable across all docs and operator output.
 - [ ] Separate “real H3” and “experimental H3” terminology consistently across README, config, CLI help, and dashboard.
 - [ ] Remove generated runtime artifacts and built binaries from the maintained source snapshot.
-- [ ] Add eviction/cleanup to the IP rate limiter to prevent unbounded bucket growth.
 
 ## Phase 2: Production Hardening (Week 3-4)
 
 ### Security, reliability, and operator clarity
 
-- [ ] Add structured JSON error responses for dashboard APIs.
 - [ ] Add explicit config validation for unsupported combinations such as both experimental and real H3 listeners being enabled without clear intent.
 - [ ] Add a startup banner or log summary that clearly states which listeners are real HTTP/3 vs experimental UDP H3.
-- [ ] Add stronger dashboard auth options or hard-lock remote dashboard binding behind explicit opt-in.
+- [ ] Watch the new CI `-race` job and fix any transport synchronization findings it reveals before broad release.
 - [ ] Add response/request-size coverage and negative-path tests around upload, drip, and trace download flows.
 
 ## Phase 3: Concurrency & Correctness (Week 5-6)
 
 ### Stabilize the experimental in-repo transport
 
-- [ ] Fix `stream.Stream` state locking so `-race` can pass reliably.
-- [ ] Resolve `Listener.acceptCh` dual-consumer ambiguity.
-- [ ] Add `go test -race ./...` to CI on a CGO-capable runner.
-- [ ] Add fuzz tests for packet, frame, and H3 frame parsing.
+- [ ] Keep tightening `stream` and `connection` state handling in response to CI `-race` findings.
+- [ ] Keep tightening listener ordering/consumer semantics in response to CI `-race` findings.
+- [ ] Expand fuzz coverage beyond packet/frame parsing into more transport and wire edge cases.
 - [ ] Add transport/property tests for malformed packets and partial frame streams.
 
 ## Phase 4: Metrics & Benchmark Fidelity (Week 7-8)
 
 ### Make results trustworthy
 
-- [ ] Add percentile latency stats (`p50`, `p95`, `p99`) to bench output.
-- [ ] Split connect time, TLS/H3 handshake time, first-byte time, and transfer time in benchmark results.
-- [ ] Add protocol-specific failure counters and richer error summaries.
+- [ ] Turn existing percentile/phase/error summaries into stored historical comparisons and deltas between runs.
 - [ ] Document how `h1`, `h2`, `h3`, and `triton://` measurements differ so users do not compare incomparable transport stacks.
-- [ ] Add optional warmup usage in the actual runner or remove the unused config field.
+- [ ] Add benchmark baselines or lightweight perf regression checks so the richer metrics become actionable.
 
 ## Phase 5: Dashboard Evolution (Week 9-10)
 
 ### Upgrade from JSON viewer to operator surface
 
-- [ ] Replace `<pre>` JSON dumps with typed cards/tables for probes, benches, and traces.
 - [ ] Add filter/sort support for stored runs.
-- [ ] Add trace metadata preview before download.
 - [ ] Add request/trace status indicators and empty-state UX.
+- [ ] Add compare/trend views that use the existing probe support summaries and bench rollups.
 - [ ] Keep the dashboard static and dependency-free unless there is a strong reason to add a frontend toolchain.
 
 ## Phase 6: Spec Reconciliation (Week 11-14)
 
 ### Either narrow the spec or fund the missing engine work
 
-- [ ] Update `.project/SPECIFICATION.md`, `.project/IMPLEMENTATION.md`, and `.project/TASKS.md` so they reflect the current architecture and dependency strategy.
+- [ ] Update `.project/SPECIFICATION.md`, `.project/IMPLEMENTATION.md`, and `.project/TASKS.md` so they reflect the current architecture, hardening work, and dependency strategy.
 - [ ] If the custom engine remains in-scope: add a concrete vNext milestone for QUIC-TLS, packet protection, QPACK, and migration.
 - [ ] If the custom engine becomes lab-only: move it under an explicitly experimental namespace and reduce production promises accordingly.
 - [ ] Add `ARCHITECTURE.md` describing the three transport planes now in the repo.

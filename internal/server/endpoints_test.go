@@ -157,8 +157,9 @@ func TestRealHTTP3ServerSupportsProbe(t *testing.T) {
 	var result *probe.Result
 	for i := 0; i < 20; i++ {
 		result, err = probe.Run("h3://"+h3Addr+"/ping", config.ProbeConfig{
-			Timeout:  2 * time.Second,
-			Insecure: true,
+			Timeout:          2 * time.Second,
+			Insecure:         true,
+			AllowInsecureTLS: true,
 		})
 		if err == nil {
 			break
@@ -171,7 +172,11 @@ func TestRealHTTP3ServerSupportsProbe(t *testing.T) {
 	if result.Status != http.StatusOK {
 		t.Fatalf("unexpected status: %d", result.Status)
 	}
-	if result.TLS["alpn"] != "h3" {
+	tlsMeta, tlsOK := result.TLS.(probe.TLSMetadata)
+	if !tlsOK {
+		t.Fatalf("expected typed TLS metadata, got %#v", result.TLS)
+	}
+	if tlsMeta.ALPN != "h3" {
 		t.Fatalf("expected h3 ALPN, got %#v", result.TLS)
 	}
 	ok, err := observability.HasQLOGFiles(srv.cfg.TraceDir)

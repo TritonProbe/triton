@@ -25,3 +25,13 @@ func TestBuildAndParseInitialPacket(t *testing.T) {
 		t.Fatalf("unexpected frame count: %d", len(frames))
 	}
 }
+
+func TestBuildPacketRejectsOversizedConnectionIDs(t *testing.T) {
+	oversized := make([]byte, 256)
+	if _, err := BuildInitialPacket(1, oversized, []byte{0x01}, 1, []frame.Frame{frame.PingFrame{}}); err == nil {
+		t.Fatal("expected oversized initial packet CID to fail")
+	}
+	if _, err := BuildShortPacket(oversized, 1, []frame.Frame{frame.PingFrame{}}); err == nil {
+		t.Fatal("expected oversized short packet CID to fail")
+	}
+}

@@ -1,6 +1,7 @@
 package appmux
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestUploadRejectsWrongMethod(t *testing.T) {
@@ -275,6 +277,17 @@ func TestWriteJSON(t *testing.T) {
 	}
 	if got := rec.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
 		t.Fatalf("unexpected content type: %q", got)
+	}
+}
+
+func TestSleepWithContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if sleepWithContext(ctx, time.Second) {
+		t.Fatal("expected canceled context to abort sleep")
+	}
+	if !sleepWithContext(context.Background(), 0) {
+		t.Fatal("expected zero-duration sleep to succeed")
 	}
 }
 

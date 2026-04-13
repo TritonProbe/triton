@@ -88,10 +88,10 @@ func renderProbeTable(result probe.Result) string {
 			fmt.Fprintf(&b, "  %-10s %d\n", key, result.Timings[key])
 		}
 	}
-	if len(result.TLS) > 0 {
+	if tlsFields := anyToTLSFields(result.TLS); len(tlsFields) > 0 {
 		b.WriteString("\nTLS\n")
-		for _, key := range sortedAnyKeys(result.TLS) {
-			fmt.Fprintf(&b, "  %-10s %v\n", key, result.TLS[key])
+		for _, key := range sortedAnyKeys(tlsFields) {
+			fmt.Fprintf(&b, "  %-10s %v\n", key, tlsFields[key])
 		}
 	}
 	if len(result.Analysis) > 0 {
@@ -107,13 +107,13 @@ func renderBenchTable(result bench.Result) string {
 	fmt.Fprintf(&b, "Duration:    %s\n", result.Duration)
 	fmt.Fprintf(&b, "Concurrency: %d\n", result.Concurrency)
 	fmt.Fprintf(&b, "Protocols:   %s\n", strings.Join(result.Protocols, ", "))
-	if len(result.Summary) > 0 {
+	if result.Summary.Protocols > 0 {
 		fmt.Fprintf(&b, "Summary:     healthy=%v degraded=%v failed=%v best=%v risk=%v\n",
-			result.Summary["healthy_protocols"],
-			result.Summary["degraded_protocols"],
-			result.Summary["failed_protocols"],
-			result.Summary["best_protocol"],
-			result.Summary["riskiest_protocol"])
+			result.Summary.HealthyProtocols,
+			result.Summary.DegradedProtocols,
+			result.Summary.FailedProtocols,
+			result.Summary.BestProtocol,
+			result.Summary.RiskiestProtocol)
 	}
 	b.WriteString("\nProtocol  Requests  Errors  Avg(ms)  P95(ms)  Req/s   Bytes\n")
 	for _, protocol := range sortedBenchKeys(result.Stats) {
@@ -149,10 +149,10 @@ func renderProbeMarkdown(result probe.Result) string {
 		}
 		b.WriteString("\n")
 	}
-	if len(result.TLS) > 0 {
+	if tlsFields := anyToTLSFields(result.TLS); len(tlsFields) > 0 {
 		b.WriteString("## TLS\n\n| Field | Value |\n|---|---|\n")
-		for _, key := range sortedAnyKeys(result.TLS) {
-			fmt.Fprintf(&b, "| %s | %v |\n", key, result.TLS[key])
+		for _, key := range sortedAnyKeys(tlsFields) {
+			fmt.Fprintf(&b, "| %s | %v |\n", key, tlsFields[key])
 		}
 		b.WriteString("\n")
 	}
@@ -167,119 +167,130 @@ func renderProbeAnalysisTable(b *strings.Builder, analysis map[string]any) {
 		return
 	}
 	b.WriteString("\nAnalysis\n")
-	if response, ok := analysis["response"].(map[string]any); ok {
+	if response, ok := anyToResponseAnalysis(analysis["response"]); ok {
 		fmt.Fprintf(b, "  %-10s body=%v status=%v throughput=%v B/s\n",
 			"response",
-			response["body_bytes"],
-			response["status_class"],
-			response["throughput_bytes_sec"])
+			response.BodyBytes,
+			response.StatusClass,
+			response.ThroughputBytesSec)
 	}
-	if latency, ok := analysis["latency"].(map[string]any); ok {
+	if latency, ok := anyToLatencyAnalysis(analysis["latency"]); ok {
 		fmt.Fprintf(b, "  %-10s samples=%v avg=%vms p50=%v p95=%v p99=%v\n",
 			"latency",
-			latency["samples"],
-			latency["avg_ms"],
-			latency["p50"],
-			latency["p95"],
-			latency["p99"])
+			latency.Samples,
+			latency.AverageMS,
+			latency.P50,
+			latency.P95,
+			latency.P99)
 	}
-	if streams, ok := analysis["streams"].(map[string]any); ok {
+	if streams, ok := anyToStreamAnalysis(analysis["streams"]); ok {
 		fmt.Fprintf(b, "  %-10s attempted=%v ok=%v err=%v p95=%vms success=%v\n",
 			"streams",
-			streams["attempted"],
-			streams["successful"],
-			streams["errors"],
-			streams["p95_latency_ms"],
-			streams["success_rate"])
+			streams.Attempted,
+			streams.Successful,
+			streams.Errors,
+			streams.P95Latency,
+			streams.SuccessRate)
 	}
-	if altSvc, ok := analysis["alt_svc"].(map[string]any); ok {
+	if altSvc, ok := anyToAltSvcAnalysis(analysis["alt_svc"]); ok {
 		fmt.Fprintf(b, "  %-10s present=%v values=%v\n", "alt-svc", altSvc["present"], altSvc["values"])
 	}
-	if qpack, ok := analysis["qpack"].(map[string]any); ok {
+	if qpack, ok := anyToQPACKAnalysis(analysis["qpack"]); ok {
 		fmt.Fprintf(b, "  %-10s headers=%v raw=%v block=%v ratio=%v\n",
 			"qpack",
-			qpack["header_count"],
-			qpack["raw_bytes"],
-			qpack["estimated_block"],
-			qpack["estimated_ratio"])
+			qpack.HeaderCount,
+			qpack.RawBytes,
+			qpack.EstimatedBlock,
+			qpack.EstimatedRatio)
 	}
-	if loss, ok := analysis["loss"].(map[string]any); ok {
+	if loss, ok := anyToLossAnalysis(analysis["loss"]); ok {
 		fmt.Fprintf(b, "  %-10s signal=%v errors=%v success=%v\n",
 			"loss",
-			loss["signal"],
-			loss["stream_errors"],
-			loss["success_rate"])
+			loss.Signal,
+			loss.StreamErrors,
+			loss.SuccessRate)
 	}
-	if congestion, ok := analysis["congestion"].(map[string]any); ok {
+	if congestion, ok := anyToCongestionAnalysis(analysis["congestion"]); ok {
 		fmt.Fprintf(b, "  %-10s signal=%v p50=%v p95=%v ratio=%v\n",
 			"congestion",
-			congestion["signal"],
-			congestion["p50_ms"],
-			congestion["p95_ms"],
-			congestion["spread_ratio"])
+			congestion.Signal,
+			congestion.P50MS,
+			congestion.P95MS,
+			congestion.SpreadRatio)
 	}
-	if version, ok := analysis["version"].(map[string]any); ok {
+	if version, ok := anyToVersionAnalysis(analysis["version"]); ok {
 		fmt.Fprintf(b, "  %-10s proto=%v alpn=%v quic=%v\n",
 			"version",
-			version["observed_proto"],
-			version["alpn"],
-			version["quic_version"])
+			version.ObservedProto,
+			version.ALPN,
+			version.QUICVersion)
 	}
-	if retry, ok := analysis["retry"].(map[string]any); ok {
+	if retry, ok := anyToRetryAnalysis(analysis["retry"]); ok {
 		fmt.Fprintf(b, "  %-10s observed=%v connect=%vms tls=%vms\n",
 			"retry",
-			retry["retry_observed"],
-			retry["connect_ms"],
-			retry["tls_ms"])
+			retry.RetryObserved,
+			retry.ConnectMS,
+			retry.TLSMS)
 	}
-	if ecn, ok := analysis["ecn"].(map[string]any); ok {
+	if ecn, ok := anyToECNAnalysis(analysis["ecn"]); ok {
 		fmt.Fprintf(b, "  %-10s visible=%v proto=%v marks=%v\n",
 			"ecn",
-			ecn["ecn_visible"],
-			ecn["observed_proto"],
-			ecn["packet_marks"])
+			ecn.ECNVisible,
+			ecn.ObservedProto,
+			ecn.PacketMarks)
 	}
-	if spin, ok := analysis["spin-bit"].(map[string]any); ok {
+	if spin, ok := anyToSpinBitAnalysis(analysis["spin-bit"]); ok {
 		fmt.Fprintf(b, "  %-10s observed=%v rtt=%vms stability=%v\n",
 			"spin-bit",
-			spin["spin_observed"],
-			spin["rtt_estimate_ms"],
-			spin["stability"])
+			spin.SpinObserved,
+			spin.RTTEstimateMS,
+			spin.Stability)
 	}
-	if plan, ok := analysis["test_plan"].(map[string]any); ok {
+	if zeroRTT, ok := anyToZeroRTTAnalysis(analysis["0rtt"]); ok {
+		fmt.Fprintf(b, "  %-10s mode=%v resumed=%v saved=%vms\n",
+			"0rtt",
+			zeroRTT.Mode,
+			zeroRTT.Resumed,
+			zeroRTT.TimeSavedMS)
+	}
+	if migration, ok := anyToMigrationAnalysis(analysis["migration"]); ok {
+		fmt.Fprintf(b, "  %-10s mode=%v supported=%v status=%v\n",
+			"migration",
+			migration.Mode,
+			migration.Supported,
+			migration.StatusClass)
+	}
+	if plan, ok := anyToTestPlan(analysis["test_plan"]); ok {
 		fmt.Fprintf(b, "  %-10s requested=%s executed=%s\n",
 			"test-plan",
-			joinStringSlice(anyToStringSlice(plan["requested"])),
-			joinStringSlice(anyToStringSlice(plan["executed"])))
-		if skipped := anyToSkippedSummary(plan["skipped"]); skipped != "" {
+			joinStringSlice(plan.Requested),
+			joinStringSlice(plan.Executed))
+		if skipped := formatSkippedTests(plan.Skipped); skipped != "" {
 			fmt.Fprintf(b, "  %-10s skipped=%s\n", "", skipped)
 		}
 	}
-	if support, ok := analysis["support"].(map[string]any); ok {
-		for _, name := range sortedAnyKeys(support) {
-			entry, ok := support[name].(map[string]any)
-			if !ok {
-				continue
-			}
+	if support := anyToSupportEntries(analysis["support"]); len(support) > 0 {
+		for _, name := range sortedSupportKeys(support) {
+			entry := support[name]
 			fmt.Fprintf(b, "  %-10s %s coverage=%v state=%v summary=%v\n",
 				"support",
 				name,
-				entry["coverage"],
-				entry["state"],
-				entry["summary"])
+				entry.Coverage,
+				entry.State,
+				entry.Summary)
 		}
 	}
-	if summary, ok := analysis["support_summary"].(map[string]any); ok {
+	if summary, ok := anyToSupportSummary(analysis["support_summary"]); ok {
 		fmt.Fprintf(b, "  %-10s requested=%v available=%v not-run=%v unavailable=%v ratio=%v\n",
 			"coverage",
-			summary["requested_tests"],
-			summary["available"],
-			summary["not_run"],
-			summary["unavailable"],
-			summary["coverage_ratio"])
+			summary.RequestedTests,
+			summary.Available,
+			summary.NotRun,
+			summary.Unavailable,
+			summary.CoverageRatio)
 	}
 	for _, key := range sortedAnyKeys(analysis) {
-		if key == "response" || key == "latency" || key == "streams" || key == "alt_svc" || key == "qpack" || key == "loss" || key == "congestion" || key == "version" || key == "retry" || key == "ecn" || key == "spin-bit" || key == "test_plan" || key == "support" || key == "support_summary" {
+		if key == "response" || key == "latency" || key == "streams" || key == "alt_svc" || key == "qpack" || key == "loss" || key == "congestion" || key == "version" || key == "retry" || key == "ecn" || key == "spin-bit" || key == "0rtt" || key == "migration" || key == "test_plan" || key == "support" || key == "support_summary" {
 			continue
 		}
 		fmt.Fprintf(b, "  %-10s %v\n", key, analysis[key])
@@ -291,80 +302,85 @@ func renderProbeAnalysisMarkdown(b *strings.Builder, analysis map[string]any) {
 		return
 	}
 	b.WriteString("## Analysis\n\n")
-	if response, ok := analysis["response"].(map[string]any); ok {
+	if response, ok := anyToResponseAnalysis(analysis["response"]); ok {
 		fmt.Fprintf(b, "- Response: body `%v` bytes, status class `%v`, throughput `%v` B/s\n",
-			response["body_bytes"], response["status_class"], response["throughput_bytes_sec"])
+			response.BodyBytes, response.StatusClass, response.ThroughputBytesSec)
 	}
-	if latency, ok := analysis["latency"].(map[string]any); ok {
+	if latency, ok := anyToLatencyAnalysis(analysis["latency"]); ok {
 		fmt.Fprintf(b, "- Latency: samples `%v`, avg `%vms`, p50 `%v`, p95 `%v`, p99 `%v`\n",
-			latency["samples"], latency["avg_ms"], latency["p50"], latency["p95"], latency["p99"])
+			latency.Samples, latency.AverageMS, latency.P50, latency.P95, latency.P99)
 	}
-	if streams, ok := analysis["streams"].(map[string]any); ok {
+	if streams, ok := anyToStreamAnalysis(analysis["streams"]); ok {
 		fmt.Fprintf(b, "- Streams: attempted `%v`, successful `%v`, errors `%v`, p95 `%vms`, success `%v`\n",
-			streams["attempted"], streams["successful"], streams["errors"], streams["p95_latency_ms"], streams["success_rate"])
+			streams.Attempted, streams.Successful, streams.Errors, streams.P95Latency, streams.SuccessRate)
 	}
-	if altSvc, ok := analysis["alt_svc"].(map[string]any); ok {
+	if altSvc, ok := anyToAltSvcAnalysis(analysis["alt_svc"]); ok {
 		fmt.Fprintf(b, "- Alt-Svc: present `%v`, values `%v`\n", altSvc["present"], altSvc["values"])
 	}
-	if qpack, ok := analysis["qpack"].(map[string]any); ok {
+	if qpack, ok := anyToQPACKAnalysis(analysis["qpack"]); ok {
 		fmt.Fprintf(b, "- QPACK: headers `%v`, raw `%v`, block `%v`, ratio `%v`\n",
-			qpack["header_count"], qpack["raw_bytes"], qpack["estimated_block"], qpack["estimated_ratio"])
+			qpack.HeaderCount, qpack.RawBytes, qpack.EstimatedBlock, qpack.EstimatedRatio)
 	}
-	if loss, ok := analysis["loss"].(map[string]any); ok {
+	if loss, ok := anyToLossAnalysis(analysis["loss"]); ok {
 		fmt.Fprintf(b, "- Loss: signal `%v`, stream errors `%v`, success `%v`\n",
-			loss["signal"], loss["stream_errors"], loss["success_rate"])
+			loss.Signal, loss.StreamErrors, loss.SuccessRate)
 	}
-	if congestion, ok := analysis["congestion"].(map[string]any); ok {
+	if congestion, ok := anyToCongestionAnalysis(analysis["congestion"]); ok {
 		fmt.Fprintf(b, "- Congestion: signal `%v`, p50 `%v`, p95 `%v`, spread `%v`\n",
-			congestion["signal"], congestion["p50_ms"], congestion["p95_ms"], congestion["spread_ratio"])
+			congestion.Signal, congestion.P50MS, congestion.P95MS, congestion.SpreadRatio)
 	}
-	if version, ok := analysis["version"].(map[string]any); ok {
+	if version, ok := anyToVersionAnalysis(analysis["version"]); ok {
 		fmt.Fprintf(b, "- Version: proto `%v`, alpn `%v`, quic `%v`\n",
-			version["observed_proto"], version["alpn"], version["quic_version"])
+			version.ObservedProto, version.ALPN, version.QUICVersion)
 	}
-	if retry, ok := analysis["retry"].(map[string]any); ok {
+	if retry, ok := anyToRetryAnalysis(analysis["retry"]); ok {
 		fmt.Fprintf(b, "- Retry: observed `%v`, connect `%vms`, tls `%vms`\n",
-			retry["retry_observed"], retry["connect_ms"], retry["tls_ms"])
+			retry.RetryObserved, retry.ConnectMS, retry.TLSMS)
 	}
-	if ecn, ok := analysis["ecn"].(map[string]any); ok {
+	if ecn, ok := anyToECNAnalysis(analysis["ecn"]); ok {
 		fmt.Fprintf(b, "- ECN: visible `%v`, proto `%v`, marks `%v`\n",
-			ecn["ecn_visible"], ecn["observed_proto"], ecn["packet_marks"])
+			ecn.ECNVisible, ecn.ObservedProto, ecn.PacketMarks)
 	}
-	if spin, ok := analysis["spin-bit"].(map[string]any); ok {
+	if spin, ok := anyToSpinBitAnalysis(analysis["spin-bit"]); ok {
 		fmt.Fprintf(b, "- Spin Bit: observed `%v`, rtt `%vms`, stability `%v`\n",
-			spin["spin_observed"], spin["rtt_estimate_ms"], spin["stability"])
+			spin.SpinObserved, spin.RTTEstimateMS, spin.Stability)
 	}
-	if plan, ok := analysis["test_plan"].(map[string]any); ok {
+	if zeroRTT, ok := anyToZeroRTTAnalysis(analysis["0rtt"]); ok {
+		fmt.Fprintf(b, "- 0-RTT: mode `%v`, resumed `%v`, saved `%vms`\n",
+			zeroRTT.Mode, zeroRTT.Resumed, zeroRTT.TimeSavedMS)
+	}
+	if migration, ok := anyToMigrationAnalysis(analysis["migration"]); ok {
+		fmt.Fprintf(b, "- Migration: mode `%v`, supported `%v`, status `%v`\n",
+			migration.Mode, migration.Supported, migration.StatusClass)
+	}
+	if plan, ok := anyToTestPlan(analysis["test_plan"]); ok {
 		fmt.Fprintf(b, "- Test Plan: requested `%s`, executed `%s`\n",
-			joinStringSlice(anyToStringSlice(plan["requested"])),
-			joinStringSlice(anyToStringSlice(plan["executed"])))
-		if skipped := anyToSkippedSummary(plan["skipped"]); skipped != "" {
+			joinStringSlice(plan.Requested),
+			joinStringSlice(plan.Executed))
+		if skipped := formatSkippedTests(plan.Skipped); skipped != "" {
 			fmt.Fprintf(b, "- Skipped: `%s`\n", skipped)
 		}
 	}
-	if support, ok := analysis["support"].(map[string]any); ok {
-		for _, name := range sortedAnyKeys(support) {
-			entry, ok := support[name].(map[string]any)
-			if !ok {
-				continue
-			}
+	if support := anyToSupportEntries(analysis["support"]); len(support) > 0 {
+		for _, name := range sortedSupportKeys(support) {
+			entry := support[name]
 			fmt.Fprintf(b, "- Support `%s`: coverage `%v`, state `%v`, summary `%v`\n",
 				name,
-				entry["coverage"],
-				entry["state"],
-				entry["summary"])
+				entry.Coverage,
+				entry.State,
+				entry.Summary)
 		}
 	}
-	if summary, ok := analysis["support_summary"].(map[string]any); ok {
+	if summary, ok := anyToSupportSummary(analysis["support_summary"]); ok {
 		fmt.Fprintf(b, "- Coverage Summary: requested `%v`, available `%v`, not-run `%v`, unavailable `%v`, ratio `%v`\n",
-			summary["requested_tests"],
-			summary["available"],
-			summary["not_run"],
-			summary["unavailable"],
-			summary["coverage_ratio"])
+			summary.RequestedTests,
+			summary.Available,
+			summary.NotRun,
+			summary.Unavailable,
+			summary.CoverageRatio)
 	}
 	for _, key := range sortedAnyKeys(analysis) {
-		if key == "response" || key == "latency" || key == "streams" || key == "alt_svc" || key == "qpack" || key == "loss" || key == "congestion" || key == "version" || key == "retry" || key == "ecn" || key == "spin-bit" || key == "test_plan" || key == "support" || key == "support_summary" {
+		if key == "response" || key == "latency" || key == "streams" || key == "alt_svc" || key == "qpack" || key == "loss" || key == "congestion" || key == "version" || key == "retry" || key == "ecn" || key == "spin-bit" || key == "0rtt" || key == "migration" || key == "test_plan" || key == "support" || key == "support_summary" {
 			continue
 		}
 		fmt.Fprintf(b, "- %s: `%v`\n", key, analysis[key])
@@ -388,24 +404,557 @@ func anyToStringSlice(value any) []string {
 	}
 }
 
-func anyToSkippedSummary(value any) string {
+func anyToTestPlan(value any) (probe.TestPlan, bool) {
 	switch typed := value.(type) {
-	case []map[string]any:
-		parts := make([]string, 0, len(typed))
-		for _, item := range typed {
-			parts = append(parts, fmt.Sprintf("%v (%v)", item["name"], item["reason"]))
+	case probe.TestPlan:
+		return probe.TestPlan{
+			Requested: append([]string(nil), typed.Requested...),
+			Executed:  append([]string(nil), typed.Executed...),
+			Skipped:   append([]probe.SkippedTest(nil), typed.Skipped...),
+		}, true
+	case map[string]any:
+		return probe.TestPlan{
+			Requested: anyToStringSlice(typed["requested"]),
+			Executed:  anyToStringSlice(typed["executed"]),
+			Skipped:   anyToSkippedTests(typed["skipped"]),
+		}, true
+	default:
+		return probe.TestPlan{}, false
+	}
+}
+
+func anyToResponseAnalysis(value any) (probe.ResponseAnalysis, bool) {
+	switch typed := value.(type) {
+	case probe.ResponseAnalysis:
+		return typed, true
+	case map[string]any:
+		return probe.ResponseAnalysis{
+			BodyBytes:          int64Value(typed["body_bytes"]),
+			ThroughputBytesSec: floatValue(typed["throughput_bytes_sec"]),
+			ThroughputBitsSec:  floatValue(typed["throughput_bits_sec"]),
+			StatusClass:        intValue(typed["status_class"]),
+		}, true
+	default:
+		return probe.ResponseAnalysis{}, false
+	}
+}
+
+func anyToTLSFields(value any) map[string]any {
+	switch typed := value.(type) {
+	case probe.TLSMetadata:
+		out := map[string]any{}
+		if typed.Mode != "" {
+			out["mode"] = typed.Mode
 		}
-		return strings.Join(parts, ", ")
-	case []any:
-		parts := make([]string, 0, len(typed))
+		if typed.Version != "" {
+			out["version"] = typed.Version
+		}
+		if typed.Cipher != "" {
+			out["cipher"] = typed.Cipher
+		}
+		if typed.ALPN != "" {
+			out["alpn"] = typed.ALPN
+		}
+		if typed.ServerName != "" {
+			out["server_name"] = typed.ServerName
+		}
+		if typed.PeerCerts > 0 {
+			out["peer_certs"] = typed.PeerCerts
+		}
+		if typed.HandshakeState != "" {
+			out["handshake_state"] = typed.HandshakeState
+		}
+		if typed.VerifiedChains > 0 {
+			out["verified_chains"] = typed.VerifiedChains
+		}
+		if typed.Resumed || typed.HandshakeState != "" || typed.Mode != "" {
+			out["resumed"] = typed.Resumed
+		}
+		if typed.LeafCert != nil {
+			out["leaf_cert"] = typed.LeafCert
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for key, item := range typed {
+			out[key] = item
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func anyToAltSvcAnalysis(value any) (map[string]any, bool) {
+	switch typed := value.(type) {
+	case probe.AltSvcAnalysis:
+		return map[string]any{
+			"present": typed.Present,
+			"values":  append([]string(nil), typed.Values...),
+		}, true
+	case map[string]any:
+		return typed, true
+	default:
+		return nil, false
+	}
+}
+
+func anyToQPACKAnalysis(value any) (probe.QPACKAnalysis, bool) {
+	switch typed := value.(type) {
+	case probe.QPACKAnalysis:
+		return typed, true
+	case map[string]any:
+		return probe.QPACKAnalysis{
+			Supported:         boolValue(typed["supported"]),
+			Mode:              stringValue(typed["mode"]),
+			HeaderCount:       intValue(typed["header_count"]),
+			RawBytes:          intValue(typed["raw_bytes"]),
+			EstimatedBlock:    intValue(typed["estimated_block"]),
+			EstimatedRatio:    floatValue(typed["estimated_ratio"]),
+			CompressionSaving: intValue(typed["compression_saving"]),
+			Note:              stringValue(typed["note"]),
+		}, true
+	default:
+		return probe.QPACKAnalysis{}, false
+	}
+}
+
+func anyToVersionAnalysis(value any) (probe.VersionAnalysis, bool) {
+	switch typed := value.(type) {
+	case probe.VersionAnalysis:
+		return typed, true
+	case map[string]any:
+		return probe.VersionAnalysis{
+			Supported:       boolValue(typed["supported"]),
+			Mode:            stringValue(typed["mode"]),
+			ObservedProto:   stringValue(typed["observed_proto"]),
+			ALPN:            stringValue(typed["alpn"]),
+			QUICVersion:     stringValue(typed["quic_version"]),
+			NegotiationSeen: boolValue(typed["negotiation_seen"]),
+			Note:            stringValue(typed["note"]),
+		}, true
+	default:
+		return probe.VersionAnalysis{}, false
+	}
+}
+
+func anyToRetryAnalysis(value any) (probe.RetryAnalysis, bool) {
+	switch typed := value.(type) {
+	case probe.RetryAnalysis:
+		return typed, true
+	case map[string]any:
+		return probe.RetryAnalysis{
+			Supported:     boolValue(typed["supported"]),
+			Mode:          stringValue(typed["mode"]),
+			ObservedProto: stringValue(typed["observed_proto"]),
+			ALPN:          stringValue(typed["alpn"]),
+			RetryObserved: boolValue(typed["retry_observed"]),
+			ConnectMS:     int64Value(typed["connect_ms"]),
+			TLSMS:         int64Value(typed["tls_ms"]),
+			Visibility:    stringValue(typed["visibility"]),
+			Note:          stringValue(typed["note"]),
+		}, true
+	default:
+		return probe.RetryAnalysis{}, false
+	}
+}
+
+func anyToECNAnalysis(value any) (probe.ECNAnalysis, bool) {
+	switch typed := value.(type) {
+	case probe.ECNAnalysis:
+		return typed, true
+	case map[string]any:
+		return probe.ECNAnalysis{
+			Supported:     boolValue(typed["supported"]),
+			Mode:          stringValue(typed["mode"]),
+			ObservedProto: stringValue(typed["observed_proto"]),
+			ALPN:          stringValue(typed["alpn"]),
+			ECNVisible:    boolValue(typed["ecn_visible"]),
+			PacketMarks:   stringValue(typed["packet_marks"]),
+			Note:          stringValue(typed["note"]),
+		}, true
+	default:
+		return probe.ECNAnalysis{}, false
+	}
+}
+
+func anyToSpinBitAnalysis(value any) (probe.SpinBitAnalysis, bool) {
+	switch typed := value.(type) {
+	case probe.SpinBitAnalysis:
+		return typed, true
+	case map[string]any:
+		return probe.SpinBitAnalysis{
+			Supported:     boolValue(typed["supported"]),
+			Mode:          stringValue(typed["mode"]),
+			RTTEstimateMS: floatValue(typed["rtt_estimate_ms"]),
+			P95MS:         floatValue(typed["p95_ms"]),
+			Stability:     stringValue(typed["stability"]),
+			SpinObserved:  boolValue(typed["spin_observed"]),
+			Note:          stringValue(typed["note"]),
+		}, true
+	default:
+		return probe.SpinBitAnalysis{}, false
+	}
+}
+
+func anyToLossAnalysis(value any) (probe.LossAnalysis, bool) {
+	switch typed := value.(type) {
+	case probe.LossAnalysis:
+		return probe.LossAnalysis{
+			Supported:         typed.Supported,
+			Mode:              typed.Mode,
+			Signal:            typed.Signal,
+			LatencyErrors:     typed.LatencyErrors,
+			LatencySamples:    typed.LatencySamples,
+			StreamAttempts:    typed.StreamAttempts,
+			StreamErrors:      typed.StreamErrors,
+			SuccessRate:       typed.SuccessRate,
+			ErrorCategories:   copyStringIntMap(typed.ErrorCategories),
+			TimeoutIndicators: typed.TimeoutIndicators,
+			Note:              typed.Note,
+		}, true
+	case map[string]any:
+		return probe.LossAnalysis{
+			Supported:         boolValue(typed["supported"]),
+			Mode:              stringValue(typed["mode"]),
+			Signal:            stringValue(typed["signal"]),
+			LatencyErrors:     intValue(typed["latency_errors"]),
+			LatencySamples:    intValue(typed["latency_samples"]),
+			StreamAttempts:    intValue(typed["stream_attempts"]),
+			StreamErrors:      intValue(typed["stream_errors"]),
+			SuccessRate:       floatValue(typed["success_rate"]),
+			ErrorCategories:   anyToStringIntMap(typed["error_categories"]),
+			TimeoutIndicators: intValue(typed["timeout_indicators"]),
+			Note:              stringValue(typed["note"]),
+		}, true
+	default:
+		return probe.LossAnalysis{}, false
+	}
+}
+
+func anyToCongestionAnalysis(value any) (probe.CongestionAnalysis, bool) {
+	switch typed := value.(type) {
+	case probe.CongestionAnalysis:
+		return typed, true
+	case map[string]any:
+		return probe.CongestionAnalysis{
+			Supported:          boolValue(typed["supported"]),
+			Mode:               stringValue(typed["mode"]),
+			Signal:             stringValue(typed["signal"]),
+			P50MS:              floatValue(typed["p50_ms"]),
+			P95MS:              floatValue(typed["p95_ms"]),
+			JitterMS:           floatValue(typed["jitter_ms"]),
+			SpreadRatio:        floatValue(typed["spread_ratio"]),
+			StreamAverageMS:    floatValue(typed["stream_avg_ms"]),
+			StreamP95MS:        floatValue(typed["stream_p95_ms"]),
+			ConcurrentAttempts: intValue(typed["concurrent_attempts"]),
+			SuccessRate:        floatValue(typed["success_rate"]),
+			Note:               stringValue(typed["note"]),
+		}, true
+	default:
+		return probe.CongestionAnalysis{}, false
+	}
+}
+
+func anyToZeroRTTAnalysis(value any) (probe.ZeroRTTAnalysis, bool) {
+	switch typed := value.(type) {
+	case probe.ZeroRTTAnalysis:
+		return typed, true
+	case map[string]any:
+		return probe.ZeroRTTAnalysis{
+			Supported:      boolValue(typed["supported"]),
+			Mode:           stringValue(typed["mode"]),
+			InitialMS:      floatValue(typed["initial_ms"]),
+			ResumedMS:      floatValue(typed["resumed_ms"]),
+			InitialResumed: boolValue(typed["initial_resumed"]),
+			Resumed:        boolValue(typed["resumed"]),
+			TimeSavedMS:    floatValue(typed["time_saved_ms"]),
+			Requested0RTT:  boolValue(typed["requested_0rtt"]),
+			Note:           stringValue(typed["note"]),
+			Error:          stringValue(typed["error"]),
+		}, true
+	default:
+		return probe.ZeroRTTAnalysis{}, false
+	}
+}
+
+func anyToMigrationAnalysis(value any) (probe.MigrationAnalysis, bool) {
+	switch typed := value.(type) {
+	case probe.MigrationAnalysis:
+		return typed, true
+	case map[string]any:
+		return probe.MigrationAnalysis{
+			Supported:      boolValue(typed["supported"]),
+			Mode:           stringValue(typed["mode"]),
+			Target:         stringValue(typed["target"]),
+			StatusClass:    intValue(typed["status_class"]),
+			BodyBytes:      intValue(typed["body_bytes"]),
+			DurationMS:     floatValue(typed["duration_ms"]),
+			RequestedCheck: boolValue(typed["requested_check"]),
+			Note:           stringValue(typed["note"]),
+			Message:        stringValue(typed["message"]),
+			Error:          stringValue(typed["error"]),
+		}, true
+	default:
+		return probe.MigrationAnalysis{}, false
+	}
+}
+
+func anyToLatencyAnalysis(value any) (probe.LatencyAnalysis, bool) {
+	switch typed := value.(type) {
+	case probe.LatencyAnalysis:
+		return probe.LatencyAnalysis{
+			Samples:   typed.Samples,
+			AverageMS: typed.AverageMS,
+			P50:       typed.P50,
+			P95:       typed.P95,
+			P99:       typed.P99,
+			Errors:    typed.Errors,
+			SamplesMS: append([]float64(nil), typed.SamplesMS...),
+		}, true
+	case map[string]any:
+		return probe.LatencyAnalysis{
+			Samples:   intValue(typed["samples"]),
+			AverageMS: floatValue(typed["avg_ms"]),
+			P50:       floatValue(typed["p50"]),
+			P95:       floatValue(typed["p95"]),
+			P99:       floatValue(typed["p99"]),
+			Errors:    intValue(typed["errors"]),
+			SamplesMS: anyToFloat64Slice(typed["samples_ms"]),
+		}, true
+	default:
+		return probe.LatencyAnalysis{}, false
+	}
+}
+
+func anyToStreamAnalysis(value any) (probe.StreamAnalysis, bool) {
+	switch typed := value.(type) {
+	case probe.StreamAnalysis:
+		return probe.StreamAnalysis{
+			Attempted:       typed.Attempted,
+			Successful:      typed.Successful,
+			Errors:          typed.Errors,
+			SuccessRate:     typed.SuccessRate,
+			AverageLatency:  typed.AverageLatency,
+			P95Latency:      typed.P95Latency,
+			ThroughputBytes: typed.ThroughputBytes,
+			StatusClasses:   copyStringIntMap(typed.StatusClasses),
+			ErrorCategories: copyStringIntMap(typed.ErrorCategories),
+		}, true
+	case map[string]any:
+		return probe.StreamAnalysis{
+			Attempted:       intValue(typed["attempted"]),
+			Successful:      intValue(typed["successful"]),
+			Errors:          intValue(typed["errors"]),
+			SuccessRate:     floatValue(typed["success_rate"]),
+			AverageLatency:  floatValue(typed["avg_latency_ms"]),
+			P95Latency:      floatValue(typed["p95_latency_ms"]),
+			ThroughputBytes: int64Value(typed["throughput_bytes"]),
+			StatusClasses:   anyToStringIntMap(typed["status_classes"]),
+			ErrorCategories: anyToStringIntMap(typed["error_categories"]),
+		}, true
+	default:
+		return probe.StreamAnalysis{}, false
+	}
+}
+
+func anyToSkippedTests(value any) []probe.SkippedTest {
+	switch typed := value.(type) {
+	case []probe.SkippedTest:
+		return append([]probe.SkippedTest(nil), typed...)
+	case []map[string]any:
+		out := make([]probe.SkippedTest, 0, len(typed))
 		for _, item := range typed {
+			out = append(out, probe.SkippedTest{
+				Name:   stringValue(item["name"]),
+				Reason: stringValue(item["reason"]),
+			})
+		}
+		return out
+	case []any:
+		out := make([]probe.SkippedTest, 0, len(typed))
+		for _, item := range typed {
+			if entry, ok := item.(probe.SkippedTest); ok {
+				out = append(out, entry)
+				continue
+			}
 			if m, ok := item.(map[string]any); ok {
-				parts = append(parts, fmt.Sprintf("%v (%v)", m["name"], m["reason"]))
+				out = append(out, probe.SkippedTest{
+					Name:   stringValue(m["name"]),
+					Reason: stringValue(m["reason"]),
+				})
 			}
 		}
-		return strings.Join(parts, ", ")
+		return out
 	default:
+		return nil
+	}
+}
+
+func formatSkippedTests(skipped []probe.SkippedTest) string {
+	if len(skipped) == 0 {
 		return ""
+	}
+	parts := make([]string, 0, len(skipped))
+	for _, item := range skipped {
+		parts = append(parts, fmt.Sprintf("%s (%s)", item.Name, item.Reason))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func anyToSupportEntries(value any) map[string]probe.SupportEntry {
+	switch typed := value.(type) {
+	case map[string]probe.SupportEntry:
+		out := make(map[string]probe.SupportEntry, len(typed))
+		for key, entry := range typed {
+			out[key] = entry
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]probe.SupportEntry, len(typed))
+		for key, item := range typed {
+			switch entry := item.(type) {
+			case probe.SupportEntry:
+				out[key] = entry
+			case map[string]any:
+				out[key] = probe.SupportEntry{
+					Requested: boolValue(entry["requested"]),
+					Coverage:  stringValue(entry["coverage"]),
+					State:     stringValue(entry["state"]),
+					Summary:   stringValue(entry["summary"]),
+					Mode:      stringValue(entry["mode"]),
+				}
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func anyToFloat64Slice(value any) []float64 {
+	switch typed := value.(type) {
+	case []float64:
+		return append([]float64(nil), typed...)
+	case []any:
+		out := make([]float64, 0, len(typed))
+		for _, item := range typed {
+			out = append(out, floatValue(item))
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func anyToStringIntMap(value any) map[string]int {
+	switch typed := value.(type) {
+	case map[string]int:
+		return copyStringIntMap(typed)
+	case map[string]any:
+		out := make(map[string]int, len(typed))
+		for key, item := range typed {
+			out[key] = intValue(item)
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func copyStringIntMap(input map[string]int) map[string]int {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
+}
+
+func anyToSupportSummary(value any) (probe.SupportSummary, bool) {
+	switch typed := value.(type) {
+	case probe.SupportSummary:
+		return typed, true
+	case map[string]any:
+		return probe.SupportSummary{
+			RequestedTests: intValue(typed["requested_tests"]),
+			Available:      intValue(typed["available"]),
+			NotRun:         intValue(typed["not_run"]),
+			Unavailable:    intValue(typed["unavailable"]),
+			Full:           intValue(typed["full"]),
+			Partial:        intValue(typed["partial"]),
+			CoverageRatio:  floatValue(typed["coverage_ratio"]),
+		}, true
+	default:
+		return probe.SupportSummary{}, false
+	}
+}
+
+func sortedSupportKeys(input map[string]probe.SupportEntry) []string {
+	keys := make([]string, 0, len(input))
+	for key := range input {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func stringValue(value any) string {
+	s, _ := value.(string)
+	return s
+}
+
+func boolValue(value any) bool {
+	b, _ := value.(bool)
+	return b
+}
+
+func intValue(value any) int {
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case float64:
+		return int(typed)
+	default:
+		return 0
+	}
+}
+
+func floatValue(value any) float64 {
+	switch typed := value.(type) {
+	case float64:
+		return typed
+	case int:
+		return float64(typed)
+	case int64:
+		return float64(typed)
+	default:
+		return 0
+	}
+}
+
+func int64Value(value any) int64 {
+	switch typed := value.(type) {
+	case int:
+		return int64(typed)
+	case int32:
+		return int64(typed)
+	case int64:
+		return typed
+	case uint:
+		return int64(typed)
+	case uint32:
+		return int64(typed)
+	case uint64:
+		return int64(typed)
+	case float64:
+		return int64(typed)
+	default:
+		return 0
 	}
 }
 
@@ -422,13 +971,13 @@ func renderBenchMarkdown(result bench.Result) string {
 	fmt.Fprintf(&b, "- Target: `%s`\n", result.Target)
 	fmt.Fprintf(&b, "- Duration: `%s`\n", result.Duration)
 	fmt.Fprintf(&b, "- Concurrency: `%d`\n\n", result.Concurrency)
-	if len(result.Summary) > 0 {
+	if result.Summary.Protocols > 0 {
 		fmt.Fprintf(&b, "- Summary: healthy `%v`, degraded `%v`, failed `%v`, best `%v`, risk `%v`\n\n",
-			result.Summary["healthy_protocols"],
-			result.Summary["degraded_protocols"],
-			result.Summary["failed_protocols"],
-			result.Summary["best_protocol"],
-			result.Summary["riskiest_protocol"])
+			result.Summary.HealthyProtocols,
+			result.Summary.DegradedProtocols,
+			result.Summary.FailedProtocols,
+			result.Summary.BestProtocol,
+			result.Summary.RiskiestProtocol)
 	}
 	b.WriteString("| Protocol | Requests | Errors | Avg ms | P50 | P95 | P99 | Req/s | Bytes |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|\n")
 	for _, protocol := range sortedBenchKeys(result.Stats) {

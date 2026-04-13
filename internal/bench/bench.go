@@ -30,7 +30,18 @@ type Result struct {
 	Concurrency int              `json:"concurrency" yaml:"concurrency"`
 	TraceFiles  []string         `json:"trace_files,omitempty" yaml:"trace_files,omitempty"`
 	Stats       map[string]Stats `json:"stats" yaml:"stats"`
-	Summary     map[string]any   `json:"summary,omitempty" yaml:"summary,omitempty"`
+	Summary     Summary          `json:"summary,omitempty" yaml:"summary,omitempty"`
+}
+
+type Summary struct {
+	Protocols        int     `json:"protocols" yaml:"protocols"`
+	HealthyProtocols int     `json:"healthy_protocols" yaml:"healthy_protocols"`
+	DegradedProtocols int    `json:"degraded_protocols" yaml:"degraded_protocols"`
+	FailedProtocols  int     `json:"failed_protocols" yaml:"failed_protocols"`
+	BestProtocol     string  `json:"best_protocol,omitempty" yaml:"best_protocol,omitempty"`
+	BestReqPerSec    float64 `json:"best_req_per_sec,omitempty" yaml:"best_req_per_sec,omitempty"`
+	RiskiestProtocol string  `json:"riskiest_protocol,omitempty" yaml:"riskiest_protocol,omitempty"`
+	HighestErrorRate float64 `json:"highest_error_rate,omitempty" yaml:"highest_error_rate,omitempty"`
 }
 
 type Stats struct {
@@ -60,6 +71,9 @@ type PhaseAverages struct {
 }
 
 func Run(target string, cfg config.BenchConfig) (*Result, error) {
+	if cfg.Insecure && !cfg.AllowInsecureTLS {
+		return nil, fmt.Errorf("bench insecure TLS requires allow_insecure_tls")
+	}
 	before, err := observability.ListQLOGFiles(cfg.TraceDir)
 	if err != nil {
 		return nil, err
@@ -94,12 +108,9 @@ func Run(target string, cfg config.BenchConfig) (*Result, error) {
 	}, nil
 }
 
-func buildSummary(stats map[string]Stats) map[string]any {
-	summary := map[string]any{
-		"protocols":          len(stats),
-		"healthy_protocols":  0,
-		"degraded_protocols": 0,
-		"failed_protocols":   0,
+func buildSummary(stats map[string]Stats) Summary {
+	summary := Summary{
+		Protocols: len(stats),
 	}
 	if len(stats) == 0 {
 		return summary
@@ -114,11 +125,11 @@ func buildSummary(stats map[string]Stats) map[string]any {
 		health := protocolHealth(stat)
 		switch health {
 		case "healthy":
-			summary["healthy_protocols"] = summary["healthy_protocols"].(int) + 1
+			summary.HealthyProtocols++
 		case "degraded":
-			summary["degraded_protocols"] = summary["degraded_protocols"].(int) + 1
+			summary.DegradedProtocols++
 		default:
-			summary["failed_protocols"] = summary["failed_protocols"].(int) + 1
+			summary.FailedProtocols++
 		}
 		if stat.RequestsPerS > bestReqPerS {
 			bestReqPerS = stat.RequestsPerS
@@ -130,10 +141,10 @@ func buildSummary(stats map[string]Stats) map[string]any {
 		}
 	}
 
-	summary["best_protocol"] = bestProtocol
-	summary["best_req_per_sec"] = bestReqPerS
-	summary["riskiest_protocol"] = riskiestProtocol
-	summary["highest_error_rate"] = highestErrorRate
+	summary.BestProtocol = bestProtocol
+	summary.BestReqPerSec = bestReqPerS
+	summary.RiskiestProtocol = riskiestProtocol
+	summary.HighestErrorRate = highestErrorRate
 	return summary
 }
 
@@ -160,7 +171,8 @@ func runProtocol(target, protocol string, duration time.Duration, concurrency in
 
 	transport := &http.Transport{
 		ForceAttemptHTTP2: protocol == "h2",
-		TLSClientConfig:   &tls.Config{InsecureSkipVerify: insecure, MinVersion: tls.VersionTLS12},
+		// #nosec G402 -- insecure TLS is gated by explicit allow_insecure_tls validation for lab use.
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: insecure, MinVersion: tls.VersionTLS12},
 	}
 	if protocol == "h1" {
 		transport.ForceAttemptHTTP2 = false

@@ -3,6 +3,7 @@ package transport
 import (
 	"encoding/hex"
 	"errors"
+	"log"
 	"net"
 	"sync"
 	"time"
@@ -102,8 +103,16 @@ func (l *Listener) serve() {
 		if !ok && h.IsLongHeader() && h.PacketType() == packet.PacketTypeInitial {
 			conn = connection.New(connection.RoleServer, h.Version(), h.DestConnectionID())
 			conn.StoreRemoteCID(h.SrcConnectionID())
-			_ = conn.Transition(connection.StateInitialReceived)
-			_ = conn.Transition(connection.StateHandshake)
+			if err := conn.Transition(connection.StateInitialReceived); err != nil {
+				l.mu.Unlock()
+				log.Printf("listener: failed to transition connection to initial-received for %s: %v", key, err)
+				continue
+			}
+			if err := conn.Transition(connection.StateHandshake); err != nil {
+				l.mu.Unlock()
+				log.Printf("listener: failed to transition connection to handshake for %s: %v", key, err)
+				continue
+			}
 			l.conns[key] = conn
 			l.nextPN[key] = 1
 			l.accepted = append(l.accepted, conn)
@@ -118,7 +127,10 @@ func (l *Listener) serve() {
 		if conn == nil {
 			continue
 		}
-		_ = conn.HandleFrames(frames)
+		if err := conn.HandleFrames(frames); err != nil {
+			log.Printf("listener: failed to handle frames for %s: %v", key, err)
+			continue
+		}
 
 		if h.IsLongHeader() && h.PacketType() == packet.PacketTypeInitial {
 			responseFrames := []frame.Frame{
@@ -127,8 +139,15 @@ func (l *Listener) serve() {
 			}
 			response, err := wire.BuildShortPacket(h.SrcConnectionID(), l.nextPacketNumber(key), responseFrames)
 			if err == nil {
-				_ = l.transport.WritePacket(response, addr)
-				_ = conn.Transition(connection.StateConnected)
+				if err := l.transport.WritePacket(response, addr); err != nil {
+					log.Printf("listener: failed to write handshake response for %s: %v", key, err)
+					continue
+				}
+				if err := conn.Transition(connection.StateConnected); err != nil {
+					log.Printf("listener: failed to transition connection to connected for %s: %v", key, err)
+				}
+			} else {
+				log.Printf("listener: failed to build handshake response for %s: %v", key, err)
 			}
 			continue
 		}
@@ -154,7 +173,11 @@ func (l *Listener) serve() {
 			if l.AutoEcho() {
 				response, err := wire.BuildShortPacket(remoteCID, l.nextPacketNumber(key), streamResponses)
 				if err == nil {
-					_ = l.transport.WritePacket(response, addr)
+					if err := l.transport.WritePacket(response, addr); err != nil {
+						log.Printf("listener: failed to write stream response for %s: %v", key, err)
+					}
+				} else {
+					log.Printf("listener: failed to build stream response for %s: %v", key, err)
 				}
 			}
 		}

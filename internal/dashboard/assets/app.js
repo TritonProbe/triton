@@ -69,35 +69,101 @@ function renderConfig(target, data) {
   target.innerHTML = `<div class="metric-grid">${rows}</div>`;
 }
 
+function renderOverview(target, probes, benches) {
+  const latestProbe = Array.isArray(probes) && probes.length ? probes[0] : null;
+  const latestBench = Array.isArray(benches) && benches.length ? benches[0] : null;
+  const probeAnalysis = probeAnalysisForItem(latestProbe);
+  const probeSummary = probeAnalysis.support_summary || {};
+  const benchSummary = latestBench ? latestBench.summary || {} : {};
+  target.innerHTML = `
+    <div class="metric-grid">
+      ${metric("Latest Probe", latestProbe ? (latestProbe.proto || latestProbe.target || "available") : "none")}
+      ${metric("Probe Coverage", typeof probeSummary.coverage_ratio === "number" ? `${Math.round(probeSummary.coverage_ratio * 100)}%` : "n/a")}
+      ${metric("Bench Best", benchSummary.best_protocol || "n/a")}
+      ${metric("Bench Healthy", benchSummary.healthy_protocols || 0)}
+      ${metric("Bench Risk", benchSummary.riskiest_protocol || "n/a")}
+    </div>
+    <p class="mini">
+      ${latestProbe ? `Probe requested ${probeSummary.requested_tests || 0}, available ${probeSummary.available || 0}, not-run ${probeSummary.not_run || 0}, unavailable ${probeSummary.unavailable || 0}.` : "No probe coverage summary yet."}
+    </p>
+    <p class="mini">
+      ${latestBench ? `Bench healthy ${benchSummary.healthy_protocols || 0}, degraded ${benchSummary.degraded_protocols || 0}, failed ${benchSummary.failed_protocols || 0}.` : "No benchmark summary yet."}
+    </p>
+  `;
+}
+
+function probeAnalysisForItem(item) {
+  if (!item || typeof item !== "object") {
+    return {};
+  }
+  if (item.analysis_view && typeof item.analysis_view === "object") {
+    return item.analysis_view;
+  }
+  if (item.analysis && typeof item.analysis === "object") {
+    return item.analysis;
+  }
+  return {};
+}
+
+function benchProtocolsForItem(item) {
+  if (!item || typeof item !== "object") {
+    return [];
+  }
+  if (Array.isArray(item.stats_view) && item.stats_view.length) {
+    return item.stats_view
+      .filter((entry) => entry && typeof entry === "object")
+      .map((entry) => [entry.protocol, entry.stats || {}]);
+  }
+  const stats = item.stats && typeof item.stats === "object" ? item.stats : {};
+  return Object.entries(stats);
+}
+
+function objectField(source, key) {
+  if (!source || typeof source !== "object") {
+    return {};
+  }
+  const value = source[key];
+  return value && typeof value === "object" ? value : {};
+}
+
+function arrayField(source, key) {
+  if (!source || typeof source !== "object") {
+    return [];
+  }
+  const value = source[key];
+  return Array.isArray(value) ? value : [];
+}
+
 function renderProbes(target, items) {
   if (!Array.isArray(items) || items.length === 0) {
     target.innerHTML = `<p class="empty">No probe results yet.</p>`;
     return;
   }
   target.innerHTML = `<div class="record-list">${items.slice(0, 5).map((item) => {
-    const latency = item.analysis && item.analysis.latency ? item.analysis.latency : {};
-    const streams = item.analysis && item.analysis.streams ? item.analysis.streams : {};
-    const response = item.analysis && item.analysis.response ? item.analysis.response : {};
-    const zeroRTT = item.analysis && item.analysis["0rtt"] ? item.analysis["0rtt"] : {};
-    const migration = item.analysis && item.analysis.migration ? item.analysis.migration : {};
-    const qpack = item.analysis && item.analysis.qpack ? item.analysis.qpack : {};
-    const loss = item.analysis && item.analysis.loss ? item.analysis.loss : {};
-    const congestion = item.analysis && item.analysis.congestion ? item.analysis.congestion : {};
-    const version = item.analysis && item.analysis.version ? item.analysis.version : {};
-    const retry = item.analysis && item.analysis.retry ? item.analysis.retry : {};
-    const ecn = item.analysis && item.analysis.ecn ? item.analysis.ecn : {};
-    const spin = item.analysis && item.analysis["spin-bit"] ? item.analysis["spin-bit"] : {};
-    const support = item.analysis && item.analysis.support ? item.analysis.support : {};
-    const supportSummary = item.analysis && item.analysis.support_summary ? item.analysis.support_summary : {};
-    const zeroRTTSupport = support["0rtt"] || {};
-    const migrationSupport = support.migration || {};
+    const analysis = probeAnalysisForItem(item);
+    const latency = objectField(analysis, "latency");
+    const streams = objectField(analysis, "streams");
+    const response = objectField(analysis, "response");
+    const zeroRTT = objectField(analysis, "0rtt");
+    const migration = objectField(analysis, "migration");
+    const qpack = objectField(analysis, "qpack");
+    const loss = objectField(analysis, "loss");
+    const congestion = objectField(analysis, "congestion");
+    const version = objectField(analysis, "version");
+    const retry = objectField(analysis, "retry");
+    const ecn = objectField(analysis, "ecn");
+    const spin = objectField(analysis, "spin-bit");
+    const support = objectField(analysis, "support");
+    const supportSummary = objectField(analysis, "support_summary");
+    const zeroRTTSupport = objectField(support, "0rtt");
+    const migrationSupport = objectField(support, "migration");
     const otherSupport = Object.entries(support)
       .filter(([name]) => name !== "0rtt" && name !== "migration")
       .map(([name, entry]) => `${name}:${entry.coverage || "unknown"}`);
-    const plan = item.analysis && item.analysis.test_plan ? item.analysis.test_plan : {};
-    const requested = Array.isArray(plan.requested) ? plan.requested : [];
-    const executed = Array.isArray(plan.executed) ? plan.executed : [];
-    const skipped = Array.isArray(plan.skipped) ? plan.skipped : [];
+    const plan = objectField(analysis, "test_plan");
+    const requested = arrayField(plan, "requested");
+    const executed = arrayField(plan, "executed");
+    const skipped = arrayField(plan, "skipped");
     const planPills = [
       requested.length ? pillMuted(`requested ${requested.join(",")}`) : "",
       executed.length ? pill(`executed ${executed.join(",")}`) : "",
@@ -170,7 +236,7 @@ function renderBenches(target, items) {
     return;
   }
   target.innerHTML = `<div class="record-list">${items.slice(0, 5).map((item) => {
-    const protocols = Object.entries(item.stats || {});
+    const protocols = benchProtocolsForItem(item);
     const summary = item.summary || {};
     const pills = protocols.map(([name, stats]) => {
       const p95 = stats && stats.latency_ms ? Number(stats.latency_ms.p95 || 0).toFixed(2) : "0.00";
@@ -227,8 +293,24 @@ async function load(id, path, render) {
   }
 }
 
+async function loadOverview() {
+  const target = document.getElementById("overview");
+  try {
+    const [probesResponse, benchesResponse] = await Promise.all([
+      fetch("/api/v1/probes"),
+      fetch("/api/v1/benches"),
+    ]);
+    const probes = await probesResponse.json();
+    const benches = await benchesResponse.json();
+    renderOverview(target, probes, benches);
+  } catch (error) {
+    target.textContent = String(error);
+  }
+}
+
 load("status", "/api/v1/status", renderStatus);
 load("config", "/api/v1/config", renderConfig);
 load("probes", "/api/v1/probes", renderProbes);
 load("benches", "/api/v1/benches", renderBenches);
 load("traces", "/api/v1/traces", renderTraces);
+loadOverview();

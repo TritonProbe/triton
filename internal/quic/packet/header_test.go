@@ -57,3 +57,16 @@ func TestParseShortHeader(t *testing.T) {
 		t.Fatalf("unexpected payload length: %d", len(payload))
 	}
 }
+
+func TestParseInitialLongHeaderRejectsOversizedTokenVarint(t *testing.T) {
+	data := []byte{
+		0xc1,
+		0x00, 0x00, 0x00, 0x01,
+		0x01, 0xde,
+		0x01, 0xad,
+		0x40, 0x10,
+	}
+	if _, _, err := ParseHeader(data, 0); err == nil {
+		t.Fatal("expected oversized token varint to fail")
+	}
+}

@@ -34,7 +34,11 @@ func TestRunRemoteTritonProbe(t *testing.T) {
 	if result.Proto != "HTTP/3-triton" {
 		t.Fatalf("unexpected proto: %q", result.Proto)
 	}
-	if result.TLS["mode"] != "experimental-udp-h3" {
+	tlsMeta, ok := result.TLS.(TLSMetadata)
+	if !ok {
+		t.Fatalf("expected typed TLS metadata, got %#v", result.TLS)
+	}
+	if tlsMeta.Mode != "experimental-udp-h3" {
 		t.Fatalf("unexpected TLS mode: %#v", result.TLS)
 	}
 

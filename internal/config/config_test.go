@@ -46,6 +46,20 @@ func TestExperimentalListenRequiresExplicitOptIn(t *testing.T) {
 	}
 }
 
+func TestExperimentalListenRemoteBindRequiresExplicitOptIn(t *testing.T) {
+	cfg := Default()
+	cfg.Server.Listen = "0.0.0.0:4433"
+	cfg.Server.AllowExperimentalH3 = true
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected remote experimental listen without opt-in to fail validation")
+	}
+
+	cfg.Server.AllowRemoteExperimentalH3 = true
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected remote experimental listen with opt-in to validate: %v", err)
+	}
+}
+
 func TestValidateRequiresAtLeastOneServerListener(t *testing.T) {
 	cfg := Default()
 	cfg.Server.Listen = ""
@@ -76,5 +90,29 @@ func TestRemoteDashboardRequiresAuth(t *testing.T) {
 	cfg.Server.AllowRemoteDashboard = true
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected remote dashboard without auth to be rejected")
+	}
+}
+
+func TestProbeInsecureRequiresExplicitOptIn(t *testing.T) {
+	cfg := Default()
+	cfg.Probe.Insecure = true
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected insecure probe TLS without opt-in to fail")
+	}
+	cfg.Probe.AllowInsecureTLS = true
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected insecure probe TLS with opt-in to validate: %v", err)
+	}
+}
+
+func TestBenchInsecureRequiresExplicitOptIn(t *testing.T) {
+	cfg := Default()
+	cfg.Bench.Insecure = true
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected insecure bench TLS without opt-in to fail")
+	}
+	cfg.Bench.AllowInsecureTLS = true
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected insecure bench TLS with opt-in to validate: %v", err)
 	}
 }

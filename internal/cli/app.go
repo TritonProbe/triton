@@ -138,6 +138,9 @@ func (a *App) runServer(args []string) error {
 		return err
 	}
 	opts.Apply(&cfg)
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
 	srv, err := server.New(cfg.Server, cfg.Storage.ResultsDir, store)
 	if err != nil {
 		return err
@@ -166,6 +169,9 @@ func (a *App) runLab(args []string) error {
 	cfg.Server.AllowRemoteDashboard = false
 	cfg.Server.DashboardUser = ""
 	cfg.Server.DashboardPass = ""
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
 
 	srv, err := server.New(cfg.Server, cfg.Storage.ResultsDir, store)
 	if err != nil {
@@ -191,6 +197,9 @@ func (a *App) runProbe(args []string) error {
 		return err
 	}
 	opts.Apply(&cfg)
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
 	result, err := probe.Run(target, cfg.Probe)
 	if err != nil {
 		return err
@@ -218,6 +227,9 @@ func (a *App) runBench(args []string) error {
 		return err
 	}
 	opts.Apply(&cfg)
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
 	result, err := bench.Run(target, cfg.Bench)
 	if err != nil {
 		return err

@@ -89,3 +89,11 @@ func TestParseFramesErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestNewConnectionIDFrameSerializeRejectsOversizedConnectionID(t *testing.T) {
+	frame := NewConnectionIDFrame{ConnectionID: make([]byte, 256)}
+	var buf bytes.Buffer
+	if err := frame.Serialize(&buf); err == nil {
+		t.Fatal("expected oversized connection id serialization to fail")
+	}
+}

@@ -72,12 +72,47 @@ func (s *Stream) State() State {
 	return s.state
 }
 
+func (s *Stream) setState(state State) {
+	s.stateMu.Lock()
+	s.state = state
+	s.stateMu.Unlock()
+}
+
+func (s *Stream) applyLocalCloseLocked() {
+	switch s.state {
+	case StateOpen:
+		s.state = StateHalfClosedLocal
+	case StateHalfClosedRemote:
+		s.state = StateClosed
+	}
+}
+
+func (s *Stream) applyRemoteCloseLocked() {
+	switch s.state {
+	case StateOpen:
+		s.state = StateHalfClosedRemote
+	case StateHalfClosedLocal:
+		s.state = StateClosed
+	}
+}
+
+func (s *Stream) applyReadEOFLocked() {
+	switch s.state {
+	case StateHalfClosedRemote:
+		s.state = StateClosed
+	case StateOpen:
+		s.state = StateHalfClosedRemote
+	}
+}
+
 func (s *Stream) Read(p []byte) (int, error) {
 	s.recvMu.Lock()
 	defer s.recvMu.Unlock()
 
 	n, _ := s.recvBuf.ReadAtOffset(s.recvOffset, p)
-	s.recvOffset += uint64(n)
+	if n > 0 {
+		s.recvOffset += uint64(n)
+	}
 	if n > 0 {
 		if s.recvFin && s.recvOffset >= s.recvFinOffset {
 			s.transitionAfterReadEOF()
@@ -115,13 +150,8 @@ func (s *Stream) CloseWrite() error {
 	}
 	s.sendFin = true
 	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
-	switch s.state {
-	case StateOpen:
-		s.state = StateHalfClosedLocal
-	case StateHalfClosedRemote:
-		s.state = StateClosed
-	}
+	s.applyLocalCloseLocked()
+	s.stateMu.Unlock()
 	return nil
 }
 
@@ -135,9 +165,7 @@ func (s *Stream) Close() error {
 	defer s.recvMu.Unlock()
 	s.recvFin = true
 	s.recvFinOffset = s.recvOffset
-	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
-	s.state = StateClosed
+	s.setState(StateClosed)
 	return nil
 }
 
@@ -148,9 +176,7 @@ func (s *Stream) Reset(_ uint64) {
 	defer s.recvMu.Unlock()
 	s.sendFin = true
 	s.recvFin = true
-	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
-	s.state = StateClosed
+	s.setState(StateClosed)
 }
 
 func (s *Stream) SendBuffer() []byte {
@@ -173,11 +199,7 @@ func (s *Stream) PushRecv(offset uint64, data []byte, fin bool) error {
 		s.recvFin = true
 		s.recvFinOffset = offset + uint64(len(data))
 		s.stateMu.Lock()
-		if s.state == StateOpen {
-			s.state = StateHalfClosedRemote
-		} else if s.state == StateHalfClosedLocal {
-			s.state = StateClosed
-		}
+		s.applyRemoteCloseLocked()
 		s.stateMu.Unlock()
 	}
 	select {
@@ -189,13 +211,8 @@ func (s *Stream) PushRecv(offset uint64, data []byte, fin bool) error {
 
 func (s *Stream) transitionAfterReadEOF() {
 	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
-	switch s.state {
-	case StateHalfClosedRemote:
-		s.state = StateClosed
-	case StateOpen:
-		s.state = StateHalfClosedRemote
-	}
+	s.applyReadEOFLocked()
+	s.stateMu.Unlock()
 }
 
 type recvBuffer struct {
@@ -231,9 +248,10 @@ func (r *recvBuffer) merge() {
 	for _, next := range r.chunks[1:] {
 		currentEnd := current.offset + uint64(len(current.data))
 		if next.offset <= currentEnd {
-			overlap := int(currentEnd - next.offset)
-			if overlap < len(next.data) {
-				current.data = append(current.data, next.data[overlap:]...)
+			overlap := currentEnd - next.offset
+			if overlap < uint64(len(next.data)) {
+				// #nosec G115 -- overlap is bounded by len(next.data) immediately above.
+				current.data = append(current.data, next.data[int(overlap):]...)
 			}
 			continue
 		}
@@ -252,7 +270,13 @@ func (r *recvBuffer) ReadAtOffset(offset uint64, p []byte) (int, error) {
 	if first.offset > offset {
 		return 0, nil
 	}
-	start := int(offset - first.offset)
+	startOffset := offset - first.offset
+	if startOffset > uint64(len(first.data)) {
+		r.chunks = r.chunks[1:]
+		return r.ReadAtOffset(offset, p)
+	}
+	// #nosec G115 -- startOffset is bounded by len(first.data) immediately above.
+	start := int(startOffset)
 	if start >= len(first.data) {
 		r.chunks = r.chunks[1:]
 		return r.ReadAtOffset(offset, p)
@@ -261,6 +285,7 @@ func (r *recvBuffer) ReadAtOffset(offset uint64, p []byte) (int, error) {
 	if start+n >= len(first.data) {
 		r.chunks = r.chunks[1:]
 	} else {
+		// #nosec G115 -- start+n is derived from slice bounds and is non-negative.
 		first.offset += uint64(start + n)
 		first.data = first.data[start+n:]
 		r.chunks[0] = first
@@ -276,5 +301,10 @@ func (r *recvBuffer) Readable(offset uint64) int {
 	if first.offset > offset {
 		return 0
 	}
-	return len(first.data) - int(offset-first.offset)
+	readableOffset := offset - first.offset
+	if readableOffset > uint64(len(first.data)) {
+		return 0
+	}
+	// #nosec G115 -- readableOffset is bounded by len(first.data) immediately above.
+	return len(first.data) - int(readableOffset)
 }

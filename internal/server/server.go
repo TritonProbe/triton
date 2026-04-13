@@ -179,7 +179,9 @@ func (s *Server) Run() error {
 	errCh := make(chan error, 4)
 	defer func() {
 		if s.logger != nil {
-			_ = s.logger.Close()
+			if err := s.logger.Close(); err != nil {
+				log.Printf("logger close failed: %v", err)
+			}
 		}
 	}()
 
@@ -237,19 +239,28 @@ func (s *Server) Run() error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	var shutdownErr error
 	if s.udp != nil {
-		_ = s.udp.Close()
+		if err := s.udp.Close(); err != nil {
+			shutdownErr = errors.Join(shutdownErr, fmt.Errorf("close udp listener: %w", err))
+		}
 	}
 	if s.h3real != nil {
-		_ = s.h3real.Shutdown(ctx)
+		if err := s.h3real.Shutdown(ctx); err != nil {
+			shutdownErr = errors.Join(shutdownErr, fmt.Errorf("shutdown http/3 server: %w", err))
+		}
 	}
 	if s.dashboard != nil {
-		_ = s.dashboard.Shutdown(ctx)
+		if err := s.dashboard.Shutdown(ctx); err != nil {
+			shutdownErr = errors.Join(shutdownErr, fmt.Errorf("shutdown dashboard: %w", err))
+		}
 	}
 	if s.https != nil {
-		return s.https.Shutdown(ctx)
+		if err := s.https.Shutdown(ctx); err != nil {
+			shutdownErr = errors.Join(shutdownErr, fmt.Errorf("shutdown https server: %w", err))
+		}
 	}
-	return nil
+	return shutdownErr
 }
 
 func activeListenersSummary(cfg config.ServerConfig) []string {

@@ -21,12 +21,10 @@ func TestRenderProbeTable(t *testing.T) {
 		},
 		Analysis: map[string]any{
 			"latency": map[string]any{"p95": 12.5},
-			"test_plan": map[string]any{
-				"requested": []string{"latency", "0rtt"},
-				"executed":  []string{"latency"},
-				"skipped": []map[string]any{
-					{"name": "0rtt", "reason": "not implemented"},
-				},
+			"test_plan": probe.TestPlan{
+				Requested: []string{"latency", "0rtt"},
+				Executed:  []string{"latency"},
+				Skipped:   []probe.SkippedTest{{Name: "0rtt", Reason: "not implemented"}},
 			},
 			"support": map[string]any{
 				"0rtt": map[string]any{"coverage": "partial", "state": "unavailable", "summary": "resumption not available"},
@@ -56,12 +54,12 @@ func TestRenderProbeMarkdown(t *testing.T) {
 			"retry":   map[string]any{"retry_observed": false, "connect_ms": 5, "tls_ms": 8},
 			"ecn":     map[string]any{"ecn_visible": false, "observed_proto": "HTTP/3.0", "packet_marks": "not_exposed"},
 			"spin-bit": map[string]any{"spin_observed": false, "rtt_estimate_ms": 11, "stability": "steady"},
-			"test_plan": map[string]any{
-				"requested": []string{"latency", "migration", "qpack"},
-				"executed":  []string{"latency"},
-				"skipped": []map[string]any{
-					{"name": "migration", "reason": "not implemented"},
-					{"name": "qpack", "reason": "not implemented"},
+			"test_plan": probe.TestPlan{
+				Requested: []string{"latency", "migration", "qpack"},
+				Executed:  []string{"latency"},
+				Skipped: []probe.SkippedTest{
+					{Name: "migration", Reason: "not implemented"},
+					{Name: "qpack", Reason: "not implemented"},
 				},
 			},
 			"support": map[string]any{
@@ -81,12 +79,13 @@ func TestRenderBenchMarkdown(t *testing.T) {
 		Target:      "https://example.com",
 		Duration:    time.Second,
 		Concurrency: 2,
-		Summary: map[string]any{
-			"healthy_protocols":  1,
-			"degraded_protocols": 0,
-			"failed_protocols":   0,
-			"best_protocol":      "h1",
-			"riskiest_protocol":  "h1",
+		Summary: bench.Summary{
+			Protocols:         1,
+			HealthyProtocols:  1,
+			DegradedProtocols: 0,
+			FailedProtocols:   0,
+			BestProtocol:      "h1",
+			RiskiestProtocol:  "h1",
 		},
 		Stats: map[string]bench.Stats{
 			"h1": {
@@ -117,12 +116,13 @@ func TestRenderBenchTable(t *testing.T) {
 		Target:      "https://example.com",
 		Duration:    time.Second,
 		Concurrency: 2,
-		Summary: map[string]any{
-			"healthy_protocols":  1,
-			"degraded_protocols": 0,
-			"failed_protocols":   0,
-			"best_protocol":      "h1",
-			"riskiest_protocol":  "h1",
+		Summary: bench.Summary{
+			Protocols:         1,
+			HealthyProtocols:  1,
+			DegradedProtocols: 0,
+			FailedProtocols:   0,
+			BestProtocol:      "h1",
+			RiskiestProtocol:  "h1",
 		},
 		Stats: map[string]bench.Stats{
 			"h1": {

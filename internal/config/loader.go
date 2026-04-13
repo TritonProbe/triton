@@ -13,6 +13,7 @@ func Load(path string) (Config, error) {
 	cfg := Default()
 
 	if path != "" {
+		// #nosec G304 -- config path is an explicit operator-provided input.
 		if data, err := os.ReadFile(path); err == nil {
 			if err := yaml.Unmarshal(data, &cfg); err != nil {
 				return Config{}, err
@@ -29,6 +30,7 @@ func Load(path string) (Config, error) {
 func applyEnv(cfg *Config) {
 	setString("TRITON_SERVER_LISTEN", &cfg.Server.Listen)
 	setBool("TRITON_SERVER_ALLOW_EXPERIMENTAL_H3", &cfg.Server.AllowExperimentalH3)
+	setBool("TRITON_SERVER_ALLOW_REMOTE_EXPERIMENTAL_H3", &cfg.Server.AllowRemoteExperimentalH3)
 	setString("TRITON_SERVER_LISTEN_H3", &cfg.Server.ListenH3)
 	setString("TRITON_SERVER_LISTEN_TCP", &cfg.Server.ListenTCP)
 	setString("TRITON_SERVER_TLS_CERT", &cfg.Server.CertFile)
@@ -50,6 +52,7 @@ func applyEnv(cfg *Config) {
 	setDuration("TRITON_STORAGE_RETENTION", &cfg.Storage.Retention)
 	setDuration("TRITON_PROBE_TIMEOUT", &cfg.Probe.Timeout)
 	setBool("TRITON_PROBE_INSECURE", &cfg.Probe.Insecure)
+	setBool("TRITON_PROBE_ALLOW_INSECURE_TLS", &cfg.Probe.AllowInsecureTLS)
 	setString("TRITON_PROBE_TRACE_DIR", &cfg.Probe.TraceDir)
 	setString("TRITON_PROBE_DEFAULT_FORMAT", &cfg.Probe.DefaultFormat)
 	setString("TRITON_PROBE_DOWNLOAD_SIZE", &cfg.Probe.DownloadSize)
@@ -61,6 +64,7 @@ func applyEnv(cfg *Config) {
 	setInt("TRITON_BENCH_DEFAULT_CONCURRENCY", &cfg.Bench.DefaultConcurrency)
 	setCSV("TRITON_BENCH_DEFAULT_PROTOCOLS", &cfg.Bench.DefaultProtocols)
 	setBool("TRITON_BENCH_INSECURE", &cfg.Bench.Insecure)
+	setBool("TRITON_BENCH_ALLOW_INSECURE_TLS", &cfg.Bench.AllowInsecureTLS)
 	setString("TRITON_BENCH_TRACE_DIR", &cfg.Bench.TraceDir)
 }
 

@@ -18,35 +18,37 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Listen               string        `yaml:"listen"`
-	AllowExperimentalH3  bool          `yaml:"allow_experimental_h3"`
-	ListenH3             string        `yaml:"listen_h3"`
-	ListenTCP            string        `yaml:"listen_tcp"`
-	CertFile             string        `yaml:"cert"`
-	KeyFile              string        `yaml:"key"`
-	Dashboard            bool          `yaml:"dashboard"`
-	DashboardListen      string        `yaml:"dashboard_listen"`
-	AllowRemoteDashboard bool          `yaml:"allow_remote_dashboard"`
-	DashboardUser        string        `yaml:"dashboard_user"`
-	DashboardPass        string        `yaml:"dashboard_pass"`
-	ReadTimeout          time.Duration `yaml:"read_timeout"`
-	WriteTimeout         time.Duration `yaml:"write_timeout"`
-	IdleTimeout          time.Duration `yaml:"idle_timeout"`
-	MaxBodyBytes         int64         `yaml:"max_body_bytes"`
-	RateLimit            int           `yaml:"rate_limit"`
-	TraceDir             string        `yaml:"trace_dir"`
-	AccessLog            string        `yaml:"access_log"`
+	Listen                    string        `yaml:"listen"`
+	AllowExperimentalH3       bool          `yaml:"allow_experimental_h3"`
+	AllowRemoteExperimentalH3 bool          `yaml:"allow_remote_experimental_h3"`
+	ListenH3                  string        `yaml:"listen_h3"`
+	ListenTCP                 string        `yaml:"listen_tcp"`
+	CertFile                  string        `yaml:"cert"`
+	KeyFile                   string        `yaml:"key"`
+	Dashboard                 bool          `yaml:"dashboard"`
+	DashboardListen           string        `yaml:"dashboard_listen"`
+	AllowRemoteDashboard      bool          `yaml:"allow_remote_dashboard"`
+	DashboardUser             string        `yaml:"dashboard_user"`
+	DashboardPass             string        `yaml:"dashboard_pass"`
+	ReadTimeout               time.Duration `yaml:"read_timeout"`
+	WriteTimeout              time.Duration `yaml:"write_timeout"`
+	IdleTimeout               time.Duration `yaml:"idle_timeout"`
+	MaxBodyBytes              int64         `yaml:"max_body_bytes"`
+	RateLimit                 int           `yaml:"rate_limit"`
+	TraceDir                  string        `yaml:"trace_dir"`
+	AccessLog                 string        `yaml:"access_log"`
 }
 
 type ProbeConfig struct {
-	Timeout        time.Duration `yaml:"timeout"`
-	Insecure       bool          `yaml:"insecure"`
-	TraceDir       string        `yaml:"trace_dir"`
-	DefaultTests   []string      `yaml:"default_tests"`
-	DefaultFormat  string        `yaml:"default_format"`
-	DownloadSize   string        `yaml:"download_size"`
-	UploadSize     string        `yaml:"upload_size"`
-	DefaultStreams int           `yaml:"default_streams"`
+	Timeout          time.Duration `yaml:"timeout"`
+	Insecure         bool          `yaml:"insecure"`
+	AllowInsecureTLS bool          `yaml:"allow_insecure_tls"`
+	TraceDir         string        `yaml:"trace_dir"`
+	DefaultTests     []string      `yaml:"default_tests"`
+	DefaultFormat    string        `yaml:"default_format"`
+	DownloadSize     string        `yaml:"download_size"`
+	UploadSize       string        `yaml:"upload_size"`
+	DefaultStreams   int           `yaml:"default_streams"`
 }
 
 type BenchConfig struct {
@@ -55,6 +57,7 @@ type BenchConfig struct {
 	DefaultConcurrency int           `yaml:"default_concurrency"`
 	DefaultProtocols   []string      `yaml:"default_protocols"`
 	Insecure           bool          `yaml:"insecure"`
+	AllowInsecureTLS   bool          `yaml:"allow_insecure_tls"`
 	TraceDir           string        `yaml:"trace_dir"`
 }
 
@@ -67,17 +70,18 @@ type StorageConfig struct {
 func Default() Config {
 	return Config{
 		Server: ServerConfig{
-			Listen:               "",
-			AllowExperimentalH3:  false,
-			ListenH3:             "",
-			ListenTCP:            ":8443",
-			Dashboard:            true,
-			DashboardListen:      "127.0.0.1:9090",
-			AllowRemoteDashboard: false,
-			ReadTimeout:          15 * time.Second,
-			WriteTimeout:         30 * time.Second,
-			IdleTimeout:          30 * time.Second,
-			MaxBodyBytes:         1 << 20,
+			Listen:                    "",
+			AllowExperimentalH3:       false,
+			AllowRemoteExperimentalH3: false,
+			ListenH3:                  "",
+			ListenTCP:                 ":8443",
+			Dashboard:                 true,
+			DashboardListen:           "127.0.0.1:9090",
+			AllowRemoteDashboard:      false,
+			ReadTimeout:               15 * time.Second,
+			WriteTimeout:              30 * time.Second,
+			IdleTimeout:               30 * time.Second,
+			MaxBodyBytes:              1 << 20,
 		},
 		Probe: ProbeConfig{
 			Timeout:        10 * time.Second,
@@ -112,6 +116,9 @@ func (c Config) Validate() error {
 		}
 		if err := validateListen(c.Server.Listen, "server.listen"); err != nil {
 			return err
+		}
+		if !c.Server.AllowRemoteExperimentalH3 && !isLoopbackListen(c.Server.Listen) {
+			return errors.New("server.listen must stay on loopback unless server.allow_remote_experimental_h3 is true")
 		}
 	}
 	if c.Server.ListenH3 != "" {
@@ -156,11 +163,17 @@ func (c Config) Validate() error {
 	if c.Probe.Timeout <= 0 {
 		return errors.New("probe.timeout must be positive")
 	}
+	if c.Probe.Insecure && !c.Probe.AllowInsecureTLS {
+		return errors.New("probe.insecure requires probe.allow_insecure_tls to be true")
+	}
 	if c.Probe.DefaultStreams <= 0 {
 		return errors.New("probe.default_streams must be positive")
 	}
 	if c.Bench.Warmup < 0 || c.Bench.DefaultDuration <= 0 || c.Bench.DefaultConcurrency <= 0 {
 		return errors.New("bench defaults are invalid")
+	}
+	if c.Bench.Insecure && !c.Bench.AllowInsecureTLS {
+		return errors.New("bench.insecure requires bench.allow_insecure_tls to be true")
 	}
 	if (c.Server.CertFile == "") != (c.Server.KeyFile == "") {
 		return errors.New("server cert and key must be provided together")

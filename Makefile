@@ -1,7 +1,7 @@
 VERSION ?= dev
 LDFLAGS = -s -w -X main.version=$(VERSION)
 
-.PHONY: build build-all test test-race fmt lint docker release-snapshot smoke
+.PHONY: build build-all test test-race test-fuzz fmt lint security docker release-snapshot smoke
 
 build:
 	go build -ldflags="$(LDFLAGS)" -o bin/triton ./cmd/triton
@@ -17,12 +17,18 @@ test:
 test-race:
 	CGO_ENABLED=1 go test -race ./...
 
+test-fuzz:
+	go test ./internal/quic/packet ./internal/quic/frame ./internal/quic/wire ./internal/h3/frame -run Fuzz -count=1
+
 fmt:
 	go fmt ./...
 
 lint:
 	go vet ./...
 	staticcheck ./...
+
+security:
+	gosec ./...
 
 docker:
 	docker build -t triton:$(VERSION) .

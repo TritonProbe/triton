@@ -6,6 +6,32 @@
 **Estimated Duration:** 14-18 weeks
 **Phases:** 10
 
+> Current-state note (2026-04-12): this task list is still the original target-state backlog. A substantial subset is already complete in the current repository, including the working CLI, config system, storage, HTTPS test server, real HTTP/3 support via `quic-go`, the isolated `triton lab` flow for the experimental transport, richer probe/bench summaries, dashboard status/config/probe/bench/trace APIs, dashboard hardening, CI automation, `gosec` integration, and initial fuzz coverage for parser surfaces. Treat unchecked items below as roadmap targets, not proof that the repository is empty or non-functional.
+
+## Current Status Snapshot
+
+### Completed Foundations
+
+- Working commands: `server`, `lab`, `probe`, `bench`, `version`
+- Config precedence: defaults -> YAML -> env -> CLI
+- Filesystem result persistence with gzip JSON storage
+- HTTPS test server with health, readiness, metrics, and benchmark endpoints
+- Real HTTP/3 client/server support via `quic-go`
+- Experimental in-repo UDP H3 kept behind explicit opt-in and `triton lab`
+- Probe support summaries and partial advanced analysis coverage
+- Bench percentile/phase/error summaries and per-run health rollups
+- Embedded dashboard with status/config/probes/benches/traces APIs and overview cards
+- CI running format, tests, vet, staticcheck, build, smoke, and `gosec`
+- Parser fuzz targets for QUIC packet/frame and H3 frame surfaces
+
+### Still Strategic / Incomplete
+
+- Custom QUIC-TLS handshake and packet protection
+- Real QPACK implementation
+- Packet-level 0-RTT, migration, congestion, loss, retry, ECN, and spin-bit telemetry
+- Full live dashboard workbench with SSE/charts/inspector
+- Race-tested confidence for the entire transport stack in CI
+
 ---
 
 ## PHASE 1 — PROJECT SCAFFOLD & UDP TRANSPORT (Week 1)

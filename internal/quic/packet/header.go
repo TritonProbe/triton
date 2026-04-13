@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 )
 
 type PacketType uint8
@@ -116,11 +117,13 @@ func parseLongHeader(data []byte) (Header, []byte, error) {
 			return nil, nil, err
 		}
 		idx += consumed
-		if len(data) < idx+int(tokenLen) {
+		// #nosec G115 -- len(data)-idx and math.MaxInt bound the conversion before use.
+		if tokenLen > uint64(len(data)-idx) || tokenLen > uint64(math.MaxInt) {
 			return nil, nil, errHeaderTooShort
 		}
-		header.Token = append([]byte(nil), data[idx:idx+int(tokenLen)]...)
-		idx += int(tokenLen)
+		tokenLenInt := int(tokenLen)
+		header.Token = append([]byte(nil), data[idx:idx+tokenLenInt]...)
+		idx += tokenLenInt
 	}
 
 	length, consumed, err := ParseVarInt(data[idx:])

@@ -36,6 +36,7 @@ Core principles from the specification:
 Server mode exposes test and benchmark endpoints.
 
 By default, `triton server` starts the HTTPS/TCP server on `:8443` and the dashboard on `127.0.0.1:9090`. The in-repo UDP H3 transport is experimental and now requires both `--listen` and `--allow-experimental-h3`.
+Experimental UDP H3 is also loopback-only by default; binding it on a non-loopback interface now additionally requires `--allow-remote-experimental-h3` or `server.allow_remote_experimental_h3: true`.
 Remote dashboard binding is blocked by default; use `--allow-remote-dashboard` only when you intentionally want non-loopback access, and pair it with dashboard auth.
 
 If you want to work with the experimental Triton UDP H3 stack directly, prefer `triton lab` instead of mixing it into the normal `server` command.
@@ -79,7 +80,7 @@ Examples:
 ```bash
 triton probe --target https://example.com --format json
 triton probe --target triton://loopback/ping --format json
-triton probe --target h3://localhost:8443/ping --insecure --format json
+triton probe --target h3://localhost:8443/ping --insecure --allow-insecure-tls --format json
 ```
 
 Specification-level probe goals include:
@@ -106,7 +107,7 @@ Examples:
 
 ```bash
 triton bench --target https://example.com --duration 3s --concurrency 4
-triton bench --target https://example.com --protocols h1,h2,h3 --insecure
+triton bench --target https://example.com --protocols h1,h2,h3 --insecure --allow-insecure-tls
 triton bench --target triton://loopback/ping --protocols h3 --duration 2s
 triton probe --target triton://127.0.0.1:4433/ping --format json
 ```
@@ -253,6 +254,7 @@ Important flags:
 - `--config`
 - `--listen` (experimental Triton UDP H3 listener)
 - `--allow-experimental-h3`
+- `--allow-remote-experimental-h3`
 - `--listen-h3` (real HTTP/3 listener via `quic-go`)
 - `--listen-tcp`
 - `--cert`
@@ -292,6 +294,7 @@ Important flags:
 - `--timeout`
 - `--streams`
 - `--insecure`
+- `--allow-insecure-tls`
 - `--trace-dir`
 
 Probe target schemes:
@@ -315,6 +318,7 @@ Important flags:
 - `--concurrency`
 - `--protocols`
 - `--insecure`
+- `--allow-insecure-tls`
 - `--trace-dir`
 
 ## Example Endpoints
@@ -381,10 +385,12 @@ Recognized environment variable examples:
 - `TRITON_SERVER_TRACE_DIR`
 - `TRITON_DASHBOARD_ENABLED`
 - `TRITON_PROBE_TIMEOUT`
+- `TRITON_PROBE_ALLOW_INSECURE_TLS`
 - `TRITON_PROBE_DEFAULT_STREAMS`
 - `TRITON_PROBE_TRACE_DIR`
 - `TRITON_BENCH_DEFAULT_DURATION`
 - `TRITON_BENCH_INSECURE`
+- `TRITON_BENCH_ALLOW_INSECURE_TLS`
 - `TRITON_BENCH_TRACE_DIR`
 
 ## Storage
@@ -420,7 +426,7 @@ The embedded dashboard is currently a lightweight scaffold that serves:
 - `/api/v1/traces`
 - `/api/v1/traces/:name`
 
-The UI now renders status/config snapshots plus typed summaries for recent probes, benches, and trace files instead of showing only raw JSON blobs, including probe test-plan/skipped-test hints, `0rtt` / `migration` probe summary hints, support-coverage pills, and richer benchmark summary pills plus bench health rollups.
+The UI now renders status/config snapshots plus typed summaries for recent probes, benches, and trace files instead of showing only raw JSON blobs, including a top-level overview panel, probe test-plan/skipped-test hints, `0rtt` / `migration` probe summary hints, support-coverage pills, and richer benchmark summary pills plus bench health rollups.
 
 Current hardening features:
 
@@ -428,9 +434,11 @@ Current hardening features:
 - remote dashboard binding requires explicit opt-in via `server.allow_remote_dashboard` or `--allow-remote-dashboard`
 - remote dashboard binding also requires dashboard auth credentials
 - experimental UDP H3 requires explicit opt-in via `server.allow_experimental_h3` or `--allow-experimental-h3`
+- non-loopback experimental UDP H3 binding additionally requires `server.allow_remote_experimental_h3` or `--allow-remote-experimental-h3`
 - defensive security headers on dashboard and HTTPS server responses
 - bounded request body reads for `/echo` and `/upload`
 - benchmark TLS verification enabled by default; `--insecure` is now opt-in
+- `probe.insecure` / `bench.insecure` now also require explicit `allow_insecure_tls` opt-in for lab use
 - request ID propagation and JSON access logs
 - optional access log file output via `server.access_log` or `--access-log`
 - qlog trace file output for real HTTP/3 connections via `server.trace_dir`
@@ -507,9 +515,19 @@ Current local build helpers:
 Current automation now includes:
 
 - CI on pushes and pull requests for `gofmt`, `go test`, `go vet`, `staticcheck`, and binary build verification
+- a dedicated CI `race` job that runs `go test -race ./...` on a CGO-capable Linux runner
+- a dedicated CI `gosec` pass for repo-wide security scanning
 - binary smoke verification covering `server`, `probe`, health endpoints, and H3 loopback bench
 - tag-based release automation for `v*` tags via GoReleaser
 - cross-platform archives for Linux, macOS, and Windows
+
+Developer verification helpers:
+
+- `make test`
+- `make test-race`
+- `make test-fuzz`
+- `make lint`
+- `make security`
 
 ## Roadmap
 

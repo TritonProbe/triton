@@ -52,6 +52,9 @@ func TestDashboardBasicAuth(t *testing.T) {
 	if got := rec.Header().Get(observability.RequestIDHeader); got == "" {
 		t.Fatal("expected request id header")
 	}
+	if srv.http.ReadHeaderTimeout != 5*time.Second || srv.http.ReadTimeout != 15*time.Second || srv.http.WriteTimeout != 15*time.Second || srv.http.IdleTimeout != 60*time.Second {
+		t.Fatalf("unexpected dashboard timeouts: %+v", srv.http)
+	}
 }
 
 func TestDashboardStatusRejectsWrongMethod(t *testing.T) {
@@ -191,13 +194,13 @@ func TestDashboardProbeAndBenchListsReturnSummaries(t *testing.T) {
 		Duration:    time.Second,
 		Concurrency: 2,
 		Protocols:   []string{"h1", "h2"},
-		Summary: map[string]any{
-			"protocols":          2,
-			"healthy_protocols":  1,
-			"degraded_protocols": 1,
-			"failed_protocols":   0,
-			"best_protocol":      "h1",
-			"riskiest_protocol":  "h2",
+		Summary: bench.Summary{
+			Protocols:         2,
+			HealthyProtocols:  1,
+			DegradedProtocols: 1,
+			FailedProtocols:   0,
+			BestProtocol:      "h1",
+			RiskiestProtocol:  "h2",
 		},
 		Stats: map[string]bench.Stats{
 			"h1": {Requests: 10, Latency: bench.Percentiles{P95: 9.5}},
@@ -224,7 +227,7 @@ func TestDashboardProbeAndBenchListsReturnSummaries(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 from benches list, got %d", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), `"protocols":["h1","h2"]`) || !strings.Contains(rec.Body.String(), `"latency_ms"`) || !strings.Contains(rec.Body.String(), `"summary"`) {
+	if !strings.Contains(rec.Body.String(), `"protocols":["h1","h2"]`) || !strings.Contains(rec.Body.String(), `"latency_ms"`) || !strings.Contains(rec.Body.String(), `"summary"`) || !strings.Contains(rec.Body.String(), `"stats_view"`) {
 		t.Fatalf("expected enriched bench summary payload, got %q", rec.Body.String())
 	}
 }
@@ -256,6 +259,9 @@ func TestDashboardAssetsAndHead(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `id="config"`) {
 		t.Fatalf("expected config card in dashboard html, got %q", rec.Body.String())
 	}
+	if !strings.Contains(rec.Body.String(), `id="overview"`) {
+		t.Fatalf("expected overview card in dashboard html, got %q", rec.Body.String())
+	}
 	if !strings.Contains(rec.Body.String(), `class="stack"`) {
 		t.Fatalf("expected stack containers in dashboard html, got %q", rec.Body.String())
 	}
@@ -266,13 +272,13 @@ func TestDashboardAssetsAndHead(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 for app.js, got %d", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "renderProbes") || !strings.Contains(rec.Body.String(), "renderBenches") {
+	if !strings.Contains(rec.Body.String(), "renderProbes") || !strings.Contains(rec.Body.String(), "renderBenches") || !strings.Contains(rec.Body.String(), "renderOverview") {
 		t.Fatalf("expected typed dashboard renderers in app.js, got %q", rec.Body.String())
 	}
 	if !strings.Contains(rec.Body.String(), "skipped") || !strings.Contains(rec.Body.String(), "Top Error") {
 		t.Fatalf("expected richer probe/bench renderer hints in app.js, got %q", rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "Bench summary") || !strings.Contains(rec.Body.String(), "Healthy") {
+	if !strings.Contains(rec.Body.String(), "Bench summary") || !strings.Contains(rec.Body.String(), "Healthy") || !strings.Contains(rec.Body.String(), "loadOverview") {
 		t.Fatalf("expected bench summary renderer hints in app.js, got %q", rec.Body.String())
 	}
 	if !strings.Contains(rec.Body.String(), "0rtt") || !strings.Contains(rec.Body.String(), "migration") || !strings.Contains(rec.Body.String(), "qpack") || !strings.Contains(rec.Body.String(), "loss") || !strings.Contains(rec.Body.String(), "congestion") || !strings.Contains(rec.Body.String(), "version") || !strings.Contains(rec.Body.String(), "retry") || !strings.Contains(rec.Body.String(), "ecn") || !strings.Contains(rec.Body.String(), "spin") || !strings.Contains(rec.Body.String(), "Coverage") || !strings.Contains(rec.Body.String(), "Support summary") {
@@ -341,6 +347,9 @@ func TestDashboardProbeAndBenchDetailsNotFound(t *testing.T) {
 		}
 		if !strings.Contains(rec.Body.String(), `"status":"error"`) {
 			t.Fatalf("expected JSON error for %s, got %q", path, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), `"detail":"see server logs"`) {
+			t.Fatalf("expected sanitized error detail for %s, got %q", path, rec.Body.String())
 		}
 	}
 }

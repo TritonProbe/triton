@@ -97,6 +97,7 @@ func TestRunBenchLinksTraceFiles(t *testing.T) {
 		DefaultConcurrency: 1,
 		DefaultProtocols:   []string{"h3"},
 		Insecure:           true,
+		AllowInsecureTLS:   true,
 		TraceDir:           traceDir,
 	})
 	if err != nil {
@@ -108,8 +109,19 @@ func TestRunBenchLinksTraceFiles(t *testing.T) {
 	if result.Stats["h3"].Latency.P99 <= 0 {
 		t.Fatalf("expected bench result to include latency percentiles: %+v", result.Stats["h3"])
 	}
-	if result.Summary["protocols"] != 1 || result.Summary["best_protocol"] != "h3" {
+	if result.Summary.Protocols != 1 || result.Summary.BestProtocol != "h3" {
 		t.Fatalf("expected bench summary to be populated: %#v", result.Summary)
+	}
+}
+
+func TestRunBenchRejectsInsecureTLSWithoutOptIn(t *testing.T) {
+	if _, err := Run("https://example.com", config.BenchConfig{
+		DefaultDuration:    time.Second,
+		DefaultConcurrency: 1,
+		DefaultProtocols:   []string{"h1"},
+		Insecure:           true,
+	}); err == nil {
+		t.Fatal("expected insecure bench without opt-in to fail")
 	}
 }
 
@@ -169,10 +181,10 @@ func TestBuildSummaryClassifiesProtocols(t *testing.T) {
 		"h2": {Requests: 10, Errors: 2, RequestsPerS: 18, ErrorRate: 0.2},
 		"h3": {Requests: 0, Errors: 5, RequestsPerS: 0, ErrorRate: 1.0},
 	})
-	if summary["healthy_protocols"] != 1 || summary["degraded_protocols"] != 1 || summary["failed_protocols"] != 1 {
+	if summary.HealthyProtocols != 1 || summary.DegradedProtocols != 1 || summary.FailedProtocols != 1 {
 		t.Fatalf("unexpected bench summary classification: %#v", summary)
 	}
-	if summary["best_protocol"] != "h1" || summary["riskiest_protocol"] != "h3" {
+	if summary.BestProtocol != "h1" || summary.RiskiestProtocol != "h3" {
 		t.Fatalf("unexpected bench summary ranking: %#v", summary)
 	}
 }

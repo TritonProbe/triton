@@ -3,9 +3,11 @@ package storage
 import (
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -24,12 +26,21 @@ type Item struct {
 	Size    int64     `json:"size"`
 }
 
+var (
+	validStoreCategories = map[string]struct{}{
+		"probes":  {},
+		"benches": {},
+		"certs":   {},
+	}
+	validStoreID = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+)
+
 func NewFileStore(baseDir string, maxResults int, retention time.Duration) (*FileStore, error) {
-	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+	if err := os.MkdirAll(baseDir, 0o750); err != nil {
 		return nil, err
 	}
 	for _, dir := range []string{"probes", "benches", "certs"} {
-		if err := os.MkdirAll(filepath.Join(baseDir, dir), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(baseDir, dir), 0o750); err != nil {
 			return nil, err
 		}
 	}
@@ -45,7 +56,11 @@ func (s *FileStore) SaveBench(id string, data any) error {
 }
 
 func (s *FileStore) save(category, id string, data any) error {
-	path := filepath.Join(s.baseDir, category, id+".json.gz")
+	path, err := s.resultPath(category, id)
+	if err != nil {
+		return err
+	}
+	// #nosec G304 -- resultPath validates category/id and constrains paths to the store root.
 	file, err := os.Create(path)
 	if err != nil {
 		return err
@@ -62,6 +77,9 @@ func (s *FileStore) save(category, id string, data any) error {
 }
 
 func (s *FileStore) List(category string) ([]Item, error) {
+	if err := validateStoreCategory(category); err != nil {
+		return nil, err
+	}
 	matches, err := filepath.Glob(filepath.Join(s.baseDir, category, "*.json.gz"))
 	if err != nil {
 		return nil, err
@@ -84,7 +102,11 @@ func (s *FileStore) List(category string) ([]Item, error) {
 }
 
 func (s *FileStore) Load(category, id string, target any) error {
-	path := filepath.Join(s.baseDir, category, id+".json.gz")
+	path, err := s.resultPath(category, id)
+	if err != nil {
+		return err
+	}
+	// #nosec G304 -- resultPath validates category/id and constrains paths to the store root.
 	file, err := os.Open(path)
 	if err != nil {
 		return err
@@ -101,6 +123,9 @@ func (s *FileStore) Load(category, id string, target any) error {
 }
 
 func (s *FileStore) cleanup(category string) error {
+	if err := validateStoreCategory(category); err != nil {
+		return err
+	}
 	items, err := s.List(category)
 	if err != nil {
 		return err
@@ -114,6 +139,28 @@ func (s *FileStore) cleanup(category string) error {
 				return fmt.Errorf("cleanup %s: %w", item.Path, err)
 			}
 		}
+	}
+	return nil
+}
+
+func (s *FileStore) resultPath(category, id string) (string, error) {
+	if err := validateStoreCategory(category); err != nil {
+		return "", err
+	}
+	if !validStoreID.MatchString(id) {
+		return "", fmt.Errorf("invalid result id %q", id)
+	}
+	root := filepath.Clean(filepath.Join(s.baseDir, category))
+	full := filepath.Clean(filepath.Join(root, id+".json.gz"))
+	if root != full && !strings.HasPrefix(full, root+string(os.PathSeparator)) {
+		return "", errors.New("result path escapes store root")
+	}
+	return full, nil
+}
+
+func validateStoreCategory(category string) error {
+	if _, ok := validStoreCategories[category]; !ok {
+		return fmt.Errorf("invalid storage category %q", category)
 	}
 	return nil
 }

@@ -20,6 +20,7 @@ var packetPool = sync.Pool{
 }
 
 type UDPTransport struct {
+	mu           sync.RWMutex
 	conn         *net.UDPConn
 	readTimeout  time.Duration
 	writeTimeout time.Duration
@@ -43,15 +44,19 @@ func New(conn *net.UDPConn) *UDPTransport {
 }
 
 func (t *UDPTransport) ReadPacket() ([]byte, *net.UDPAddr, error) {
-	if t.conn == nil {
+	t.mu.RLock()
+	conn := t.conn
+	readTimeout := t.readTimeout
+	t.mu.RUnlock()
+	if conn == nil {
 		return nil, nil, errors.New("udp transport is closed")
 	}
-	if t.readTimeout > 0 {
-		_ = t.conn.SetReadDeadline(time.Now().Add(t.readTimeout))
+	if readTimeout > 0 {
+		_ = conn.SetReadDeadline(time.Now().Add(readTimeout))
 	}
 	bufPtr := packetPool.Get().(*[]byte)
 	buf := *bufPtr
-	n, addr, err := t.conn.ReadFromUDP(buf)
+	n, addr, err := conn.ReadFromUDP(buf)
 	if err != nil {
 		packetPool.Put(bufPtr)
 		return nil, nil, err
@@ -63,13 +68,17 @@ func (t *UDPTransport) ReadPacket() ([]byte, *net.UDPAddr, error) {
 }
 
 func (t *UDPTransport) WritePacket(data []byte, addr *net.UDPAddr) error {
-	if t.conn == nil {
+	t.mu.RLock()
+	conn := t.conn
+	writeTimeout := t.writeTimeout
+	t.mu.RUnlock()
+	if conn == nil {
 		return errors.New("udp transport is closed")
 	}
-	if t.writeTimeout > 0 {
-		_ = t.conn.SetWriteDeadline(time.Now().Add(t.writeTimeout))
+	if writeTimeout > 0 {
+		_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 	}
-	_, err := t.conn.WriteToUDP(data, addr)
+	_, err := conn.WriteToUDP(data, addr)
 	return err
 }
 
@@ -83,37 +92,51 @@ func (t *UDPTransport) WriteBatch(packets [][]byte, addr *net.UDPAddr) error {
 }
 
 func (t *UDPTransport) SetReadDeadline(deadline time.Time) error {
-	if t.conn == nil {
+	t.mu.RLock()
+	conn := t.conn
+	t.mu.RUnlock()
+	if conn == nil {
 		return errors.New("udp transport is closed")
 	}
-	return t.conn.SetReadDeadline(deadline)
+	return conn.SetReadDeadline(deadline)
 }
 
 func (t *UDPTransport) SetReadTimeout(timeout time.Duration) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.readTimeout = timeout
 }
 
 func (t *UDPTransport) SetWriteTimeout(timeout time.Duration) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.writeTimeout = timeout
 }
 
 func (t *UDPTransport) Close() error {
-	if t.conn == nil {
+	t.mu.Lock()
+	conn := t.conn
+	t.conn = nil
+	t.mu.Unlock()
+	if conn == nil {
 		return nil
 	}
-	err := t.conn.Close()
-	t.conn = nil
-	return err
+	return conn.Close()
 }
 
 func (t *UDPTransport) LocalAddr() *net.UDPAddr {
-	if t.conn == nil {
+	t.mu.RLock()
+	conn := t.conn
+	t.mu.RUnlock()
+	if conn == nil {
 		return nil
 	}
-	addr, _ := t.conn.LocalAddr().(*net.UDPAddr)
+	addr, _ := conn.LocalAddr().(*net.UDPAddr)
 	return addr
 }
 
 func (t *UDPTransport) MTU() int {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	return t.mtu
 }

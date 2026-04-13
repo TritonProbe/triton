@@ -3,6 +3,7 @@ package storage
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -61,5 +62,28 @@ func TestCleanupByRetentionAndLoadErrors(t *testing.T) {
 	var out map[string]any
 	if err := store.Load("probes", "bad", &out); err == nil {
 		t.Fatal("expected invalid gzip load to fail")
+	}
+}
+
+func TestStoreRejectsInvalidCategoryAndID(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewFileStore(dir, 10, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.SaveProbe("../escape", map[string]any{"id": "bad"}); err == nil {
+		t.Fatal("expected invalid id to fail")
+	}
+	if _, err := store.List("../escape"); err == nil {
+		t.Fatal("expected invalid category to fail")
+	}
+	var out map[string]any
+	err = store.Load("probes", `..\outside`, &out)
+	if err == nil {
+		t.Fatal("expected path traversal load to fail")
+	}
+	if !strings.Contains(err.Error(), "invalid result id") {
+		t.Fatalf("expected invalid id error, got %v", err)
 	}
 }

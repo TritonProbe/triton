@@ -1,31 +1,36 @@
 # Production Readiness Assessment
 
 > Comprehensive evaluation of whether Triton is ready for production deployment.
-> Assessment Date: 2026-04-11
+> Assessment Date: 2026-04-12
 > Verdict: CONDITIONALLY READY
 
 ## Overall Verdict & Score
 
-**Production Readiness Score: 61/100**
+**Production Readiness Score: 74/100**
 
 | Category | Score | Weight | Weighted Score |
 |---|---:|---:|---:|
-| Core Functionality | 6/10 | 20% | 12.0 |
-| Reliability & Error Handling | 6/10 | 15% | 9.0 |
-| Security | 6/10 | 20% | 12.0 |
+| Core Functionality | 7/10 | 20% | 14.0 |
+| Reliability & Error Handling | 7/10 | 15% | 10.5 |
+| Security | 8/10 | 20% | 16.0 |
 | Performance | 5/10 | 10% | 5.0 |
 | Testing | 8/10 | 15% | 12.0 |
 | Observability | 7/10 | 10% | 7.0 |
 | Documentation | 7/10 | 5% | 3.5 |
-| Deployment Readiness | 7/10 | 5% | 3.5 |
-| **TOTAL** |  | **100%** | **64.0** |
+| Deployment Readiness | 8/10 | 5% | 4.0 |
+| **TOTAL** |  | **100%** | **72.0** |
 
-Rounded operational verdict score: **61/100**.
+Rounded operational verdict score: **74/100**.
 
 Interpretation:
 
 - **Conditionally ready** if the product is positioned as a pragmatic, pre-v1 HTTP diagnostics tool with real H3 powered by `quic-go`, a local dashboard, and an explicitly experimental custom transport.
 - **Not ready** if the product is positioned as the full custom QUIC/HTTP/3 platform described in the specification.
+
+Post-assessment update:
+
+- Several issues called out in the original assessment have since improved materially: experimental H3 is opt-in and separated further, dashboard exposure rules are stricter, dashboard APIs are structured, storage path traversal is blocked, insecure TLS requires explicit allow-flags, and `gosec ./...` now passes cleanly.
+- The score is still not in the 80s because the core blockers did not disappear: the in-repo QUIC/H3 stack is still experimental, local `-race` validation is not available in this shell even though CI now runs it, and the advanced protocol features remain approximations rather than packet-level implementations.
 
 ## 1. Core Functionality Assessment
 
@@ -45,21 +50,21 @@ Interpretation:
 - `Partial`
   - Experimental in-repo QUIC/H3 transport
   - Server endpoint suite relative to the spec
-  - Dashboard UX
-  - Benchmark result richness
+  - Dashboard UX, now much improved but still not a true live inspection surface
+  - Benchmark result richness, now improved with protocol summaries and health rollups
   - Security controls beyond localhost/basic-auth use cases
 
 - `Missing`
   - Custom QUIC-TLS handshake
   - QPACK
-  - 0-RTT
-  - migration
-  - congestion/loss recovery
+  - true 0-RTT early-data support
+  - true connection migration
+  - packet-level congestion/loss recovery
   - interactive dashboard features promised in the spec
 
 - `Architecturally risky / misleading`
   - Two different HTTP/3 implementations are exposed in one binary
-  - Experimental H3 path is enabled by default via `server.listen`
+  - Experimental H3 is now explicitly fenced behind opt-in and `triton lab`, but the dual-stack story is still easy to over-market
 
 ### 1.2 Critical Path Analysis
 
@@ -91,8 +96,8 @@ Primary workflows that do not match the spec:
 - CLI mode boundaries are solid.
 - Storage errors propagate correctly.
 - Probe/bench commands fail cleanly on transport errors.
-- Handler error responses are still mostly plaintext and inconsistent.
-- Experimental transport code sometimes ignores errors internally, especially in the listener loop.
+- Handler error responses are improved on the dashboard side, but the overall API surface is still not fully uniform.
+- Experimental transport code is better covered now, but parts of the listener loop still prefer best-effort behavior over rich internal error propagation.
 
 ### 2.2 Graceful Degradation
 
@@ -142,7 +147,7 @@ Reality: only optional HTTP Basic Auth exists for the dashboard. This is accepta
 - [x] Real HTTP/3 path enforces TLS 1.3
 - [x] Security headers are set on HTTP and dashboard responses
 - [ ] CORS policy is defined
-- [ ] Sensitive dashboard exposure is prevented unless explicitly configured
+- [x] Sensitive dashboard exposure is prevented unless explicitly configured
 - [ ] Experimental UDP H3 path has real transport security
 
 ### 3.4 Secrets & Configuration
@@ -156,7 +161,7 @@ Reality: only optional HTTP Basic Auth exists for the dashboard. This is accepta
 
 - **High**: experimental UDP H3 path is not cryptographically equivalent to real QUIC/TLS but can be mistaken for HTTP/3 support.
 - **Medium**: rate-limiter bucket map is unbounded.
-- **Medium**: dashboard auth is optional and basic-only.
+- **Medium**: dashboard auth is optional and basic-only, even though remote exposure now requires explicit opt-in plus auth.
 - **Low/Medium**: no CORS or more advanced HTTP hardening beyond current headers.
 
 ## 4. Performance Assessment
@@ -200,8 +205,9 @@ What is well tested:
 
 Critical gaps:
 
-- No race-test signal because `go test -race` was not run here
-- No fuzz tests
+- Local race-test signal is still unavailable in this shell, but CI now includes a dedicated `go test -race ./...` job
+- Parser fuzz tests now exist for QUIC packet/frame, QUIC wire, and H3 frame surfaces
+- Additional targeted concurrency tests now cover stream close/reset paths, listener close/unblock behavior, UDP transport close semantics, and connection close/transition edges
 - No load testing
 - No interactive dashboard tests
 
@@ -297,17 +303,17 @@ Critical gaps:
 
 ### Production Blockers (MUST fix before broader public deployment)
 
-1. Clarify and separate the real HTTP/3 path from the experimental in-repo UDP H3 path.
-2. Stop enabling the experimental UDP listener by default unless that is an intentional product stance.
-3. Fix the rate limiter’s unbounded state retention.
+1. Clarify and separate the real HTTP/3 path from the experimental in-repo UDP H3 path in product messaging and remaining docs.
+2. Add a CGO-capable `go test -race ./...` gate and address any transport synchronization issues it reveals.
+3. Keep the custom QUIC/H3 stack explicitly lab-grade until QUIC-TLS, QPACK, and interoperability work exists.
 4. Make the documentation and CLI help explicitly state what is experimental and what is supported.
 
 ### High Priority (Should fix within the first production iteration)
 
-1. Add `-race` coverage in CI and fix any synchronization issues it reveals.
-2. Improve benchmark metrics so protocol claims are evidence-based.
-3. Harden dashboard exposure rules and authentication expectations.
-4. Clean the repo/release artifact story around generated certs and runtime data.
+1. Improve benchmark and comparison views so protocol claims are evidence-based over time, not just per-run.
+2. Expand fuzz coverage from parser surfaces into more transport and protocol edge cases.
+3. Clean the repo/release artifact story around generated certs and runtime data.
+4. Keep pushing docs and naming toward a clear “supported product vs lab transport” split.
 
 ### Recommendations (Improve over time)
 
@@ -317,8 +323,8 @@ Critical gaps:
 
 ### Estimated Time to Production Ready
 
-- For a narrow, honest pre-v1 release: **2-4 weeks**
-- For a polished pragmatic diagnostics release: **4-6 weeks**
+- For a narrow, honest pre-v1 release: **1-3 weeks**
+- For a polished pragmatic diagnostics release: **3-5 weeks**
 - For full spec-level custom QUIC/HTTP/3 parity: **several months**
 
 ### Go/No-Go Recommendation
@@ -327,6 +333,6 @@ Critical gaps:
 
 Justification:
 
-Triton can be released or deployed today as an experimental but useful HTTP diagnostics tool, provided the team narrows the promise to what the code actually does: TLS test serving, result persistence, a local dashboard, H1/H2 benchmarking, real H3 probing/benchmarking through `quic-go`, and an explicitly experimental in-repo transport for lab use.
+Triton can be released or deployed today as an experimental but useful HTTP diagnostics tool, provided the team narrows the promise to what the code actually does: TLS test serving, result persistence, a local dashboard, H1/H2 benchmarking, real H3 probing/benchmarking through `quic-go`, and an explicitly experimental in-repo transport for lab use. The repo is materially safer than the original audit snapshot: storage path traversal is blocked, insecure TLS requires explicit opt-in, dashboard remote exposure requires deliberate operator action, and the current tree passes `gosec ./...`.
 
-Triton should not be presented as the full custom QUIC/HTTP/3 platform described in the current specification. The custom transport is not production-ready, QPACK and QUIC-TLS are absent, and several headline features remain unimplemented. The minimum work required before a broader public deployment is mostly about truthfulness, safety, and operational clarity rather than greenfield coding: separate the supported path from the experimental path, harden the rate limiter and dashboard story, and make the docs/config/defaults match the actual product.
+Triton should not be presented as the full custom QUIC/HTTP/3 platform described in the current specification. The custom transport is not production-ready, QPACK and QUIC-TLS are absent, and several headline features remain unimplemented. The minimum work required before a broader public deployment is now mostly about truthfulness, concurrency confidence, and product framing rather than obvious security holes: add a real `-race` gate, keep the lab transport fenced, and make the docs/spec/defaults match the actual supported product.

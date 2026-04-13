@@ -13,6 +13,7 @@ func TestParseServerOptionsAndApply(t *testing.T) {
 		"-config", "custom.yaml",
 		"-listen", ":4443",
 		"-allow-experimental-h3",
+		"-allow-remote-experimental-h3",
 		"-listen-h3", ":4444",
 		"-listen-tcp", ":9443",
 		"-cert", "cert.pem",
@@ -42,6 +43,9 @@ func TestParseServerOptionsAndApply(t *testing.T) {
 	if !cfg.Server.AllowExperimentalH3 {
 		t.Fatalf("expected experimental h3 opt-in to be applied: %+v", cfg.Server)
 	}
+	if !cfg.Server.AllowRemoteExperimentalH3 {
+		t.Fatalf("expected remote experimental h3 opt-in to be applied: %+v", cfg.Server)
+	}
 	if cfg.Server.CertFile != "cert.pem" || cfg.Server.KeyFile != "key.pem" {
 		t.Fatalf("TLS options not applied: %+v", cfg.Server)
 	}
@@ -70,6 +74,7 @@ func TestParseProbeOptionsAndApply(t *testing.T) {
 		"-0rtt",
 		"-migration",
 		"-insecure",
+		"-allow-insecure-tls",
 		"-trace-dir", "traces/probe",
 	})
 	if err != nil {
@@ -78,7 +83,7 @@ func TestParseProbeOptionsAndApply(t *testing.T) {
 	if opts.ConfigPath != "probe.yaml" || opts.Target != "https://example.com" || opts.Format != "json" {
 		t.Fatalf("unexpected parsed probe options: %+v", opts)
 	}
-	if opts.Timeout != 3*time.Second || !opts.Insecure || opts.TraceDir != "traces/probe" || opts.Streams != 12 {
+	if opts.Timeout != 3*time.Second || !opts.Insecure || !opts.AllowInsecureTLS || opts.TraceDir != "traces/probe" || opts.Streams != 12 {
 		t.Fatalf("probe flags not parsed correctly: %+v", opts)
 	}
 	if !reflect.DeepEqual(opts.selectedTests(nil), []string{"latency", "streams", "0rtt", "migration"}) {
@@ -87,7 +92,7 @@ func TestParseProbeOptionsAndApply(t *testing.T) {
 
 	cfg := config.Default()
 	opts.Apply(&cfg)
-	if cfg.Probe.Timeout != 3*time.Second || !cfg.Probe.Insecure || cfg.Probe.TraceDir != "traces/probe" || cfg.Probe.DefaultStreams != 12 {
+	if cfg.Probe.Timeout != 3*time.Second || !cfg.Probe.Insecure || !cfg.Probe.AllowInsecureTLS || cfg.Probe.TraceDir != "traces/probe" || cfg.Probe.DefaultStreams != 12 {
 		t.Fatalf("probe options not applied: %+v", cfg.Probe)
 	}
 	if !reflect.DeepEqual(cfg.Probe.DefaultTests, []string{"latency", "streams", "0rtt", "migration"}) {
@@ -123,6 +128,7 @@ func TestParseBenchOptionsAndApply(t *testing.T) {
 		"-concurrency", "7",
 		"-protocols", "h1, h2 ,h3",
 		"-insecure",
+		"-allow-insecure-tls",
 		"-trace-dir", "traces/bench",
 	})
 	if err != nil {
@@ -131,13 +137,13 @@ func TestParseBenchOptionsAndApply(t *testing.T) {
 	if opts.ConfigPath != "bench.yaml" || opts.Target != "https://example.com" || opts.Format != "markdown" {
 		t.Fatalf("unexpected parsed bench options: %+v", opts)
 	}
-	if opts.Duration != 5*time.Second || opts.Concurrency != 7 || !opts.Insecure || opts.TraceDir != "traces/bench" {
+	if opts.Duration != 5*time.Second || opts.Concurrency != 7 || !opts.Insecure || !opts.AllowInsecureTLS || opts.TraceDir != "traces/bench" {
 		t.Fatalf("bench flags not parsed correctly: %+v", opts)
 	}
 
 	cfg := config.Default()
 	opts.Apply(&cfg)
-	if cfg.Bench.DefaultDuration != 5*time.Second || cfg.Bench.DefaultConcurrency != 7 || !cfg.Bench.Insecure || cfg.Bench.TraceDir != "traces/bench" {
+	if cfg.Bench.DefaultDuration != 5*time.Second || cfg.Bench.DefaultConcurrency != 7 || !cfg.Bench.Insecure || !cfg.Bench.AllowInsecureTLS || cfg.Bench.TraceDir != "traces/bench" {
 		t.Fatalf("bench options not applied: %+v", cfg.Bench)
 	}
 	wantProtocols := []string{"h1", "h2", "h3"}

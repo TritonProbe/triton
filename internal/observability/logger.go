@@ -24,10 +24,11 @@ func NewLogger(path string) (*ManagedLogger, error) {
 		return &ManagedLogger{Logger: slog.New(slog.NewJSONHandler(os.Stdout, nil))}, nil
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return nil, err
 	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	// #nosec G304 -- log path is explicit operator configuration.
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, err
 	}
