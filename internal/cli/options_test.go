@@ -14,6 +14,7 @@ func TestParseServerOptionsAndApply(t *testing.T) {
 		"-listen", ":4443",
 		"-allow-experimental-h3",
 		"-allow-remote-experimental-h3",
+		"-allow-mixed-h3-planes",
 		"-listen-h3", ":4444",
 		"-listen-tcp", ":9443",
 		"-cert", "cert.pem",
@@ -45,6 +46,9 @@ func TestParseServerOptionsAndApply(t *testing.T) {
 	}
 	if !cfg.Server.AllowRemoteExperimentalH3 {
 		t.Fatalf("expected remote experimental h3 opt-in to be applied: %+v", cfg.Server)
+	}
+	if !cfg.Server.AllowMixedH3Planes {
+		t.Fatalf("expected mixed h3 planes opt-in to be applied: %+v", cfg.Server)
 	}
 	if cfg.Server.CertFile != "cert.pem" || cfg.Server.KeyFile != "key.pem" {
 		t.Fatalf("TLS options not applied: %+v", cfg.Server)

@@ -31,6 +31,9 @@ Post-assessment update:
 
 - Several issues called out in the original assessment have since improved materially: experimental H3 is opt-in and separated further, dashboard exposure rules are stricter, dashboard APIs are structured, storage path traversal is blocked, insecure TLS requires explicit allow-flags, and `gosec ./...` now passes cleanly.
 - The score is still not in the 80s because the core blockers did not disappear: the in-repo QUIC/H3 stack is still experimental, local `-race` validation is not available in this shell even though CI now runs it, and the advanced protocol features remain approximations rather than packet-level implementations.
+- Mixed real/experimental H3 startup is now additionally guarded: enabling both listener planes requires explicit `allow_mixed_h3_planes` intent so accidental dual-plane exposure is less likely.
+- Startup logs now also emit an explicit transport-plane summary (`stable` vs `experimental`) and a mixed-plane note when both H3 paths are intentionally enabled.
+- Engine strategy is now explicit: pragmatic product track on real H3 (`quic-go`) and custom engine retained as lab-only unless vNext milestones are funded.
 
 ## 1. Core Functionality Assessment
 
@@ -273,7 +276,7 @@ Critical gaps:
 - [x] File/env/CLI config model exists
 - [x] Sensible defaults exist
 - [x] Startup validation exists
-- [ ] Unsupported config combinations are rejected more explicitly
+- [x] Unsupported config combinations are rejected more explicitly
 - [ ] Environment-specific deployment guidance exists
 
 ### 7.3 Database & State

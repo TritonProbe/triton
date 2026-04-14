@@ -11,6 +11,7 @@ Triton is a pure Go toolkit for observing, testing, and benchmarking HTTP/3 and 
 - `bench`: compares HTTP/1.1, HTTP/2, and HTTP/3 behavior
 
 This repository is not yet the full RFC-complete final product described in the specification, but it already contains a working CLI, a test server, probe/bench flows, QUIC building blocks, and a minimal in-repo H3 loopback stack with handler dispatch.
+Current product positioning is pragmatic: real HTTP diagnostics and real HTTP/3 behavior are supported through `quic-go`, while the in-repo custom QUIC/H3 stack remains lab-only research.
 
 ## Vision
 
@@ -37,6 +38,7 @@ Server mode exposes test and benchmark endpoints.
 
 By default, `triton server` starts the HTTPS/TCP server on `:8443` and the dashboard on `127.0.0.1:9090`. The in-repo UDP H3 transport is experimental and now requires both `--listen` and `--allow-experimental-h3`.
 Experimental UDP H3 is also loopback-only by default; binding it on a non-loopback interface now additionally requires `--allow-remote-experimental-h3` or `server.allow_remote_experimental_h3: true`.
+Running real HTTP/3 (`--listen-h3`) and experimental UDP H3 (`--listen`) together now requires explicit mixed-plane opt-in via `--allow-mixed-h3-planes` or `server.allow_mixed_h3_planes: true`.
 Remote dashboard binding is blocked by default; use `--allow-remote-dashboard` only when you intentionally want non-loopback access, and pair it with dashboard auth.
 
 If you want to work with the experimental Triton UDP H3 stack directly, prefer `triton lab` instead of mixing it into the normal `server` command.
@@ -255,6 +257,7 @@ Important flags:
 - `--listen` (experimental Triton UDP H3 listener)
 - `--allow-experimental-h3`
 - `--allow-remote-experimental-h3`
+- `--allow-mixed-h3-planes`
 - `--listen-h3` (real HTTP/3 listener via `quic-go`)
 - `--listen-tcp`
 - `--cert`
@@ -427,6 +430,9 @@ The embedded dashboard is currently a lightweight scaffold that serves:
 - `/api/v1/traces/:name`
 
 The UI now renders status/config snapshots plus typed summaries for recent probes, benches, and trace files instead of showing only raw JSON blobs, including a top-level overview panel, probe test-plan/skipped-test hints, `0rtt` / `migration` probe summary hints, support-coverage pills, and richer benchmark summary pills plus bench health rollups.
+The dashboard also supports in-page filtering, sorting, and result limits for probe, bench, and trace lists via query-driven API calls.
+List endpoints (`/api/v1/probes`, `/api/v1/benches`, `/api/v1/traces`) now accept `q`, `sort`, and `limit` query parameters.
+It now includes a compare/trend panel that contrasts recent probe coverage and bench health/best-protocol latency across the latest runs.
 
 Current hardening features:
 
@@ -435,6 +441,7 @@ Current hardening features:
 - remote dashboard binding also requires dashboard auth credentials
 - experimental UDP H3 requires explicit opt-in via `server.allow_experimental_h3` or `--allow-experimental-h3`
 - non-loopback experimental UDP H3 binding additionally requires `server.allow_remote_experimental_h3` or `--allow-remote-experimental-h3`
+- enabling both `server.listen` (experimental UDP H3) and `server.listen_h3` (real HTTP/3) requires `server.allow_mixed_h3_planes` or `--allow-mixed-h3-planes`
 - defensive security headers on dashboard and HTTPS server responses
 - bounded request body reads for `/echo` and `/upload`
 - benchmark TLS verification enabled by default; `--insecure` is now opt-in
@@ -523,9 +530,11 @@ Current automation now includes:
 
 Developer verification helpers:
 
+- `make clean`
 - `make test`
 - `make test-race`
 - `make test-fuzz`
+- `make perf-check`
 - `make lint`
 - `make security`
 
@@ -551,6 +560,8 @@ Project planning and product definition live under `.project/`:
 - [IMPLEMENTATION.md](/d:/Codebox/TritonProbe/.project/IMPLEMENTATION.md)
 - [TASKS.md](/d:/Codebox/TritonProbe/.project/TASKS.md)
 - [BRANDING.md](/d:/Codebox/TritonProbe/.project/BRANDING.md)
+- [ENGINE_STRATEGY.md](/d:/Codebox/TritonProbe/.project/ENGINE_STRATEGY.md)
+- [BENCHMARKING.md](/d:/Codebox/TritonProbe/.project/BENCHMARKING.md)
 
 ## Status Note
 

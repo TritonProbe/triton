@@ -14,6 +14,11 @@ function pillWarn(value) {
   return `<span class="pill pill-warn">${escapeHTML(String(value))}</span>`;
 }
 
+function pillState(value, state) {
+  const css = state ? `pill pill-${state}` : "pill";
+  return `<span class="${css}">${escapeHTML(String(value))}</span>`;
+}
+
 function escapeHTML(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -41,24 +46,32 @@ function flattenConfig(data) {
   const listeners = data.listeners || {};
   const dashboard = data.dashboard || {};
   const limits = data.limits || {};
-  const timeouts = data.timeouts || {};
-  const logging = data.logging || {};
+  const timeouts = data.timeouts || data.timeouts_ms || {};
+  const logging = data.logging || data.observability || {};
   const tls = data.tls || {};
+  const listenerTCP = listeners.tcp || listeners.https_tcp || "disabled";
+  const listenerH3 = listeners.h3 || listeners.http3_quic || "disabled";
+  const listenerExperimental = listeners.experimental_h3 || listeners.experimental || "disabled";
+  const dashboardListen = listeners.dashboard || "disabled";
+  const allowRemote = dashboard.allow_remote || dashboard.allow_remote_dashboard;
+  const traceDir = logging.trace_dir || (logging.trace_dir_configured ? "configured" : "disabled");
+  const accessLogEnabled = logging.access_log ? true : logging.access_log_enabled;
+  const tlsConfigured = tls.configured || (tls.cert_configured && tls.key_configured);
   return [
-    ["TCP", listeners.tcp || "disabled"],
-    ["HTTP/3", listeners.h3 || "disabled"],
-    ["Experimental", listeners.experimental_h3 || "disabled"],
-    ["Dashboard", listeners.dashboard || "disabled"],
+    ["HTTPS/TCP", listenerTCP],
+    ["Real HTTP/3 (quic-go)", listenerH3],
+    ["Experimental UDP H3 (lab)", listenerExperimental],
+    ["Dashboard", dashboardListen],
     ["Dashboard Auth", dashboard.auth_enabled ? "enabled" : "disabled"],
-    ["Remote Dashboard", dashboard.allow_remote ? "enabled" : "disabled"],
+    ["Remote Dashboard", allowRemote ? "enabled" : "disabled"],
     ["Max Body", limits.max_body_bytes || "n/a"],
     ["Rate Limit", limits.rate_limit || "off"],
     ["Read Timeout", timeouts.read || "n/a"],
     ["Write Timeout", timeouts.write || "n/a"],
     ["Idle Timeout", timeouts.idle || "n/a"],
-    ["Access Log", logging.access_log ? "enabled" : "disabled"],
-    ["Trace Dir", logging.trace_dir || "disabled"],
-    ["TLS", tls.configured ? "configured" : "self-signed/default"],
+    ["Access Log", accessLogEnabled ? "enabled" : "disabled"],
+    ["Trace Dir", traceDir],
+    ["TLS", tlsConfigured ? "configured" : "self-signed/default"],
   ];
 }
 
@@ -88,6 +101,77 @@ function renderOverview(target, probes, benches) {
     </p>
     <p class="mini">
       ${latestBench ? `Bench healthy ${benchSummary.healthy_protocols || 0}, degraded ${benchSummary.degraded_protocols || 0}, failed ${benchSummary.failed_protocols || 0}.` : "No benchmark summary yet."}
+    </p>
+  `;
+}
+
+function numericDelta(current, previous) {
+  if (!Number.isFinite(current) || !Number.isFinite(previous)) {
+    return "n/a";
+  }
+  const delta = current - previous;
+  const sign = delta > 0 ? "+" : "";
+  return `${sign}${delta.toFixed(2)}`;
+}
+
+function findProtocolP95(item, name) {
+  const protocols = benchProtocolsForItem(item);
+  for (const [protocol, stats] of protocols) {
+    if (String(protocol).toLowerCase() !== String(name).toLowerCase()) {
+      continue;
+    }
+    const latency = stats && stats.latency_ms ? stats.latency_ms : {};
+    if (typeof latency.p95 === "number") {
+      return latency.p95;
+    }
+  }
+  return NaN;
+}
+
+function renderCompare(target, probes, benches) {
+  const latestProbe = Array.isArray(probes) && probes.length > 0 ? probes[0] : null;
+  const prevProbe = Array.isArray(probes) && probes.length > 1 ? probes[1] : null;
+  const latestBench = Array.isArray(benches) && benches.length > 0 ? benches[0] : null;
+  const prevBench = Array.isArray(benches) && benches.length > 1 ? benches[1] : null;
+
+  if (!latestProbe && !latestBench) {
+    target.innerHTML = `<p class="empty">No data available for trend comparison yet.</p>`;
+    return;
+  }
+
+  const latestProbeAnalysis = probeAnalysisForItem(latestProbe);
+  const prevProbeAnalysis = probeAnalysisForItem(prevProbe);
+  const latestProbeSummary = objectField(latestProbeAnalysis, "support_summary");
+  const prevProbeSummary = objectField(prevProbeAnalysis, "support_summary");
+  const probeCoverageCurrent = typeof latestProbeSummary.coverage_ratio === "number" ? latestProbeSummary.coverage_ratio * 100 : NaN;
+  const probeCoveragePrevious = typeof prevProbeSummary.coverage_ratio === "number" ? prevProbeSummary.coverage_ratio * 100 : NaN;
+
+  const latestBenchSummary = latestBench && latestBench.summary ? latestBench.summary : {};
+  const prevBenchSummary = prevBench && prevBench.summary ? prevBench.summary : {};
+  const bestProtocol = latestBenchSummary.best_protocol || "";
+  const p95Current = bestProtocol ? findProtocolP95(latestBench, bestProtocol) : NaN;
+  const p95Previous = bestProtocol ? findProtocolP95(prevBench, bestProtocol) : NaN;
+
+  const benchHealthCurrent = Number(latestBenchSummary.healthy_protocols || 0);
+  const benchHealthPrevious = Number(prevBenchSummary.healthy_protocols || 0);
+
+  target.innerHTML = `
+    <div class="metric-grid">
+      ${metric("Probe Coverage", Number.isFinite(probeCoverageCurrent) ? `${probeCoverageCurrent.toFixed(1)}%` : "n/a")}
+      ${metric("Coverage Δ", numericDelta(probeCoverageCurrent, probeCoveragePrevious))}
+      ${metric("Bench Healthy", benchHealthCurrent)}
+      ${metric("Healthy Δ", numericDelta(benchHealthCurrent, benchHealthPrevious))}
+      ${metric("Best Protocol", bestProtocol || "n/a")}
+      ${metric("Best P95 Δ", numericDelta(p95Current, p95Previous))}
+    </div>
+    <div class="pill-row">
+      ${latestProbe ? pillMuted(`probe latest ${latestProbe.id || latestProbe.target || "n/a"}`) : ""}
+      ${prevProbe ? pillMuted(`probe prev ${prevProbe.id || prevProbe.target || "n/a"}`) : ""}
+      ${latestBench ? pillMuted(`bench latest ${latestBench.id || latestBench.target || "n/a"}`) : ""}
+      ${prevBench ? pillMuted(`bench prev ${prevBench.id || prevBench.target || "n/a"}`) : ""}
+    </div>
+    <p class="mini">
+      ${bestProtocol ? `Best protocol trend is based on ${escapeHTML(bestProtocol)} p95 latency from stats_view.` : "Best protocol trend becomes available once bench summary includes best protocol."}
     </p>
   `;
 }
@@ -134,12 +218,132 @@ function arrayField(source, key) {
   return Array.isArray(value) ? value : [];
 }
 
+function joinNonEmpty(parts) {
+  return parts.filter(Boolean).join("");
+}
+
+function buildPlanPills(requested, executed, skipped) {
+  return joinNonEmpty([
+    requested.length ? pillMuted(`requested ${requested.join(",")}`) : "",
+    executed.length ? pill(`executed ${executed.join(",")}`) : "",
+    ...skipped.map((entry) => pillWarn(`skipped ${entry.name}`)),
+  ]);
+}
+
+function buildSupportPills(zeroRTTSupport, migrationSupport) {
+  return joinNonEmpty([
+    zeroRTTSupport.coverage ? pillMuted(`0rtt ${zeroRTTSupport.coverage}`) : "",
+    zeroRTTSupport.state ? pill(zeroRTTSupport.state) : "",
+    migrationSupport.coverage ? pillMuted(`migration ${migrationSupport.coverage}`) : "",
+    migrationSupport.state ? pill(migrationSupport.state) : "",
+  ]);
+}
+
+function buildAdvancedPills(context) {
+  const {
+    zeroRTT,
+    migration,
+    qpack,
+    loss,
+    congestion,
+    version,
+    retry,
+    ecn,
+    spin,
+  } = context;
+  return joinNonEmpty([
+    zeroRTT.mode ? pillMuted(`0rtt ${zeroRTT.resumed ? "resumed" : "checked"}`) : "",
+    typeof zeroRTT.time_saved_ms === "number" ? pill(`resume saved ${Number(zeroRTT.time_saved_ms).toFixed(2)}ms`) : "",
+    migration.mode ? pillMuted(`migration ${migration.supported ? "reachable" : "checked"}`) : "",
+    typeof migration.duration_ms === "number" ? pill(`migration ${Number(migration.duration_ms).toFixed(2)}ms`) : "",
+    qpack.mode ? pillMuted(`qpack ${qpack.mode}`) : "",
+    typeof qpack.estimated_ratio === "number" ? pill(`qpack ratio ${Number(qpack.estimated_ratio).toFixed(2)}`) : "",
+    loss.mode ? pillMuted(`loss ${loss.signal || "checked"}`) : "",
+    congestion.mode ? pillMuted(`congestion ${congestion.signal || "checked"}`) : "",
+    version.mode ? pillMuted(`version ${version.alpn || version.observed_proto || "checked"}`) : "",
+    retry.mode ? pillMuted(`retry ${retry.retry_observed ? "observed" : "not-seen"}`) : "",
+    ecn.mode ? pillMuted(`ecn ${ecn.ecn_visible ? "visible" : "not-seen"}`) : "",
+    spin.mode ? pillMuted(`spin ${spin.stability || "checked"}`) : "",
+  ]);
+}
+
+function buildProbeNotes(context) {
+  const {
+    skipped,
+    otherSupport,
+    supportSummary,
+    zeroRTT,
+    migration,
+    qpack,
+    loss,
+    congestion,
+    version,
+    retry,
+    ecn,
+    spin,
+    zeroRTTSupport,
+    migrationSupport,
+  } = context;
+  return [
+    otherSupport.length ? `<p class="mini">Advanced support: ${escapeHTML(otherSupport.join(" | "))}</p>` : "",
+    supportSummary.requested_tests ? `<p class="mini">Support summary: requested ${supportSummary.requested_tests}, available ${supportSummary.available || 0}, not-run ${supportSummary.not_run || 0}, unavailable ${supportSummary.unavailable || 0}</p>` : "",
+    skipped.length ? `<p class="mini">Skipped: ${escapeHTML(skipped.map((entry) => `${entry.name}: ${entry.reason}`).join(" | "))}</p>` : "",
+    zeroRTT.note ? `<p class="mini">0-RTT: ${escapeHTML(String(zeroRTT.note))}</p>` : "",
+    migration.note ? `<p class="mini">Migration: ${escapeHTML(String(migration.note))}</p>` : "",
+    qpack.note ? `<p class="mini">QPACK: ${escapeHTML(String(qpack.note))}</p>` : "",
+    loss.note ? `<p class="mini">Loss: ${escapeHTML(String(loss.note))}</p>` : "",
+    congestion.note ? `<p class="mini">Congestion: ${escapeHTML(String(congestion.note))}</p>` : "",
+    version.note ? `<p class="mini">Version: ${escapeHTML(String(version.note))}</p>` : "",
+    retry.note ? `<p class="mini">Retry: ${escapeHTML(String(retry.note))}</p>` : "",
+    ecn.note ? `<p class="mini">ECN: ${escapeHTML(String(ecn.note))}</p>` : "",
+    spin.note ? `<p class="mini">Spin Bit: ${escapeHTML(String(spin.note))}</p>` : "",
+    zeroRTTSupport.summary ? `<p class="mini">0-RTT support: ${escapeHTML(String(zeroRTTSupport.summary))}</p>` : "",
+    migrationSupport.summary ? `<p class="mini">Migration support: ${escapeHTML(String(migrationSupport.summary))}</p>` : "",
+  ].join("");
+}
+
+function probeMetricValues(latency, streams, response, zeroRTT, migration, supportSummary) {
+  const p95 = latency.p95 ? `${Number(latency.p95).toFixed(2)}ms` : "n/a";
+  const streamSuccess = `${Math.round((streams.success_rate || 0) * 100)}%`;
+  const throughput = `${Math.round(response.throughput_bytes_sec || 0)} B/s`;
+  const zeroRTTState = zeroRTT.mode ? (zeroRTT.resumed ? "resumed" : "checked") : "n/a";
+  const migrationState = migration.mode ? (migration.supported ? "reachable" : "checked") : "n/a";
+  const coverage = typeof supportSummary.coverage_ratio === "number" ? `${Math.round(supportSummary.coverage_ratio * 100)}%` : "n/a";
+  return {
+    p95,
+    streams: streams.attempted || 0,
+    bytes: response.body_bytes || 0,
+    zeroRTTState,
+    migrationState,
+    coverage,
+    latencySamples: latency.samples || 0,
+    streamSuccess,
+    throughput,
+  };
+}
+
+function benchTopStats(protocols) {
+  const top = protocols[0] ? protocols[0][1] : {};
+  const reqPerSec = top.req_per_sec ? Number(top.req_per_sec).toFixed(2) : "n/a";
+  const errorRate = typeof top.error_rate === "number" ? `${Math.round(top.error_rate * 100)}%` : "n/a";
+  const samples = top.sampled_points ? top.sampled_points : 0;
+  return { reqPerSec, errorRate, samples };
+}
+
+function buildBenchPills(protocols) {
+  return protocols.map(([name, stats]) => {
+    const p95 = stats && stats.latency_ms ? Number(stats.latency_ms.p95 || 0).toFixed(2) : "0.00";
+    return pill(`${name} p95 ${p95}ms`);
+  }).join("");
+}
+
 function renderProbes(target, items) {
   if (!Array.isArray(items) || items.length === 0) {
-    target.innerHTML = `<p class="empty">No probe results yet.</p>`;
+    const q = document.getElementById("probes-query");
+    target.innerHTML = `<p class="empty">${q && q.value.trim() ? "No probes match current filters." : "No probe results yet."}</p>`;
     return;
   }
-  target.innerHTML = `<div class="record-list">${items.slice(0, 5).map((item) => {
+  target.innerHTML = `<div class="record-list">${items.map((item) => {
     const analysis = probeAnalysisForItem(item);
     const latency = objectField(analysis, "latency");
     const streams = objectField(analysis, "streams");
@@ -164,31 +368,28 @@ function renderProbes(target, items) {
     const requested = arrayField(plan, "requested");
     const executed = arrayField(plan, "executed");
     const skipped = arrayField(plan, "skipped");
-    const planPills = [
-      requested.length ? pillMuted(`requested ${requested.join(",")}`) : "",
-      executed.length ? pill(`executed ${executed.join(",")}`) : "",
-      ...skipped.map((entry) => pillWarn(`skipped ${entry.name}`)),
-    ].join("");
-    const advancedPills = [
-      zeroRTT.mode ? pillMuted(`0rtt ${zeroRTT.resumed ? "resumed" : "checked"}`) : "",
-      typeof zeroRTT.time_saved_ms === "number" ? pill(`resume saved ${Number(zeroRTT.time_saved_ms).toFixed(2)}ms`) : "",
-      migration.mode ? pillMuted(`migration ${migration.supported ? "reachable" : "checked"}`) : "",
-      typeof migration.duration_ms === "number" ? pill(`migration ${Number(migration.duration_ms).toFixed(2)}ms`) : "",
-      qpack.mode ? pillMuted(`qpack ${qpack.mode}`) : "",
-      typeof qpack.estimated_ratio === "number" ? pill(`qpack ratio ${Number(qpack.estimated_ratio).toFixed(2)}`) : "",
-      loss.mode ? pillMuted(`loss ${loss.signal || "checked"}`) : "",
-      congestion.mode ? pillMuted(`congestion ${congestion.signal || "checked"}`) : "",
-      version.mode ? pillMuted(`version ${version.alpn || version.observed_proto || "checked"}`) : "",
-      retry.mode ? pillMuted(`retry ${retry.retry_observed ? "observed" : "not-seen"}`) : "",
-      ecn.mode ? pillMuted(`ecn ${ecn.ecn_visible ? "visible" : "not-seen"}`) : "",
-      spin.mode ? pillMuted(`spin ${spin.stability || "checked"}`) : "",
-    ].join("");
-    const supportPills = [
-      zeroRTTSupport.coverage ? pillMuted(`0rtt ${zeroRTTSupport.coverage}`) : "",
-      zeroRTTSupport.state ? pill(zeroRTTSupport.state) : "",
-      migrationSupport.coverage ? pillMuted(`migration ${migrationSupport.coverage}`) : "",
-      migrationSupport.state ? pill(migrationSupport.state) : "",
-    ].join("");
+    const planPills = buildPlanPills(requested, executed, skipped);
+    const advancedPills = buildAdvancedPills({ zeroRTT, migration, qpack, loss, congestion, version, retry, ecn, spin });
+    const supportPills = buildSupportPills(zeroRTTSupport, migrationSupport);
+    const notes = buildProbeNotes({
+      skipped,
+      otherSupport,
+      supportSummary,
+      zeroRTT,
+      migration,
+      qpack,
+      loss,
+      congestion,
+      version,
+      retry,
+      ecn,
+      spin,
+      zeroRTTSupport,
+      migrationSupport,
+    });
+    const metrics = probeMetricValues(latency, streams, response, zeroRTT, migration, supportSummary);
+    const statusValue = Number(item.status || 0);
+    const statusState = statusValue >= 200 && statusValue < 400 ? "ok" : (statusValue >= 400 ? "error" : "muted");
     return `
       <article class="record">
         <h3>${escapeHTML(item.target || item.id || "probe")}</h3>
@@ -196,35 +397,23 @@ function renderProbes(target, items) {
           ${metric("Status", item.status || "n/a")}
           ${metric("Proto", item.proto || "n/a")}
           ${metric("Total", item.duration || "n/a")}
-          ${metric("P95", latency.p95 ? `${Number(latency.p95).toFixed(2)}ms` : "n/a")}
-          ${metric("Streams", streams.attempted || 0)}
-          ${metric("Bytes", response.body_bytes || 0)}
-          ${metric("0-RTT", zeroRTT.mode ? (zeroRTT.resumed ? "resumed" : "checked") : "n/a")}
-          ${metric("Migration", migration.mode ? (migration.supported ? "reachable" : "checked") : "n/a")}
-          ${metric("Coverage", typeof supportSummary.coverage_ratio === "number" ? `${Math.round(supportSummary.coverage_ratio * 100)}%` : "n/a")}
+          ${metric("P95", metrics.p95)}
+          ${metric("Streams", metrics.streams)}
+          ${metric("Bytes", metrics.bytes)}
+          ${metric("0-RTT", metrics.zeroRTTState)}
+          ${metric("Migration", metrics.migrationState)}
+          ${metric("Coverage", metrics.coverage)}
         </div>
         <div class="pill-row">
-          ${pill(`latency samples ${latency.samples || 0}`)}
-          ${pill(`stream success ${Math.round((streams.success_rate || 0) * 100)}%`)}
-          ${pill(`throughput ${Math.round(response.throughput_bytes_sec || 0)} B/s`)}
+          ${pillState(`status ${item.status || "n/a"}`, statusState)}
+          ${pill(`latency samples ${metrics.latencySamples}`)}
+          ${pill(`stream success ${metrics.streamSuccess}`)}
+          ${pill(`throughput ${metrics.throughput}`)}
         </div>
         <div class="pill-row">${supportPills}</div>
         <div class="pill-row">${advancedPills}</div>
         <div class="pill-row">${planPills}</div>
-        ${otherSupport.length ? `<p class="mini">Advanced support: ${escapeHTML(otherSupport.join(" | "))}</p>` : ""}
-        ${supportSummary.requested_tests ? `<p class="mini">Support summary: requested ${supportSummary.requested_tests}, available ${supportSummary.available || 0}, not-run ${supportSummary.not_run || 0}, unavailable ${supportSummary.unavailable || 0}</p>` : ""}
-        ${skipped.length ? `<p class="mini">Skipped: ${escapeHTML(skipped.map((entry) => `${entry.name}: ${entry.reason}`).join(" | "))}</p>` : ""}
-        ${zeroRTT.note ? `<p class="mini">0-RTT: ${escapeHTML(String(zeroRTT.note))}</p>` : ""}
-        ${migration.note ? `<p class="mini">Migration: ${escapeHTML(String(migration.note))}</p>` : ""}
-        ${qpack.note ? `<p class="mini">QPACK: ${escapeHTML(String(qpack.note))}</p>` : ""}
-        ${loss.note ? `<p class="mini">Loss: ${escapeHTML(String(loss.note))}</p>` : ""}
-        ${congestion.note ? `<p class="mini">Congestion: ${escapeHTML(String(congestion.note))}</p>` : ""}
-        ${version.note ? `<p class="mini">Version: ${escapeHTML(String(version.note))}</p>` : ""}
-        ${retry.note ? `<p class="mini">Retry: ${escapeHTML(String(retry.note))}</p>` : ""}
-        ${ecn.note ? `<p class="mini">ECN: ${escapeHTML(String(ecn.note))}</p>` : ""}
-        ${spin.note ? `<p class="mini">Spin Bit: ${escapeHTML(String(spin.note))}</p>` : ""}
-        ${zeroRTTSupport.summary ? `<p class="mini">0-RTT support: ${escapeHTML(String(zeroRTTSupport.summary))}</p>` : ""}
-        ${migrationSupport.summary ? `<p class="mini">Migration support: ${escapeHTML(String(migrationSupport.summary))}</p>` : ""}
+        ${notes}
       </article>
     `;
   }).join("")}</div>`;
@@ -232,19 +421,16 @@ function renderProbes(target, items) {
 
 function renderBenches(target, items) {
   if (!Array.isArray(items) || items.length === 0) {
-    target.innerHTML = `<p class="empty">No benchmark results yet.</p>`;
+    const q = document.getElementById("benches-query");
+    target.innerHTML = `<p class="empty">${q && q.value.trim() ? "No benches match current filters." : "No benchmark results yet."}</p>`;
     return;
   }
-  target.innerHTML = `<div class="record-list">${items.slice(0, 5).map((item) => {
+  target.innerHTML = `<div class="record-list">${items.map((item) => {
     const protocols = benchProtocolsForItem(item);
     const summary = item.summary || {};
-    const pills = protocols.map(([name, stats]) => {
-      const p95 = stats && stats.latency_ms ? Number(stats.latency_ms.p95 || 0).toFixed(2) : "0.00";
-      return pill(`${name} p95 ${p95}ms`);
-    }).join("");
-    const top = protocols[0] ? protocols[0][1] : {};
-    const topErrorRate = top && typeof top.error_rate === "number" ? `${Math.round(top.error_rate * 100)}%` : "n/a";
-    const topSamples = top && top.sampled_points ? top.sampled_points : 0;
+    const pills = buildBenchPills(protocols);
+    const top = benchTopStats(protocols);
+    const healthState = (summary.failed_protocols || 0) > 0 ? "error" : ((summary.degraded_protocols || 0) > 0 ? "warn" : "ok");
     return `
       <article class="record">
         <h3>${escapeHTML(item.target || item.id || "bench")}</h3>
@@ -252,13 +438,13 @@ function renderBenches(target, items) {
           ${metric("Duration", item.duration || "n/a")}
           ${metric("Concurrency", item.concurrency || 0)}
           ${metric("Protocols", protocols.length)}
-          ${metric("Top Req/s", top.req_per_sec ? Number(top.req_per_sec).toFixed(2) : "n/a")}
-          ${metric("Top Error", topErrorRate)}
-          ${metric("Samples", topSamples)}
+          ${metric("Top Req/s", top.reqPerSec)}
+          ${metric("Top Error", top.errorRate)}
+          ${metric("Samples", top.samples)}
           ${metric("Healthy", summary.healthy_protocols || 0)}
           ${metric("Best", summary.best_protocol || "n/a")}
         </div>
-        <div class="pill-row">${pills}</div>
+        <div class="pill-row">${pillState(`health ${summary.healthy_protocols || 0}/${summary.protocols || protocols.length || 0}`, healthState)}${pills}</div>
         ${summary.protocols ? `<p class="mini">Bench summary: healthy ${summary.healthy_protocols || 0}, degraded ${summary.degraded_protocols || 0}, failed ${summary.failed_protocols || 0}, riskiest ${escapeHTML(String(summary.riskiest_protocol || "n/a"))}</p>` : ""}
       </article>
     `;
@@ -267,12 +453,14 @@ function renderBenches(target, items) {
 
 function renderTraces(target, items) {
   if (!Array.isArray(items) || items.length === 0) {
-    target.innerHTML = `<p class="empty">No trace files found.</p>`;
+    const q = document.getElementById("traces-query");
+    target.innerHTML = `<p class="empty">${q && q.value.trim() ? "No traces match current filters." : "No trace files found."}</p>`;
     return;
   }
-  target.innerHTML = `<div class="record-list">${items.slice(0, 5).map((item) => `
+  target.innerHTML = `<div class="record-list">${items.map((item) => `
     <article class="record">
       <h3>${escapeHTML(item.name || "trace")}</h3>
+      <div class="pill-row">${traceRecencyPill(item.modified_at)}</div>
       <div class="metric-grid">
         ${metric("Size", `${item.size_bytes || 0} bytes`)}
         ${metric("Updated", item.modified_at || "n/a")}
@@ -280,6 +468,21 @@ function renderTraces(target, items) {
       <p class="mini">${escapeHTML(item.preview || "")}</p>
     </article>
   `).join("")}</div>`;
+}
+
+function traceRecencyPill(modifiedAt) {
+  const modified = Date.parse(modifiedAt || "");
+  if (!Number.isFinite(modified)) {
+    return pillMuted("trace recency unknown");
+  }
+  const ageHours = (Date.now() - modified) / (1000 * 60 * 60);
+  if (ageHours <= 1) {
+    return pillState("trace fresh", "ok");
+  }
+  if (ageHours <= 24) {
+    return pillState("trace recent", "muted");
+  }
+  return pillState("trace stale", "warn");
 }
 
 async function load(id, path, render) {
@@ -290,6 +493,35 @@ async function load(id, path, render) {
     render(target, data);
   } catch (error) {
     target.textContent = String(error);
+  }
+}
+
+function readCollectionFilters(prefix) {
+  const query = document.getElementById(`${prefix}-query`);
+  const sort = document.getElementById(`${prefix}-sort`);
+  const limit = document.getElementById(`${prefix}-limit`);
+  const params = new URLSearchParams();
+  if (query && query.value.trim()) {
+    params.set("q", query.value.trim());
+  }
+  if (sort && sort.value.trim()) {
+    params.set("sort", sort.value.trim());
+  }
+  if (limit && limit.value.trim()) {
+    params.set("limit", limit.value.trim());
+  }
+  return params.toString();
+}
+
+function bindCollectionFilters(prefix, reload) {
+  const ids = [`${prefix}-query`, `${prefix}-sort`, `${prefix}-limit`];
+  for (const id of ids) {
+    const node = document.getElementById(id);
+    if (!node) {
+      continue;
+    }
+    node.addEventListener("input", reload);
+    node.addEventListener("change", reload);
   }
 }
 
@@ -308,9 +540,40 @@ async function loadOverview() {
   }
 }
 
+async function loadCompare() {
+  const target = document.getElementById("compare");
+  try {
+    const [probesResponse, benchesResponse] = await Promise.all([
+      fetch("/api/v1/probes?sort=newest&limit=20"),
+      fetch("/api/v1/benches?sort=newest&limit=20"),
+    ]);
+    const probes = await probesResponse.json();
+    const benches = await benchesResponse.json();
+    renderCompare(target, probes, benches);
+  } catch (error) {
+    target.textContent = String(error);
+  }
+}
+
 load("status", "/api/v1/status", renderStatus);
 load("config", "/api/v1/config", renderConfig);
-load("probes", "/api/v1/probes", renderProbes);
-load("benches", "/api/v1/benches", renderBenches);
-load("traces", "/api/v1/traces", renderTraces);
+const reloadProbes = () => {
+  const query = readCollectionFilters("probes");
+  load("probes", `/api/v1/probes${query ? `?${query}` : ""}`, renderProbes);
+};
+const reloadBenches = () => {
+  const query = readCollectionFilters("benches");
+  load("benches", `/api/v1/benches${query ? `?${query}` : ""}`, renderBenches);
+};
+const reloadTraces = () => {
+  const query = readCollectionFilters("traces");
+  load("traces", `/api/v1/traces${query ? `?${query}` : ""}`, renderTraces);
+};
+bindCollectionFilters("probes", reloadProbes);
+bindCollectionFilters("benches", reloadBenches);
+bindCollectionFilters("traces", reloadTraces);
+reloadProbes();
+reloadBenches();
+reloadTraces();
 loadOverview();
+loadCompare();

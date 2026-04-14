@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -123,6 +124,12 @@ type APIErrorDetail struct {
 	Detail  string `json:"detail,omitempty"`
 }
 
+type listQuery struct {
+	Limit int
+	Q     string
+	Sort  string
+}
+
 type Options struct {
 	Username string
 	Password string
@@ -229,7 +236,8 @@ func (s *Server) handleConfig(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, s.config)
 }
 
-func (s *Server) handleProbes(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleProbes(w http.ResponseWriter, r *http.Request) {
+	query := parseListQuery(r)
 	items, err := s.store.List("probes")
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "failed to list probes", err)
@@ -243,10 +251,14 @@ func (s *Server) handleProbes(w http.ResponseWriter, _ *http.Request) {
 		}
 		summaries = append(summaries, summary)
 	}
+	summaries = filterProbeSummaries(summaries, query.Q)
+	sortProbeSummaries(summaries, query.Sort)
+	summaries = applyLimit(summaries, query.Limit)
 	writeJSON(w, summaries)
 }
 
-func (s *Server) handleBenches(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleBenches(w http.ResponseWriter, r *http.Request) {
+	query := parseListQuery(r)
 	items, err := s.store.List("benches")
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "failed to list benches", err)
@@ -260,6 +272,9 @@ func (s *Server) handleBenches(w http.ResponseWriter, _ *http.Request) {
 		}
 		summaries = append(summaries, summary)
 	}
+	summaries = filterBenchSummaries(summaries, query.Q)
+	sortBenchSummaries(summaries, query.Sort)
+	summaries = applyLimit(summaries, query.Limit)
 	writeJSON(w, summaries)
 }
 
@@ -291,12 +306,16 @@ func (s *Server) handleBench(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, result)
 }
 
-func (s *Server) handleTraces(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleTraces(w http.ResponseWriter, r *http.Request) {
+	query := parseListQuery(r)
 	items, err := s.listTraces()
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "failed to list traces", err)
 		return
 	}
+	items = filterTraceMetadata(items, query.Q)
+	sortTraceMetadata(items, query.Sort)
+	items = applyLimit(items, query.Limit)
 	writeJSON(w, items)
 }
 
@@ -623,5 +642,132 @@ func getOnly(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		next(w, r)
+	}
+}
+
+func parseListQuery(r *http.Request) listQuery {
+	if r == nil {
+		return listQuery{}
+	}
+	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	sortBy := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("sort")))
+	limitRaw := strings.TrimSpace(r.URL.Query().Get("limit"))
+	limit := 0
+	if limitRaw != "" {
+		if parsed, err := strconv.Atoi(limitRaw); err == nil {
+			if parsed > 200 {
+				parsed = 200
+			}
+			if parsed > 0 {
+				limit = parsed
+			}
+		}
+	}
+	return listQuery{
+		Limit: limit,
+		Q:     q,
+		Sort:  sortBy,
+	}
+}
+
+func applyLimit[T any](items []T, limit int) []T {
+	if limit <= 0 || len(items) <= limit {
+		return items
+	}
+	return items[:limit]
+}
+
+func filterProbeSummaries(items []ProbeSummary, q string) []ProbeSummary {
+	if q == "" {
+		return items
+	}
+	filtered := make([]ProbeSummary, 0, len(items))
+	for _, item := range items {
+		if strings.Contains(strings.ToLower(item.ID), q) ||
+			strings.Contains(strings.ToLower(item.Target), q) ||
+			strings.Contains(strings.ToLower(item.Proto), q) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+func sortProbeSummaries(items []ProbeSummary, sortBy string) {
+	switch sortBy {
+	case "oldest":
+		sort.SliceStable(items, func(i, j int) bool { return items[i].ModTime < items[j].ModTime })
+	case "target_asc":
+		sort.SliceStable(items, func(i, j int) bool { return strings.ToLower(items[i].Target) < strings.ToLower(items[j].Target) })
+	case "target_desc":
+		sort.SliceStable(items, func(i, j int) bool { return strings.ToLower(items[i].Target) > strings.ToLower(items[j].Target) })
+	case "status_asc":
+		sort.SliceStable(items, func(i, j int) bool { return items[i].Status < items[j].Status })
+	case "status_desc":
+		sort.SliceStable(items, func(i, j int) bool { return items[i].Status > items[j].Status })
+	default:
+		sort.SliceStable(items, func(i, j int) bool { return items[i].ModTime > items[j].ModTime })
+	}
+}
+
+func filterBenchSummaries(items []BenchSummary, q string) []BenchSummary {
+	if q == "" {
+		return items
+	}
+	filtered := make([]BenchSummary, 0, len(items))
+	for _, item := range items {
+		if strings.Contains(strings.ToLower(item.ID), q) ||
+			strings.Contains(strings.ToLower(item.Target), q) ||
+			strings.Contains(strings.ToLower(strings.Join(item.Protocols, ",")), q) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+func sortBenchSummaries(items []BenchSummary, sortBy string) {
+	switch sortBy {
+	case "oldest":
+		sort.SliceStable(items, func(i, j int) bool { return items[i].ModTime < items[j].ModTime })
+	case "target_asc":
+		sort.SliceStable(items, func(i, j int) bool { return strings.ToLower(items[i].Target) < strings.ToLower(items[j].Target) })
+	case "target_desc":
+		sort.SliceStable(items, func(i, j int) bool { return strings.ToLower(items[i].Target) > strings.ToLower(items[j].Target) })
+	case "concurrency_asc":
+		sort.SliceStable(items, func(i, j int) bool { return items[i].Concurrency < items[j].Concurrency })
+	case "concurrency_desc":
+		sort.SliceStable(items, func(i, j int) bool { return items[i].Concurrency > items[j].Concurrency })
+	default:
+		sort.SliceStable(items, func(i, j int) bool { return items[i].ModTime > items[j].ModTime })
+	}
+}
+
+func filterTraceMetadata(items []TraceMetadata, q string) []TraceMetadata {
+	if q == "" {
+		return items
+	}
+	filtered := make([]TraceMetadata, 0, len(items))
+	for _, item := range items {
+		if strings.Contains(strings.ToLower(item.Name), q) ||
+			strings.Contains(strings.ToLower(item.Preview), q) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+func sortTraceMetadata(items []TraceMetadata, sortBy string) {
+	switch sortBy {
+	case "name_desc":
+		sort.SliceStable(items, func(i, j int) bool { return strings.ToLower(items[i].Name) > strings.ToLower(items[j].Name) })
+	case "size_asc":
+		sort.SliceStable(items, func(i, j int) bool { return items[i].SizeBytes < items[j].SizeBytes })
+	case "size_desc":
+		sort.SliceStable(items, func(i, j int) bool { return items[i].SizeBytes > items[j].SizeBytes })
+	case "newest":
+		sort.SliceStable(items, func(i, j int) bool { return items[i].ModifiedAt > items[j].ModifiedAt })
+	case "oldest":
+		sort.SliceStable(items, func(i, j int) bool { return items[i].ModifiedAt < items[j].ModifiedAt })
+	default:
+		sort.SliceStable(items, func(i, j int) bool { return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name) })
 	}
 }

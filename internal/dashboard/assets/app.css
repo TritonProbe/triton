@@ -55,6 +55,23 @@ body {
   gap: 12px;
 }
 
+.controls {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1.4fr 1fr auto;
+  margin-bottom: 12px;
+}
+
+.controls input,
+.controls select {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid rgba(125, 211, 252, 0.22);
+  background: rgba(8, 15, 30, 0.62);
+  color: #e2e8f0;
+  padding: 8px 10px;
+}
+
 .metric-grid {
   display: grid;
   gap: 10px;
@@ -130,6 +147,16 @@ body {
 .pill-warn {
   background: rgba(251, 191, 36, 0.18);
   color: #fde68a;
+}
+
+.pill-ok {
+  background: rgba(34, 197, 94, 0.2);
+  color: #bbf7d0;
+}
+
+.pill-error {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fecaca;
 }
 
 .mini {

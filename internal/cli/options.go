@@ -32,6 +32,7 @@ type serverOptions struct {
 	Listen                    string
 	AllowExperimentalH3       bool
 	AllowRemoteExperimentalH3 bool
+	AllowMixedH3Planes        bool
 	ListenH3                  string
 	ListenTCP                 string
 	CertFile                  string
@@ -53,6 +54,7 @@ func parseServerOptions(args []string) (serverOptions, error) {
 	fs.StringVar(&opts.Listen, "listen", "", "experimental Triton UDP H3 listen address")
 	fs.BoolVar(&opts.AllowExperimentalH3, "allow-experimental-h3", false, "acknowledge and enable the experimental Triton UDP H3 listener")
 	fs.BoolVar(&opts.AllowRemoteExperimentalH3, "allow-remote-experimental-h3", false, "allow the experimental Triton UDP H3 listener to bind on non-loopback interfaces")
+	fs.BoolVar(&opts.AllowMixedH3Planes, "allow-mixed-h3-planes", false, "allow running real HTTP/3 and experimental Triton UDP H3 listeners together")
 	fs.StringVar(&opts.ListenH3, "listen-h3", "", "real HTTP/3 UDP listen address")
 	fs.StringVar(&opts.ListenTCP, "listen-tcp", "", "TCP fallback listen address")
 	fs.StringVar(&opts.CertFile, "cert", "", "TLS certificate file")
@@ -77,6 +79,7 @@ func (o serverOptions) Apply(cfg *config.Config) {
 	}
 	cfg.Server.AllowExperimentalH3 = cfg.Server.AllowExperimentalH3 || o.AllowExperimentalH3
 	cfg.Server.AllowRemoteExperimentalH3 = cfg.Server.AllowRemoteExperimentalH3 || o.AllowRemoteExperimentalH3
+	cfg.Server.AllowMixedH3Planes = cfg.Server.AllowMixedH3Planes || o.AllowMixedH3Planes
 	if o.ListenH3 != "" {
 		cfg.Server.ListenH3 = o.ListenH3
 	}

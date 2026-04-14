@@ -2,6 +2,7 @@ server:
   listen: ""
   allow_experimental_h3: false
   allow_remote_experimental_h3: false
+  allow_mixed_h3_planes: false
   listen_h3: ""
   listen_tcp: ":8443"
   dashboard: true

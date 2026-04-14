@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"sort"
 	"strings"
 
@@ -946,16 +947,29 @@ func int64Value(value any) int64 {
 	case int64:
 		return typed
 	case uint:
-		return int64(typed)
+		return safeUint64ToInt64(uint64(typed))
 	case uint32:
 		return int64(typed)
 	case uint64:
-		return int64(typed)
+		return safeUint64ToInt64(typed)
 	case float64:
+		if typed > math.MaxInt64 {
+			return math.MaxInt64
+		}
+		if typed < math.MinInt64 {
+			return math.MinInt64
+		}
 		return int64(typed)
 	default:
 		return 0
 	}
+}
+
+func safeUint64ToInt64(value uint64) int64 {
+	if value > math.MaxInt64 {
+		return math.MaxInt64
+	}
+	return int64(value)
 }
 
 func joinStringSlice(values []string) string {

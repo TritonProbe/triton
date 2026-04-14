@@ -17,6 +17,10 @@
       <h2>Overview</h2>
       <div id="overview" class="stack">loading...</div>
     </section>
+    <section class="overview card">
+      <h2>Compare & Trends</h2>
+      <div id="compare" class="stack">loading...</div>
+    </section>
     <section class="grid">
       <article class="card">
         <h2>Status</h2>
@@ -28,14 +32,62 @@
       </article>
       <article class="card">
         <h2>Recent Probes</h2>
+        <div class="controls">
+          <input id="probes-query" type="search" placeholder="Search target/proto/id">
+          <select id="probes-sort">
+            <option value="newest">Newest</option>
+            <option value="oldest">Oldest</option>
+            <option value="target_asc">Target A-Z</option>
+            <option value="target_desc">Target Z-A</option>
+            <option value="status_desc">Status High-Low</option>
+            <option value="status_asc">Status Low-High</option>
+          </select>
+          <select id="probes-limit">
+            <option value="5">Top 5</option>
+            <option value="10">Top 10</option>
+            <option value="25">Top 25</option>
+          </select>
+        </div>
         <div id="probes" class="stack">loading...</div>
       </article>
       <article class="card">
         <h2>Recent Benches</h2>
+        <div class="controls">
+          <input id="benches-query" type="search" placeholder="Search target/protocol/id">
+          <select id="benches-sort">
+            <option value="newest">Newest</option>
+            <option value="oldest">Oldest</option>
+            <option value="target_asc">Target A-Z</option>
+            <option value="target_desc">Target Z-A</option>
+            <option value="concurrency_desc">Concurrency High-Low</option>
+            <option value="concurrency_asc">Concurrency Low-High</option>
+          </select>
+          <select id="benches-limit">
+            <option value="5">Top 5</option>
+            <option value="10">Top 10</option>
+            <option value="25">Top 25</option>
+          </select>
+        </div>
         <div id="benches" class="stack">loading...</div>
       </article>
       <article class="card">
         <h2>Trace Files</h2>
+        <div class="controls">
+          <input id="traces-query" type="search" placeholder="Search trace name/preview">
+          <select id="traces-sort">
+            <option value="name_asc">Name A-Z</option>
+            <option value="name_desc">Name Z-A</option>
+            <option value="newest">Newest</option>
+            <option value="oldest">Oldest</option>
+            <option value="size_desc">Size High-Low</option>
+            <option value="size_asc">Size Low-High</option>
+          </select>
+          <select id="traces-limit">
+            <option value="5">Top 5</option>
+            <option value="10">Top 10</option>
+            <option value="25">Top 25</option>
+          </select>
+        </div>
         <div id="traces" class="stack">loading...</div>
       </article>
     </section>

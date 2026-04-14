@@ -24,6 +24,8 @@ The next roadmap should decide which one is the product and which one is the lab
 - Dashboard exposure is now materially safer: remote bind requires explicit opt-in plus auth, constant-time credential checks, and request timeouts.
 - Insecure probe/bench TLS now requires explicit `allow_insecure_tls` opt-in, storage path traversal is blocked, and `gosec ./...` now passes with `0 issues`.
 - CI now includes a dedicated CGO-capable `go test -race ./...` job, and parser fuzz targets plus targeted connection/stream/transport concurrency tests are in place for the experimental QUIC surface.
+- Mixed real/experimental H3 listener startup now requires explicit intent (`allow_mixed_h3_planes`) to avoid accidental dual-plane exposure.
+- A repository-level `ARCHITECTURE.md` now documents supported transport planes, lab-only boundaries, and runtime profiles.
 
 The roadmap below should now be read as the remaining work after those improvements.
 
@@ -31,19 +33,19 @@ The roadmap below should now be read as the remaining work after those improveme
 
 ### Must-fix items blocking a clean release story
 
-- [ ] Decide product positioning: either ship Triton as a pragmatic HTTP/3 diagnostics tool powered by `quic-go`, or continue marketing it as a custom QUIC engine and explicitly label current releases experimental.
-- [ ] Finish the product-language cleanup so “real H3” and “experimental/lab H3” are unmistakable across all docs and operator output.
-- [ ] Separate “real H3” and “experimental H3” terminology consistently across README, config, CLI help, and dashboard.
-- [ ] Remove generated runtime artifacts and built binaries from the maintained source snapshot.
+- [x] Decide product positioning: ship Triton as a pragmatic HTTP/3 diagnostics tool powered by `quic-go`, while keeping the custom engine lab-only.
+- [x] Finish the product-language cleanup so “real H3” and “experimental/lab H3” are unmistakable across all docs and operator output.
+- [x] Separate “real H3” and “experimental H3” terminology consistently across README, config, CLI help, and dashboard.
+- [x] Remove generated runtime artifacts and built binaries from the maintained source snapshot.
 
 ## Phase 2: Production Hardening (Week 3-4)
 
 ### Security, reliability, and operator clarity
 
-- [ ] Add explicit config validation for unsupported combinations such as both experimental and real H3 listeners being enabled without clear intent.
-- [ ] Add a startup banner or log summary that clearly states which listeners are real HTTP/3 vs experimental UDP H3.
+- [x] Add explicit config validation for unsupported combinations such as both experimental and real H3 listeners being enabled without clear intent.
+- [x] Add a startup banner or log summary that clearly states which listeners are real HTTP/3 vs experimental UDP H3.
 - [ ] Watch the new CI `-race` job and fix any transport synchronization findings it reveals before broad release.
-- [ ] Add response/request-size coverage and negative-path tests around upload, drip, and trace download flows.
+- [x] Add response/request-size coverage and negative-path tests around upload, drip, and trace download flows.
 
 ## Phase 3: Concurrency & Correctness (Week 5-6)
 
@@ -59,26 +61,26 @@ The roadmap below should now be read as the remaining work after those improveme
 ### Make results trustworthy
 
 - [ ] Turn existing percentile/phase/error summaries into stored historical comparisons and deltas between runs.
-- [ ] Document how `h1`, `h2`, `h3`, and `triton://` measurements differ so users do not compare incomparable transport stacks.
-- [ ] Add benchmark baselines or lightweight perf regression checks so the richer metrics become actionable.
+- [x] Document how `h1`, `h2`, `h3`, and `triton://` measurements differ so users do not compare incomparable transport stacks.
+- [x] Add benchmark baselines or lightweight perf regression checks so the richer metrics become actionable.
 
 ## Phase 5: Dashboard Evolution (Week 9-10)
 
 ### Upgrade from JSON viewer to operator surface
 
-- [ ] Add filter/sort support for stored runs.
-- [ ] Add request/trace status indicators and empty-state UX.
-- [ ] Add compare/trend views that use the existing probe support summaries and bench rollups.
+- [x] Add filter/sort support for stored runs.
+- [x] Add request/trace status indicators and empty-state UX.
+- [x] Add compare/trend views that use the existing probe support summaries and bench rollups.
 - [ ] Keep the dashboard static and dependency-free unless there is a strong reason to add a frontend toolchain.
 
 ## Phase 6: Spec Reconciliation (Week 11-14)
 
 ### Either narrow the spec or fund the missing engine work
 
-- [ ] Update `.project/SPECIFICATION.md`, `.project/IMPLEMENTATION.md`, and `.project/TASKS.md` so they reflect the current architecture, hardening work, and dependency strategy.
-- [ ] If the custom engine remains in-scope: add a concrete vNext milestone for QUIC-TLS, packet protection, QPACK, and migration.
-- [ ] If the custom engine becomes lab-only: move it under an explicitly experimental namespace and reduce production promises accordingly.
-- [ ] Add `ARCHITECTURE.md` describing the three transport planes now in the repo.
+- [x] Update `.project/SPECIFICATION.md`, `.project/IMPLEMENTATION.md`, and `.project/TASKS.md` so they reflect the current architecture, hardening work, and dependency strategy.
+- [x] If the custom engine remains in-scope: add a concrete vNext milestone for QUIC-TLS, packet protection, QPACK, and migration.
+- [x] If the custom engine becomes lab-only: move it under an explicitly experimental namespace and reduce production promises accordingly.
+- [x] Add `ARCHITECTURE.md` describing the three transport planes now in the repo.
 
 ## Phase 7: Deep Protocol Features (Week 15-20)
 

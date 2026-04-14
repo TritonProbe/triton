@@ -185,9 +185,8 @@ func (s *Server) Run() error {
 		}
 	}()
 
-	log.Printf("triton server startup: %s", strings.Join(activeListenersSummary(s.cfg), "; "))
-	if len(experimentalFeatures(s.cfg)) > 0 {
-		log.Printf("warning: experimental Triton UDP H3 is enabled; this path is lab-grade and should not be treated as production-stable")
+	for _, line := range startupSummaryLines(s.cfg) {
+		log.Printf("%s", line)
 	}
 
 	go func() {
@@ -261,6 +260,50 @@ func (s *Server) Run() error {
 		}
 	}
 	return shutdownErr
+}
+
+func startupSummaryLines(cfg config.ServerConfig) []string {
+	lines := []string{
+		fmt.Sprintf("triton server startup: %s", strings.Join(activeListenersSummary(cfg), "; ")),
+		fmt.Sprintf(
+			"transport profile=%s stable=[%s] experimental=[%s]",
+			deploymentProfile(cfg),
+			strings.Join(stableTransportPlanes(cfg), ","),
+			strings.Join(experimentalTransportPlanes(cfg), ","),
+		),
+	}
+	if cfg.ListenH3 != "" && cfg.Listen != "" && cfg.AllowMixedH3Planes {
+		lines = append(lines, "mixed-plane mode enabled by explicit allow_mixed_h3_planes=true (real http/3 + experimental udp h3)")
+	}
+	if len(experimentalFeatures(cfg)) > 0 {
+		lines = append(lines, "warning: experimental Triton UDP H3 is enabled; this path is lab-grade and should not be treated as production-stable")
+	}
+	return lines
+}
+
+func stableTransportPlanes(cfg config.ServerConfig) []string {
+	planes := make([]string, 0, 2)
+	if cfg.ListenTCP != "" {
+		planes = append(planes, "https-tcp")
+	}
+	if cfg.ListenH3 != "" {
+		planes = append(planes, "http3-quic")
+	}
+	if len(planes) == 0 {
+		return []string{"none"}
+	}
+	return planes
+}
+
+func experimentalTransportPlanes(cfg config.ServerConfig) []string {
+	planes := make([]string, 0, 1)
+	if cfg.Listen != "" && cfg.AllowExperimentalH3 {
+		planes = append(planes, "triton-udp-h3")
+	}
+	if len(planes) == 0 {
+		return []string{"none"}
+	}
+	return planes
 }
 
 func activeListenersSummary(cfg config.ServerConfig) []string {

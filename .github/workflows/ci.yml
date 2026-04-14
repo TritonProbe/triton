@@ -53,6 +53,9 @@ jobs:
       - name: Run smoke flow
         run: bash ./scripts/ci-smoke.sh
 
+      - name: Run benchmark regression guard
+        run: bash ./scripts/ci-bench-guard.sh
+
   race:
     runs-on: ubuntu-latest
     steps:

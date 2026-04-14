@@ -13,6 +13,30 @@
 
 ---
 
+## CURRENT IMPLEMENTATION BASELINE (2026-04-14)
+
+This section is authoritative for what is production-usable in this repository today.
+
+- Supported server planes:
+- `HTTPS/TCP` test server (`net/http`) with health, readiness, metrics, and benchmark endpoints.
+- Real HTTP/3 server/client support via `quic-go` (`server.listen_h3`, `h3://` probe/bench).
+- Experimental in-repo UDP H3 transport is lab-only (`server.listen` + explicit opt-ins, `triton lab`).
+- Safety and operator boundaries:
+- Experimental UDP H3 is off by default and loopback-only unless explicitly allowed.
+- Mixed real/experimental H3 startup requires explicit `allow_mixed_h3_planes`.
+- Remote dashboard bind requires explicit allow + auth; dashboard has security headers and request IDs.
+- Productized dashboard scope:
+- Read-only operator UI with status/config/probes/benches/traces cards.
+- API list views support `q`, `sort`, `limit` and the UI includes filter/sort controls plus compare/trend rollups.
+- Dependency strategy (actual):
+- The current repo intentionally uses `github.com/quic-go/quic-go` for supported HTTP/3 behavior.
+- The custom in-repo QUIC/H3 engine remains an experimental research track.
+- Strategy decision:
+- Product track is pragmatic diagnostics + real H3 via `quic-go`.
+- Custom engine promotion to product scope is conditional on vNext milestones captured in [ENGINE_STRATEGY.md](./ENGINE_STRATEGY.md).
+
+---
+
 ## 1. EXECUTIVE SUMMARY
 
 Triton is a pure Go, zero-dependency, single-binary HTTP/3 (QUIC) test server and benchmarking platform. It provides comprehensive QUIC protocol testing, 0-RTT measurement, connection migration analysis, congestion control profiling, and an embedded web dashboard for real-time visualization. Triton operates in three modes: **Server** (HTTP/3 test endpoint), **Probe** (test external servers), and **Bench** (comparative benchmarking across HTTP/1.1, HTTP/2, HTTP/3).

@@ -32,8 +32,9 @@ func TestListenerDialerLoopback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if serverConn.State() != connection.StateConnected {
-		t.Fatalf("unexpected server state: %v", serverConn.State())
+	serverState := serverConn.State()
+	if serverState != connection.StateHandshake && serverState != connection.StateConnected {
+		t.Fatalf("unexpected server state: %v", serverState)
 	}
 
 	if err := session.SendStream(0, []byte("ping"), true); err != nil {

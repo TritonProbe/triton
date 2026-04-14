@@ -12,6 +12,7 @@ func TestLoadAppliesEnvOverrides(t *testing.T) {
 	t.Setenv("TRITON_SERVER_LISTEN", ":5555")
 	t.Setenv("TRITON_SERVER_ALLOW_EXPERIMENTAL_H3", "true")
 	t.Setenv("TRITON_SERVER_ALLOW_REMOTE_EXPERIMENTAL_H3", "true")
+	t.Setenv("TRITON_SERVER_ALLOW_MIXED_H3_PLANES", "true")
 	t.Setenv("TRITON_SERVER_LISTEN_H3", ":5556")
 	t.Setenv("TRITON_SERVER_ACCESS_LOG", "logs/access.jsonl")
 	t.Setenv("TRITON_SERVER_TRACE_DIR", "traces/server")
@@ -39,6 +40,9 @@ func TestLoadAppliesEnvOverrides(t *testing.T) {
 	if !cfg.Server.AllowRemoteExperimentalH3 {
 		t.Fatal("expected remote experimental h3 env opt-in to be applied")
 	}
+	if !cfg.Server.AllowMixedH3Planes {
+		t.Fatal("expected mixed h3 planes env opt-in to be applied")
+	}
 	if cfg.Server.AccessLog != "logs/access.jsonl" || cfg.Server.TraceDir != "traces/server" {
 		t.Fatalf("server observability env not applied: %+v", cfg.Server)
 	}
@@ -65,6 +69,7 @@ server:
   listen: ":6001"
   allow_experimental_h3: true
   allow_remote_experimental_h3: true
+  allow_mixed_h3_planes: true
   listen_h3: ":6002"
   listen_tcp: ":6003"
   dashboard: false
@@ -93,6 +98,9 @@ storage:
 	}
 	if !cfg.Server.AllowRemoteExperimentalH3 {
 		t.Fatalf("expected remote experimental h3 yaml override to be applied: %+v", cfg.Server)
+	}
+	if !cfg.Server.AllowMixedH3Planes {
+		t.Fatalf("expected mixed h3 planes yaml override to be applied: %+v", cfg.Server)
 	}
 	if cfg.Server.Dashboard || cfg.Server.MaxBodyBytes != 4096 {
 		t.Fatalf("server yaml overrides not applied: %+v", cfg.Server)

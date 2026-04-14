@@ -60,6 +60,22 @@ func TestExperimentalListenRemoteBindRequiresExplicitOptIn(t *testing.T) {
 	}
 }
 
+func TestMixedH3PlanesRequireExplicitOptIn(t *testing.T) {
+	cfg := Default()
+	cfg.Server.Listen = "127.0.0.1:4433"
+	cfg.Server.AllowExperimentalH3 = true
+	cfg.Server.ListenH3 = ":4434"
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected mixed real/experimental h3 listeners without opt-in to fail validation")
+	}
+
+	cfg.Server.AllowMixedH3Planes = true
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected mixed h3 listeners with opt-in to validate: %v", err)
+	}
+}
+
 func TestValidateRequiresAtLeastOneServerListener(t *testing.T) {
 	cfg := Default()
 	cfg.Server.Listen = ""

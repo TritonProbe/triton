@@ -31,6 +31,7 @@ func applyEnv(cfg *Config) {
 	setString("TRITON_SERVER_LISTEN", &cfg.Server.Listen)
 	setBool("TRITON_SERVER_ALLOW_EXPERIMENTAL_H3", &cfg.Server.AllowExperimentalH3)
 	setBool("TRITON_SERVER_ALLOW_REMOTE_EXPERIMENTAL_H3", &cfg.Server.AllowRemoteExperimentalH3)
+	setBool("TRITON_SERVER_ALLOW_MIXED_H3_PLANES", &cfg.Server.AllowMixedH3Planes)
 	setString("TRITON_SERVER_LISTEN_H3", &cfg.Server.ListenH3)
 	setString("TRITON_SERVER_LISTEN_TCP", &cfg.Server.ListenTCP)
 	setString("TRITON_SERVER_TLS_CERT", &cfg.Server.CertFile)

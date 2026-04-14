@@ -6,7 +6,7 @@
 **Estimated Duration:** 14-18 weeks
 **Phases:** 10
 
-> Current-state note (2026-04-12): this task list is still the original target-state backlog. A substantial subset is already complete in the current repository, including the working CLI, config system, storage, HTTPS test server, real HTTP/3 support via `quic-go`, the isolated `triton lab` flow for the experimental transport, richer probe/bench summaries, dashboard status/config/probe/bench/trace APIs, dashboard hardening, CI automation, `gosec` integration, and initial fuzz coverage for parser surfaces. Treat unchecked items below as roadmap targets, not proof that the repository is empty or non-functional.
+> Current-state note (2026-04-14): this task list is still the original target-state backlog. A substantial subset is already complete in the current repository, including the working CLI, config system, storage, HTTPS test server, real HTTP/3 support via `quic-go`, the isolated `triton lab` flow for the experimental transport, richer probe/bench summaries, dashboard status/config/probe/bench/trace APIs, dashboard hardening, CI automation, `gosec` integration, parser fuzz coverage, and dashboard compare/trend + filter/sort UX. Treat unchecked items below as roadmap targets, not proof that the repository is empty or non-functional.
 
 ## Current Status Snapshot
 
@@ -21,8 +21,11 @@
 - Probe support summaries and partial advanced analysis coverage
 - Bench percentile/phase/error summaries and per-run health rollups
 - Embedded dashboard with status/config/probes/benches/traces APIs and overview cards
+- Dashboard list APIs with `q` / `sort` / `limit` and UI controls for probes/benches/traces
+- Dashboard compare/trend panel using probe support summaries and bench health rollups
 - CI running format, tests, vet, staticcheck, build, smoke, and `gosec`
 - Parser fuzz targets for QUIC packet/frame and H3 frame surfaces
+- Dedicated CI race coverage (`go test -race ./...` on CGO-capable runner)
 
 ### Still Strategic / Incomplete
 
@@ -30,7 +33,7 @@
 - Real QPACK implementation
 - Packet-level 0-RTT, migration, congestion, loss, retry, ECN, and spin-bit telemetry
 - Full live dashboard workbench with SSE/charts/inspector
-- Race-tested confidence for the entire transport stack in CI
+- Ongoing race-hardening for the experimental transport based on CI `-race` findings
 
 ---
 

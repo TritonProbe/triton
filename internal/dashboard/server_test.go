@@ -85,6 +85,9 @@ func TestDashboardListsAndServesTraces(t *testing.T) {
 	if err := os.WriteFile(traceFile, []byte("trace-data"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(traceDir, "zzz_server.sqlog"), []byte("zzz"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	srv := New("127.0.0.1:0", store, Options{TraceDir: traceDir})
 
@@ -105,8 +108,8 @@ func TestDashboardListsAndServesTraces(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected storage object in status payload, got %#v", payload["storage"])
 	}
-	if storagePayload["traces"] != float64(1) {
-		t.Fatalf("expected one trace in status payload, got %#v", storagePayload["traces"])
+	if storagePayload["traces"] != float64(2) {
+		t.Fatalf("expected two traces in status payload, got %#v", storagePayload["traces"])
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/api/v1/traces", nil)
@@ -117,6 +120,16 @@ func TestDashboardListsAndServesTraces(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "abc_client.sqlog") {
 		t.Fatalf("expected trace listing, got %q", rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/traces?q=abc&sort=name_desc&limit=1", nil)
+	rec = httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from trace query list, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "abc_client.sqlog") || strings.Contains(rec.Body.String(), "zzz_server.sqlog") {
+		t.Fatalf("expected filtered trace listing, got %q", rec.Body.String())
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/api/v1/traces/abc_client.sqlog", nil)
@@ -232,6 +245,73 @@ func TestDashboardProbeAndBenchListsReturnSummaries(t *testing.T) {
 	}
 }
 
+func TestDashboardListQueryFilteringSortingAndLimit(t *testing.T) {
+	store, err := storage.NewFileStore(t.TempDir(), 10, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveProbe("probe-a", probe.Result{
+		ID:       "probe-a",
+		Target:   "https://alpha.example.com",
+		Status:   http.StatusOK,
+		Proto:    "HTTP/2.0",
+		Duration: 120 * time.Millisecond,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(20 * time.Millisecond)
+	if err := store.SaveProbe("probe-b", probe.Result{
+		ID:       "probe-b",
+		Target:   "https://beta.example.com",
+		Status:   http.StatusBadGateway,
+		Proto:    "HTTP/3.0",
+		Duration: 240 * time.Millisecond,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveBench("bench-a", bench.Result{
+		ID:          "bench-a",
+		Target:      "https://alpha.example.com",
+		Duration:    time.Second,
+		Concurrency: 2,
+		Protocols:   []string{"h1", "h2"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(20 * time.Millisecond)
+	if err := store.SaveBench("bench-b", bench.Result{
+		ID:          "bench-b",
+		Target:      "https://beta.example.com",
+		Duration:    time.Second,
+		Concurrency: 8,
+		Protocols:   []string{"h3"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := New("127.0.0.1:0", store, Options{})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/probes?q=beta&sort=status_desc&limit=1", nil)
+	rec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from probes query, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"probe-b"`) || strings.Contains(rec.Body.String(), `"probe-a"`) {
+		t.Fatalf("expected filtered probe list, got %q", rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/benches?q=h3&sort=concurrency_desc&limit=1", nil)
+	rec = httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from benches query, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"bench-b"`) || strings.Contains(rec.Body.String(), `"bench-a"`) {
+		t.Fatalf("expected filtered bench list, got %q", rec.Body.String())
+	}
+}
+
 func TestDashboardAssetsAndHead(t *testing.T) {
 	store, err := storage.NewFileStore(t.TempDir(), 10, time.Hour)
 	if err != nil {
@@ -262,6 +342,9 @@ func TestDashboardAssetsAndHead(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `id="overview"`) {
 		t.Fatalf("expected overview card in dashboard html, got %q", rec.Body.String())
 	}
+	if !strings.Contains(rec.Body.String(), `id="compare"`) {
+		t.Fatalf("expected compare card in dashboard html, got %q", rec.Body.String())
+	}
 	if !strings.Contains(rec.Body.String(), `class="stack"`) {
 		t.Fatalf("expected stack containers in dashboard html, got %q", rec.Body.String())
 	}
@@ -272,13 +355,16 @@ func TestDashboardAssetsAndHead(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 for app.js, got %d", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "renderProbes") || !strings.Contains(rec.Body.String(), "renderBenches") || !strings.Contains(rec.Body.String(), "renderOverview") {
+	if !strings.Contains(rec.Body.String(), "renderProbes") || !strings.Contains(rec.Body.String(), "renderBenches") || !strings.Contains(rec.Body.String(), "renderOverview") || !strings.Contains(rec.Body.String(), "renderCompare") {
 		t.Fatalf("expected typed dashboard renderers in app.js, got %q", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Real HTTP/3 (quic-go)") || !strings.Contains(rec.Body.String(), "Experimental UDP H3 (lab)") {
+		t.Fatalf("expected explicit transport-plane labels in app.js, got %q", rec.Body.String())
 	}
 	if !strings.Contains(rec.Body.String(), "skipped") || !strings.Contains(rec.Body.String(), "Top Error") {
 		t.Fatalf("expected richer probe/bench renderer hints in app.js, got %q", rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "Bench summary") || !strings.Contains(rec.Body.String(), "Healthy") || !strings.Contains(rec.Body.String(), "loadOverview") {
+	if !strings.Contains(rec.Body.String(), "Bench summary") || !strings.Contains(rec.Body.String(), "Healthy") || !strings.Contains(rec.Body.String(), "loadOverview") || !strings.Contains(rec.Body.String(), "loadCompare") {
 		t.Fatalf("expected bench summary renderer hints in app.js, got %q", rec.Body.String())
 	}
 	if !strings.Contains(rec.Body.String(), "0rtt") || !strings.Contains(rec.Body.String(), "migration") || !strings.Contains(rec.Body.String(), "qpack") || !strings.Contains(rec.Body.String(), "loss") || !strings.Contains(rec.Body.String(), "congestion") || !strings.Contains(rec.Body.String(), "version") || !strings.Contains(rec.Body.String(), "retry") || !strings.Contains(rec.Body.String(), "ecn") || !strings.Contains(rec.Body.String(), "spin") || !strings.Contains(rec.Body.String(), "Coverage") || !strings.Contains(rec.Body.String(), "Support summary") {
@@ -313,6 +399,16 @@ func TestDashboardTraceErrorsAndNotFound(t *testing.T) {
 		t.Fatalf("expected 404 for invalid extension, got %d", rec.Code)
 	}
 
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/traces", nil)
+	rec = httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 for traces method violation, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"method not allowed"`) {
+		t.Fatalf("expected JSON method error, got %q", rec.Body.String())
+	}
+
 	req = httptest.NewRequest(http.MethodGet, "/does-not-exist", nil)
 	rec = httptest.NewRecorder()
 	srv.http.Handler.ServeHTTP(rec, req)
@@ -328,6 +424,16 @@ func TestDashboardTraceErrorsAndNotFound(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"api route not found"`) {
 		t.Fatalf("expected API not found payload, got %q", rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/traces/meta/missing.sqlog", nil)
+	rec = httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for missing trace metadata, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"trace not found"`) {
+		t.Fatalf("expected trace metadata error payload, got %q", rec.Body.String())
 	}
 }
 

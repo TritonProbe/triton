@@ -4,6 +4,25 @@
 
 ---
 
+## CURRENT IMPLEMENTATION SCOPE (2026-04-14)
+
+This document contains target-state implementation notes, but the active repository currently follows a dual-track model:
+
+- Supported track:
+- HTTP server/runtime in `internal/server`, `internal/appmux`, `internal/probe`, `internal/bench`, `internal/dashboard`.
+- Real HTTP/3 behavior implemented through `internal/realh3` (`quic-go`) for `h3://` probe/bench and optional server listener.
+- Experimental track:
+- `internal/quic/*` and `internal/h3/*` are intentionally lab-grade transport research and not RFC-complete production QUIC/H3.
+- Current hardening already in place:
+- Explicit opt-in guards for experimental transport, remote dashboard, insecure TLS, and mixed H3 planes.
+- CI includes `go test`, `go vet`, `staticcheck`, `gosec`, smoke flow, and a dedicated CGO race job.
+- Dashboard now includes list filtering/sorting/limits and compare/trend summaries from stored probe/bench rollups.
+- Product/lab boundary and conditional custom-engine vNext milestones are documented in [ENGINE_STRATEGY.md](./ENGINE_STRATEGY.md).
+
+Use this section as the implementation truth boundary when the rest of this file describes longer-term target internals.
+
+---
+
 ## 1. QUIC ENGINE IMPLEMENTATION
 
 ### 1.1 UDP Socket Layer

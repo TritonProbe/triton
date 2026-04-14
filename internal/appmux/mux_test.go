@@ -38,6 +38,17 @@ func TestEchoRejectsOversizedBody(t *testing.T) {
 	}
 }
 
+func TestUploadRejectsOversizedBody(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/upload", strings.NewReader("toolarge"))
+	rec := httptest.NewRecorder()
+
+	NewWithOptions(Options{MaxBodyBytes: 4}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected 413, got %d", rec.Code)
+	}
+}
+
 func TestHealthzEndpoint(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
@@ -145,6 +156,7 @@ func TestRouteValidationErrors(t *testing.T) {
 		"/status/999",
 		"/drip/1",
 		"/drip/x/1",
+		"/drip/1/-1",
 	}
 	for _, path := range paths {
 		req := httptest.NewRequest(http.MethodGet, path, nil)

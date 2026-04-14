@@ -1,7 +1,7 @@
 VERSION ?= dev
 LDFLAGS = -s -w -X main.version=$(VERSION)
 
-.PHONY: build build-all test test-race test-fuzz fmt lint security docker release-snapshot smoke
+.PHONY: build build-all clean test test-race test-fuzz perf-check fmt lint security docker release-snapshot smoke
 
 build:
 	go build -ldflags="$(LDFLAGS)" -o bin/triton ./cmd/triton
@@ -11,6 +11,9 @@ build-all:
 	GOOS=linux GOARCH=amd64 go build -ldflags="$(LDFLAGS)" -o bin/triton-linux-amd64 ./cmd/triton
 	GOOS=windows GOARCH=amd64 go build -ldflags="$(LDFLAGS)" -o bin/triton-windows-amd64.exe ./cmd/triton
 
+clean:
+	rm -rf bin triton triton.exe coverage.out triton-data
+
 test:
 	go test ./...
 
@@ -19,6 +22,9 @@ test-race:
 
 test-fuzz:
 	go test ./internal/quic/packet ./internal/quic/frame ./internal/quic/wire ./internal/h3/frame -run Fuzz -count=1
+
+perf-check: build
+	bash ./scripts/ci-bench-guard.sh
 
 fmt:
 	go fmt ./...

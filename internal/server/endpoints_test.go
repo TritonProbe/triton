@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -359,5 +360,32 @@ func TestCapabilityHelpersReflectConfig(t *testing.T) {
 	}
 	if stability := stabilityLevel(cfg); stability != "mixed-stability" {
 		t.Fatalf("unexpected stability level: %q", stability)
+	}
+}
+
+func TestStartupSummaryLines(t *testing.T) {
+	cfg := config.ServerConfig{
+		ListenTCP:            "127.0.0.1:8443",
+		ListenH3:             "127.0.0.1:4434",
+		Listen:               "127.0.0.1:4433",
+		AllowExperimentalH3:  true,
+		AllowMixedH3Planes:   true,
+		Dashboard:            true,
+		DashboardListen:      "127.0.0.1:9090",
+		AllowRemoteDashboard: false,
+	}
+
+	lines := startupSummaryLines(cfg)
+	if len(lines) < 4 {
+		t.Fatalf("expected startup summary lines, got %v", lines)
+	}
+	if !strings.Contains(lines[1], "stable=[https-tcp,http3-quic]") {
+		t.Fatalf("expected stable plane summary, got %q", lines[1])
+	}
+	if !strings.Contains(lines[1], "experimental=[triton-udp-h3]") {
+		t.Fatalf("expected experimental plane summary, got %q", lines[1])
+	}
+	if !strings.Contains(strings.Join(lines, " "), "mixed-plane mode enabled by explicit allow_mixed_h3_planes=true") {
+		t.Fatalf("expected explicit mixed-plane startup note, got %v", lines)
 	}
 }

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -141,5 +142,20 @@ func TestRenderBenchTable(t *testing.T) {
 	})
 	if !strings.Contains(out, "P95(ms)") || !strings.Contains(out, "first-byte") || !strings.Contains(out, "timeout=1") || !strings.Contains(out, "Summary:") {
 		t.Fatalf("unexpected table output: %q", out)
+	}
+}
+
+func TestInt64ValueSaturatesUnsignedAndFloatOverflow(t *testing.T) {
+	if got := int64Value(uint64(math.MaxUint64)); got != math.MaxInt64 {
+		t.Fatalf("expected uint64 saturation to MaxInt64, got %d", got)
+	}
+	if got := int64Value(uint(math.MaxUint32)); got <= 0 {
+		t.Fatalf("expected positive conversion for safe uint, got %d", got)
+	}
+	if got := int64Value(math.MaxFloat64); got != math.MaxInt64 {
+		t.Fatalf("expected float overflow saturation to MaxInt64, got %d", got)
+	}
+	if got := int64Value(-math.MaxFloat64); got != math.MinInt64 {
+		t.Fatalf("expected float underflow saturation to MinInt64, got %d", got)
 	}
 }

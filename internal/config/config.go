@@ -21,6 +21,7 @@ type ServerConfig struct {
 	Listen                    string        `yaml:"listen"`
 	AllowExperimentalH3       bool          `yaml:"allow_experimental_h3"`
 	AllowRemoteExperimentalH3 bool          `yaml:"allow_remote_experimental_h3"`
+	AllowMixedH3Planes        bool          `yaml:"allow_mixed_h3_planes"`
 	ListenH3                  string        `yaml:"listen_h3"`
 	ListenTCP                 string        `yaml:"listen_tcp"`
 	CertFile                  string        `yaml:"cert"`
@@ -73,6 +74,7 @@ func Default() Config {
 			Listen:                    "",
 			AllowExperimentalH3:       false,
 			AllowRemoteExperimentalH3: false,
+			AllowMixedH3Planes:        false,
 			ListenH3:                  "",
 			ListenTCP:                 ":8443",
 			Dashboard:                 true,
@@ -120,6 +122,9 @@ func (c Config) Validate() error {
 		if !c.Server.AllowRemoteExperimentalH3 && !isLoopbackListen(c.Server.Listen) {
 			return errors.New("server.listen must stay on loopback unless server.allow_remote_experimental_h3 is true")
 		}
+	}
+	if c.Server.Listen != "" && c.Server.ListenH3 != "" && !c.Server.AllowMixedH3Planes {
+		return errors.New("enabling both server.listen and server.listen_h3 requires server.allow_mixed_h3_planes to be true")
 	}
 	if c.Server.ListenH3 != "" {
 		if err := validateListen(c.Server.ListenH3, "server.listen_h3"); err != nil {
