@@ -11,6 +11,8 @@
 
 > Current-state note (2026-04-12): this document remains the target-state specification. The current repo already ships a working diagnostics tool, but the supported HTTP/3 path uses `quic-go`, the in-repo `internal/quic` / `internal/h3` stacks remain experimental lab-only transport research, the dashboard is a lightweight operator surface rather than the full live workbench described below, and several advanced probe features are partial approximations rather than packet-level implementations. Read this spec together with [ANALYSIS.md](./ANALYSIS.md), [ROADMAP.md](./ROADMAP.md), and [PRODUCTIONREADY.md](./PRODUCTIONREADY.md) for the actual implementation boundary.
 
+> Reader warning: unless a section explicitly says "current implementation baseline", assume the remainder of this document describes the intended target state, not guaranteed code that exists today.
+
 ---
 
 ## CURRENT IMPLEMENTATION BASELINE (2026-04-14)
@@ -34,6 +36,15 @@ This section is authoritative for what is production-usable in this repository t
 - Strategy decision:
 - Product track is pragmatic diagnostics + real H3 via `quic-go`.
 - Custom engine promotion to product scope is conditional on vNext milestones captured in [ENGINE_STRATEGY.md](./ENGINE_STRATEGY.md).
+
+### Current probe fidelity caveat
+
+The current probe surface does expose fields for `0rtt`, `migration`, `qpack`, `loss`, `congestion`, `retry`, `version`, `ecn`, and `spin-bit`, but those should not be read as packet-level RFC-grade transport telemetry yet.
+
+- `0rtt` is currently based on resumption timing checks, not true early-data proof.
+- `migration` is currently based on endpoint-capability checks, not live path rebinding.
+- `qpack` is currently an estimated header-block-size analysis, not dynamic-table inspection.
+- `loss`, `congestion`, `retry`, `version`, `ecn`, and `spin-bit` are currently observational or heuristic approximations derived from visible client-layer behavior.
 
 ---
 

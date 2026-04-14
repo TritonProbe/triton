@@ -21,6 +21,14 @@ This document contains target-state implementation notes, but the active reposit
 
 Use this section as the implementation truth boundary when the rest of this file describes longer-term target internals.
 
+Do not treat the detailed sections below as proof that every named package or subsystem exists in the repository today. Large portions of this file still document the intended end-state architecture.
+
+### Current implementation truth summary
+
+- Supported HTTP/3 behavior is implemented through `internal/realh3` and `quic-go`.
+- `internal/quic/*` and `internal/h3/*` are experimental lab-only transport research.
+- Current advanced probe fields such as `0rtt`, `migration`, `qpack`, `loss`, `congestion`, `retry`, `version`, `ecn`, and `spin-bit` are not all packet-level implementations; several are explicitly heuristic or capability-based approximations in the shipped code.
+
 ---
 
 ## 1. QUIC ENGINE IMPLEMENTATION

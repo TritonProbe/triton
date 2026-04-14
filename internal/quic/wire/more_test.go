@@ -2,17 +2,8 @@ package wire
 
 import (
 	"bytes"
-	"io"
 	"testing"
-
-	"github.com/tritonprobe/triton/internal/quic/frame"
 )
-
-type badFrame struct{}
-
-func (badFrame) Type() frame.FrameType     { return frame.FrameTypePing }
-func (badFrame) Length() int               { return 1 }
-func (badFrame) Serialize(io.Writer) error { return nil }
 
 func TestPacketNumberHelpersAndErrors(t *testing.T) {
 	cases := []struct {

@@ -8,6 +8,8 @@
 
 > Current-state note (2026-04-14): this task list is still the original target-state backlog. A substantial subset is already complete in the current repository, including the working CLI, config system, storage, HTTPS test server, real HTTP/3 support via `quic-go`, the isolated `triton lab` flow for the experimental transport, richer probe/bench summaries, dashboard status/config/probe/bench/trace APIs, dashboard hardening, CI automation, `gosec` integration, parser fuzz coverage, and dashboard compare/trend + filter/sort UX. Treat unchecked items below as roadmap targets, not proof that the repository is empty or non-functional.
 
+> Reader warning: this file is not a reliable measure of what currently exists unless you read it together with the current-state note above and the audit docs in `.project/`.
+
 ## Current Status Snapshot
 
 ### Completed Foundations

@@ -13,6 +13,29 @@ Triton is a pure Go toolkit for observing, testing, and benchmarking HTTP/3 and 
 This repository is not yet the full RFC-complete final product described in the specification, but it already contains a working CLI, a test server, probe/bench flows, QUIC building blocks, and a minimal in-repo H3 loopback stack with handler dispatch.
 Current product positioning is pragmatic: real HTTP diagnostics and real HTTP/3 behavior are supported through `quic-go`, while the in-repo custom QUIC/H3 stack remains lab-only research.
 
+## Supported Today
+
+Treat the following as the implementation truth for this repository today:
+
+- Supported server path:
+  - HTTPS/TCP test server
+  - optional real HTTP/3 listener via `quic-go`
+  - optional embedded dashboard
+- Supported client paths:
+  - `https://...` probe and bench targets
+  - `h3://...` probe targets using real HTTP/3 via `quic-go`
+  - `https://...` + `h3` bench runs using real HTTP/3 via `quic-go`
+- Lab-only path:
+  - `triton://...` experimental in-repo UDP H3 transport
+  - `triton lab`
+  - `internal/quic/*` and `internal/h3/*`
+
+Important caveat for probe output:
+
+- Basic checks such as handshake timing, TLS metadata, latency, throughput, and stream sampling are implemented directly.
+- Several advanced probe dimensions are still heuristic or contract-based rather than packet-level QUIC truth. That includes `0rtt`, `migration`, `qpack`, `loss`, `congestion`, `retry`, `version`, `ecn`, and `spin-bit`.
+- If you need packet-level QUIC validation, do not treat those advanced fields as RFC-grade transport telemetry yet.
+
 ## Vision
 
 Triton is intended to become a documentation-first, comparison-driven QUIC and HTTP/3 laboratory with:
@@ -99,7 +122,7 @@ Specification-level probe goals include:
 - congestion and loss behavior
 - spin bit, GREASE, Alt-Svc, and H3 settings
 
-Current probe output now includes richer `analysis` sections for response throughput, sampled latency percentiles, basic stream-concurrency summaries, an HTTP/3-only `qpack` approximation based on estimated header-block size, partial `loss` and `congestion` signals inferred from repeated request failures, timeout categories, latency spread, and concurrent slowdown, partial `version` and `retry` observations inferred from the negotiated H3 protocol/alpn and handshake visibility, plus partial `ecn` and `spin-bit` observations inferred from observable protocol metadata and sampled RTT stability. Probe results also include a `test_plan` summary so requested tests, executed tests, and skipped unsupported tests are explicit, a `support` matrix that marks advanced checks such as `0rtt`, `migration`, `qpack`, `loss`, `congestion`, `retry`, `version`, `ecn`, and `spin-bit` as partial, full, or unavailable, and a `support_summary` rollup so overall advanced coverage can be judged at a glance. The deeper spec items such as true 0-RTT, migration, packet-level loss analysis, congestion-window telemetry, Retry packet observation, QUIC version negotiation telemetry, packet-mark ECN visibility, packet-level spin-bit observation, and real QPACK inspection are still not fully implemented.
+Current probe output includes richer `analysis` sections for response throughput, sampled latency percentiles, stream-concurrency summaries, and a `test_plan` plus `support` matrix that explicitly marks advanced checks as `full`, `partial`, or `unavailable`. The advanced fields are intentionally caveated: the current `qpack` value is an estimated header-block-size approximation, current `loss` and `congestion` values are inferred from repeated request failures and latency spread, current `version` and `retry` values are inferred from observed H3 protocol/alpn and handshake visibility, current `ecn` and `spin-bit` values are inferred from observable protocol metadata and sampled RTT stability, current `0rtt` is resumption timing rather than true early-data proof, and current `migration` is an endpoint-capability check rather than live path rebinding. The deeper spec items such as true 0-RTT, live migration, packet-level loss analysis, congestion-window telemetry, Retry packet observation, QUIC version negotiation telemetry, packet-mark ECN visibility, packet-level spin-bit observation, and real QPACK inspection are still not fully implemented.
 
 ### 3. Bench
 
@@ -135,6 +158,8 @@ Current implementation note:
 - bench results now also include a computed `summary` rollup that classifies protocols as healthy/degraded/failed and highlights the best and riskiest protocol in the run
 
 ## Architecture
+
+When there is a conflict between the long-term architecture vision below and the running code, prefer the "Supported Today" section above plus [ARCHITECTURE.md](/d:/Codebox/TritonProbe/ARCHITECTURE.md) and the generated audit docs under `.project/`.
 
 The specification organizes Triton into these major layers:
 
@@ -203,6 +228,15 @@ What exists in this repository today:
 - real network simulation and advanced benchmark runners
 - ACME and advanced certificate automation
 - dashboard real-time protocol visualization
+
+### Explicitly partial today
+
+- `0rtt`: resumption timing and support signaling, not true 0-RTT early-data validation
+- `migration`: endpoint contract probing, not live path migration
+- `qpack`: estimated header-block-size analysis, not dynamic-table inspection
+- `loss`: request-error and timeout signal approximation, not packet-loss telemetry
+- `congestion`: latency-spread approximation, not congestion-window telemetry
+- `retry`, `version`, `ecn`, `spin-bit`: observational approximations rather than packet-level transport visibility
 
 ## Quick Start
 

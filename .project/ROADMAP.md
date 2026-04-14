@@ -1,125 +1,135 @@
 # Project Roadmap
 
-> Based on comprehensive codebase analysis performed on 2026-04-11
-> This roadmap prioritizes the work needed to turn Triton into a clear, production-grade product instead of a mixed experimental platform.
+> Based on comprehensive codebase analysis performed on 2026-04-14
+> This roadmap prioritizes work needed to bring the current supported product path to production quality without pretending the experimental in-repo QUIC stack is ready.
 
 ## Current State Assessment
 
-Triton already works as a local HTTP diagnostics tool. The CLI is usable, storage is solid, CI/release automation exists, the dashboard works as a read-only status surface, H1/H2 benchmarking works, `h3://` probing and benchmarking work through `quic-go`, and `triton://` works through the experimental in-repo transport.
+TritonProbe is already a functional operator tool. The supported path is: HTTPS/TCP test server, real HTTP/3 via `quic-go`, probe/bench result persistence, and an embedded read-only dashboard for status, stored probes, stored benches, and traces. Build, tests, and vet all pass locally.
 
-The core blocker is not "nothing works." The blocker is that the product story is split in two:
+The main blockers are not "nothing works." The blockers are truth and scope: target-state docs still promise far more than the code delivers, several advanced probe features are heuristic estimates rather than packet-level implementations, and the experimental transport stack still needs to be clearly treated as research rather than a deployable engine.
 
-- a real, dependency-backed HTTP/3 path that is useful today
-- an experimental custom QUIC/H3 path that is far from the spec
+What is working well:
 
-The next roadmap should decide which one is the product and which one is the lab.
+- Stable HTTP/1.1, HTTP/2, and real HTTP/3 product path
+- Strong config safety gates
+- Healthy automated test coverage
+- Useful dashboard/operator surface
 
-## Completed Since Initial Audit
+## Phase 1: Critical Fixes (Week 1-2)
 
-- Experimental UDP H3 is no longer a default-style product path; it now requires explicit opt-in and has a dedicated `triton lab` flow.
-- Dashboard APIs now return structured summaries for status/config/probes/benches/traces, including trace metadata preview.
-- Dashboard UI now renders typed cards, probe support summaries, bench health rollups, and a top-level overview panel instead of raw JSON-style scaffolding.
-- Probe mode now emits partial-but-explicit support for `0rtt`, `migration`, `qpack`, `loss`, `congestion`, `retry`, `version`, `ecn`, and `spin-bit`, plus a `support_summary` rollup.
-- Bench mode now emits a per-run `summary` rollup with healthy/degraded/failed protocol counts and best/risk protocol classification.
-- Dashboard exposure is now materially safer: remote bind requires explicit opt-in plus auth, constant-time credential checks, and request timeouts.
-- Insecure probe/bench TLS now requires explicit `allow_insecure_tls` opt-in, storage path traversal is blocked, and `gosec ./...` now passes with `0 issues`.
-- CI now includes a dedicated CGO-capable `go test -race ./...` job, and parser fuzz targets plus targeted connection/stream/transport concurrency tests are in place for the experimental QUIC surface.
-- Mixed real/experimental H3 listener startup now requires explicit intent (`allow_mixed_h3_planes`) to avoid accidental dual-plane exposure.
-- A repository-level `ARCHITECTURE.md` now documents supported transport planes, lab-only boundaries, and runtime profiles.
+### Must-fix items blocking production trust
 
-The roadmap below should now be read as the remaining work after those improvements.
+- [ ] Reconcile architecture docs with the real supported boundary
+  - Affected files: `.project/SPECIFICATION.md`, `.project/IMPLEMENTATION.md`, `.project/TASKS.md`, `README.md`, `ARCHITECTURE.md`
+  - Effort: 8h
+- [ ] Add the missing root `LICENSE` file or stop claiming MIT
+  - Affected files: `LICENSE`, docs
+  - Effort: 1h
+- [ ] Make heuristic probe features impossible to misread as packet-level truth
+  - Affected files: `internal/probe/probe.go`, `internal/cli/output.go`, `internal/dashboard/assets/app.js`
+  - Effort: 6h
+- [ ] Fix the local `staticcheck` failure in `internal/quic/wire/more_test.go`
+  - Affected files: `internal/quic/wire/more_test.go`
+  - Effort: 1h
 
-## Phase 1: Critical Alignment (Week 1-2)
+## Phase 2: Core Completion (Week 3-6)
 
-### Must-fix items blocking a clean release story
+### Complete missing core features that fit the actual product direction
 
-- [x] Decide product positioning: ship Triton as a pragmatic HTTP/3 diagnostics tool powered by `quic-go`, while keeping the custom engine lab-only.
-- [x] Finish the product-language cleanup so “real H3” and “experimental/lab H3” are unmistakable across all docs and operator output.
-- [x] Separate “real H3” and “experimental H3” terminology consistently across README, config, CLI help, and dashboard.
-- [x] Remove generated runtime artifacts and built binaries from the maintained source snapshot.
+- [ ] Add formal API and operator-surface documentation for dashboard endpoints
+  - Spec reference: dashboard/API portions of Spec §9
+  - Current gap: JSON endpoints exist but have no formal contract doc
+  - Effort: 6h
+- [ ] Improve trace browsing and result detail views in dashboard
+  - Current gap: overview is useful but still shallow
+  - Effort: 12-18h
+- [ ] Split `internal/probe/probe.go` into maintainable modules
+  - Current gap: orchestration and analytics are tightly packed
+  - Effort: 12-20h
+- [ ] Add stronger CLI affordances around supported vs experimental modes
+  - Current gap: `lab` exists, but the distinction can still be clearer in help/output
+  - Effort: 4-6h
 
-## Phase 2: Production Hardening (Week 3-4)
+## Phase 3: Hardening (Week 7-8)
 
-### Security, reliability, and operator clarity
+### Security, error handling, and operator safety
 
-- [x] Add explicit config validation for unsupported combinations such as both experimental and real H3 listeners being enabled without clear intent.
-- [x] Add a startup banner or log summary that clearly states which listeners are real HTTP/3 vs experimental UDP H3.
-- [ ] Watch the new CI `-race` job and fix any transport synchronization findings it reveals before broad release.
-- [x] Add response/request-size coverage and negative-path tests around upload, drip, and trace download flows.
+- [ ] Add explicit "estimated/heuristic" tags to 0-RTT, migration, QPACK, loss, congestion, retry, ECN, and spin-bit results
+- [ ] Review dashboard auth and remote-bind defaults again under a deployment checklist
+- [ ] Add a startup/runtime banner when experimental transport is enabled outside loopback
+- [ ] Add documented retention, log, and trace disk-usage guidance
+- [ ] Decide whether to de-emphasize or quarantine `internal/quic/*` further for non-lab builds
 
-## Phase 3: Concurrency & Correctness (Week 5-6)
+## Phase 4: Testing (Week 9-10)
 
-### Stabilize the experimental in-repo transport
+### Raise confidence in critical paths
 
-- [ ] Keep tightening `stream` and `connection` state handling in response to CI `-race` findings.
-- [ ] Keep tightening listener ordering/consumer semantics in response to CI `-race` findings.
-- [ ] Expand fuzz coverage beyond packet/frame parsing into more transport and wire edge cases.
-- [ ] Add transport/property tests for malformed packets and partial frame streams.
+- [ ] Make local and CI race testing symmetric where possible
+  - Current gap: local `go test -race ./...` could not run with CGO disabled
+- [ ] Add API contract tests for dashboard list/filter/sort behavior
+- [ ] Add regression tests around CLI output labels for heuristic probe features
+- [ ] Add browserless smoke tests for dashboard asset rendering
+- [ ] Add benchmark-style load checks for larger result stores
 
-## Phase 4: Metrics & Benchmark Fidelity (Week 7-8)
+## Phase 5: Performance & Optimization (Week 11-12)
 
-### Make results trustworthy
+### Performance tuning for supported path
 
-- [ ] Turn existing percentile/phase/error summaries into stored historical comparisons and deltas between runs.
-- [x] Document how `h1`, `h2`, `h3`, and `triton://` measurements differ so users do not compare incomparable transport stacks.
-- [x] Add benchmark baselines or lightweight perf regression checks so the richer metrics become actionable.
+- [ ] Profile probe hot paths and repeated sampling overhead
+- [ ] Reduce filesystem churn for large result/traces directories
+- [ ] Add pagination or more efficient filtering for larger dashboard result sets
+- [ ] Measure bundle/render cost of the embedded dashboard at larger data volumes
+- [ ] Evaluate whether app-side compare/trend rendering should move partially server-side
 
-## Phase 5: Dashboard Evolution (Week 9-10)
+## Phase 6: Documentation & DX (Week 13-14)
 
-### Upgrade from JSON viewer to operator surface
+### Documentation and contributor clarity
 
-- [x] Add filter/sort support for stored runs.
-- [x] Add request/trace status indicators and empty-state UX.
-- [x] Add compare/trend views that use the existing probe support summaries and bench rollups.
-- [ ] Keep the dashboard static and dependency-free unless there is a strong reason to add a frontend toolchain.
+- [ ] Publish an authoritative "Supported Features" document
+- [ ] Publish an "Experimental Lab Surface" document for `internal/quic/*` and `triton lab`
+- [ ] Add a concise onboarding path for contributors
+- [ ] Add a config reference with examples for server, probe, bench, traces, and dashboard auth
+- [ ] Document CI expectations, including race/staticcheck behavior
 
-## Phase 6: Spec Reconciliation (Week 11-14)
+## Phase 7: Release Preparation (Week 15-16)
 
-### Either narrow the spec or fund the missing engine work
+### Final production preparation for the supported product path
 
-- [x] Update `.project/SPECIFICATION.md`, `.project/IMPLEMENTATION.md`, and `.project/TASKS.md` so they reflect the current architecture, hardening work, and dependency strategy.
-- [x] If the custom engine remains in-scope: add a concrete vNext milestone for QUIC-TLS, packet protection, QPACK, and migration.
-- [x] If the custom engine becomes lab-only: move it under an explicitly experimental namespace and reduce production promises accordingly.
-- [x] Add `ARCHITECTURE.md` describing the three transport planes now in the repo.
-
-## Phase 7: Deep Protocol Features (Week 15-20)
-
-### Only if the custom-engine roadmap remains active
-
-- [ ] Implement QUIC-TLS key schedule and packet protection for the in-repo transport.
-- [ ] Add transport parameter handling, loss recovery, and congestion control.
-- [ ] Replace the newline-based experimental H3 header codec with real QPACK.
-- [ ] Implement 0-RTT and migration in either the custom transport or via honest wrappers around `quic-go`.
-- [ ] Expand probe mode to include deep protocol analysis promised in the spec.
+- [ ] Ensure release artifacts and `.goreleaser.yml` are still aligned with actual product positioning
+- [ ] Add version/build metadata to all user-visible surfaces
+- [ ] Add deployment checklist for self-signed vs custom cert operation
+- [ ] Add operational monitoring guidance around `/healthz`, `/readyz`, `/metrics`, access logs, and traces
+- [ ] Verify container image hardening and runtime assumptions
 
 ## Beyond v1.0: Future Enhancements
 
-- [ ] Real-time dashboard updates via SSE or WebSocket.
-- [ ] Historical comparison views and trend reports.
-- [ ] Prometheus metrics export beyond the embedded `/metrics` surface.
-- [ ] Distributed benchmarking and remote agents.
-- [ ] A true protocol-inspection UI for qlog and packet/frame timelines.
+### Only pursue these if they remain strategic
+
+- [ ] Decide whether the custom QUIC/H3 engine should ever graduate from lab status
+- [ ] If yes, implement real QUIC-TLS, packet protection, and QPACK before any production claims
+- [ ] If no, slim the experimental surface and position it clearly as transport research
+- [ ] Expand the dashboard into a richer workbench only after the product boundary is stable
 
 ## Effort Summary
 
 | Phase | Estimated Hours | Priority | Dependencies |
-|---|---:|---|---|
-| Phase 1 | 24h | Critical | None |
-| Phase 2 | 28h | High | Phase 1 |
-| Phase 3 | 32h | High | Phase 2 |
-| Phase 4 | 32h | High | Phase 2 |
-| Phase 5 | 32h | Medium | Phase 2 |
-| Phase 6 | 24h | High | Phase 1 |
-| Phase 7 | 160h+ | Strategic | Phase 6 |
-| **Total to a strong pragmatic v1** | **140h** |  |  |
-| **Total including custom-engine roadmap** | **300h+** |  |  |
+|---|---|---|---|
+| Phase 1 | 16h | CRITICAL | None |
+| Phase 2 | 34h | HIGH | Phase 1 |
+| Phase 3 | 24h | HIGH | Phase 1 |
+| Phase 4 | 22h | HIGH | Phase 1-3 |
+| Phase 5 | 18h | MEDIUM | Phase 2-4 |
+| Phase 6 | 18h | MEDIUM | Phase 1 complete |
+| Phase 7 | 14h | MEDIUM | Phase 1-6 |
+| **Total** | **146h** |  |  |
 
 ## Risk Assessment
 
 | Risk | Probability | Impact | Mitigation |
 |---|---|---|---|
-| Product messaging continues to outrun implementation | High | High | Align docs/config/CLI naming immediately |
-| Experimental H3 path gets mistaken for the real supported server path | High | High | Disable by default or rename aggressively |
-| Race issues surface once `-race` is added to CI | Medium | Medium | Fix stream/accept-channel synchronization before enabling gate |
-| Benchmark numbers are over-interpreted as protocol-science quality | Medium | High | Improve metrics and document methodology |
-| Custom QUIC roadmap absorbs team bandwidth without shipping user value | High | High | Decide early whether it is product-critical or research-only |
+| Operators assume heuristic probe outputs are packet-accurate | High | High | Relabel outputs and docs aggressively |
+| Contributors mistake experimental QUIC stack for the supported product path | High | High | Separate docs and CLI messaging |
+| Dashboard filesystem approach degrades with large retained result sets | Medium | Medium | Add pagination, retention guidance, and profiling |
+| Local quality gates diverge from CI quality gates | Medium | Medium | Align race/staticcheck expectations and docs |
+| Architectural docs continue to drift from code | High | Medium | Maintain one authoritative supported-boundary document |
