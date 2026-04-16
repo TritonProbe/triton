@@ -57,7 +57,7 @@ For the supported product path, the critical workflow works:
 4. Persist results.
 5. Review them in the dashboard.
 
-That path is operational. The danger is not broken happy-path functionality; the danger is over-claiming unsupported fidelity for the advanced probe dimensions and over-reading the target-state docs.
+That path is operational. The biggest remaining risk is no longer silent ambiguity in the product surface; the CLI, dashboard, and JSON output now explicitly label advanced probe fidelity. The bigger remaining danger is architectural/doc drift and the temptation to over-read target-state docs as shipped behavior.
 
 ### 1.3 Data Integrity
 
@@ -135,13 +135,13 @@ Assessment:
 - [x] No hardcoded secrets found
 - [x] Config values are environment/YAML/flag driven
 - [x] Sensitive dashboard password is not exposed in config snapshot
-- [ ] Root `LICENSE` file is missing despite license claims
+- [x] Root `LICENSE` file is present and aligned with MIT claims
 - [ ] No secret masking policy is documented for all logs
 
 ### 3.5 Security Vulnerabilities Found
 
 - **Medium** - documentation ambiguity may cause unsafe operator assumptions about the experimental transport path.
-- **Medium** - heuristic probe features may be read as packet-level validation when they are not.
+- **Low/Medium** - heuristic probe features are now labeled, but they still should not be treated as packet-level validation.
 - No obvious high-severity code injection or credential leakage issue was found in the supported path.
 
 ## 4. Performance Assessment
@@ -149,6 +149,7 @@ Assessment:
 ### 4.1 Known Performance Issues
 
 - Filesystem-backed listing and trace browsing will eventually become the dashboard bottleneck at larger result volumes.
+- The dashboard backend is now in a healthier shape structurally after splitting routing, models, and summary/list helpers, repeated category listings now reuse a storage-level metadata cache, repeated list queries now reuse cached filtered/sorted summary sets, and compact persisted summaries plus per-category manifest indexes reduce first-list decode cost after restart; the remaining constraint is that the storage model is still filesystem-local.
 - Probe analytics are implemented in one very large file and perform repeated request sampling in straightforward ways.
 - No serious performance red flags were found in the supported runtime path.
 
@@ -183,7 +184,6 @@ What is actually tested:
 
 What is not meaningfully tested:
 
-- browser-level dashboard behavior
 - production deployment scenarios
 - large retained data sets
 - race conditions in this local environment
@@ -206,7 +206,7 @@ What is not meaningfully tested:
 - [x] Test cert and HTTP/3 helpers exist
 - [x] CI appears to run tests on every PR
 - [ ] Local race test did not run here because CGO was disabled
-- [ ] `staticcheck` is not currently clean locally because of unused test helper code
+- [x] `staticcheck` is clean locally
 
 ## 6. Observability
 
@@ -271,10 +271,13 @@ What is not meaningfully tested:
 
 - [x] README is substantial
 - [x] Architecture overview exists
+- [x] Canonical supported-boundary doc exists (`SUPPORTED.md`)
+- [x] Dashboard API reference exists (`API.md`)
+- [x] Configuration reference exists (`CONFIG.md`)
 - [ ] README/spec/implementation/task docs are not fully aligned
-- [ ] No formal API reference
-- [ ] No troubleshooting guide
-- [ ] `LICENSE` file is missing
+- [x] Troubleshooting guide exists (`TROUBLESHOOTING.md`)
+- [x] Operational guidance exists (`OPERATIONS.md`)
+- [x] `LICENSE` file is present
 
 Documentation is the weakest readiness category. The repo is better than its docs in some places and far behind its docs in others. That creates avoidable risk.
 
@@ -282,22 +285,20 @@ Documentation is the weakest readiness category. The repo is better than its doc
 
 ### 🚫 Production Blockers (MUST fix before any broad production claim)
 
-1. Stop presenting heuristic advanced probe features as if they are packet-level QUIC truth.
-2. Reconcile target-state docs with the actual supported architecture.
-3. Add the missing `LICENSE` file or remove MIT claims.
-4. Keep the custom in-repo QUIC/H3 stack clearly out of production claims and production deployment guidance.
+1. Reconcile target-state docs with the actual supported architecture.
+2. Keep the custom in-repo QUIC/H3 stack clearly out of production claims and production deployment guidance.
+3. Ensure every external-facing document or export format uses the same fidelity language already present in CLI/dashboard/JSON.
 
 ### ⚠️ High Priority (Should fix within first week of production)
 
-1. Make `staticcheck` clean locally again.
-2. Add explicit supported-vs-experimental labeling in CLI and dashboard.
-3. Document operational limits for result retention, traces, and dashboard scalability.
-4. Add API/reference docs for the dashboard endpoints.
+1. Document operational limits for result retention, traces, and dashboard scalability.
+2. Add API/reference docs for the dashboard endpoints.
+3. Review any remaining stale examples or screenshots that imply packet-level advanced telemetry.
 
 ### 💡 Recommendations (Improve over time)
 
-1. Refactor `internal/probe/probe.go` into smaller modules.
-2. Add browserless regression tests for dashboard rendering and API filtering.
+1. Keep trimming dashboard scalability risks around large retained result sets and trace directories.
+2. Add true browser-driven E2E coverage only if the dashboard grows beyond its current lightweight operator role.
 3. Profile filesystem-backed list behavior at larger stored-result counts.
 4. Decide strategically whether the custom QUIC engine should continue or be permanently quarantined as research.
 

@@ -68,9 +68,15 @@ func TestRenderProbeMarkdown(t *testing.T) {
 				"qpack":     map[string]any{"coverage": "unavailable", "state": "unavailable", "summary": "QPACK inspection is not implemented yet"},
 			},
 			"support_summary": map[string]any{"requested_tests": 2, "available": 0, "not_run": 0, "unavailable": 2, "coverage_ratio": 0.0},
+			"fidelity_summary": map[string]any{
+				"partial":      []string{"qpack", "0rtt", "migration"},
+				"observed":     []string{"version", "retry", "ecn"},
+				"packet_level": false,
+				"notice":       "advanced probe fields are not all packet-level telemetry; partial=qpack, 0rtt, migration; observed=version, retry, ecn",
+			},
 		},
 	})
-	if !strings.Contains(out, "## Analysis") || !strings.Contains(out, "Test Plan") || !strings.Contains(out, "migration") || !strings.Contains(out, "Support `migration`") || !strings.Contains(out, "Support `qpack`") || !strings.Contains(out, "QPACK") || !strings.Contains(out, "Loss") || !strings.Contains(out, "Congestion") || !strings.Contains(out, "Version") || !strings.Contains(out, "Retry") || !strings.Contains(out, "ECN") || !strings.Contains(out, "Spin Bit") || !strings.Contains(out, "Coverage Summary") {
+	if !strings.Contains(out, "## Analysis") || !strings.Contains(out, "Test Plan") || !strings.Contains(out, "migration") || !strings.Contains(out, "Support `migration`") || !strings.Contains(out, "Support `qpack`") || !strings.Contains(out, "QPACK") || !strings.Contains(out, "Loss") || !strings.Contains(out, "Congestion") || !strings.Contains(out, "Version") || !strings.Contains(out, "Retry") || !strings.Contains(out, "ECN") || !strings.Contains(out, "Spin Bit") || !strings.Contains(out, "Coverage Summary") || !strings.Contains(out, "Fidelity Summary") || !strings.Contains(out, "packet-level") {
 		t.Fatalf("unexpected markdown output: %q", out)
 	}
 }

@@ -1,5 +1,7 @@
 # BRANDING.md — Triton
 
+> Current-state note (2026-04-14): this document is brand-direction guidance, not a guarantee that every phrase below reflects shipped behavior today. The supported product path is real HTTP diagnostics plus real HTTP/3 via `quic-go`; the in-repo custom QUIC/H3 engine remains lab-only, and several advanced probe metrics are still `observed` or `partial` rather than packet-level telemetry.
+
 ## HTTP/3 (QUIC) Test Server & Benchmarking Platform
 
 ---
@@ -21,6 +23,9 @@ The sea metaphor extends naturally: networks are oceans of packets, protocols ar
 ### 1.2 Tagline
 
 **Primary:** "Three Prongs. One Binary. Every Packet."
+
+Use with care:
+- Treat "Every Packet" as aspirational brand language, not a literal promise of packet-level visibility in the current product.
 
 **Alternatives:**
 - "Master the Third Wave of HTTP."

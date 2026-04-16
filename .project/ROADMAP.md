@@ -21,32 +21,26 @@ What is working well:
 ### Must-fix items blocking production trust
 
 - [ ] Reconcile architecture docs with the real supported boundary
-  - Affected files: `.project/SPECIFICATION.md`, `.project/IMPLEMENTATION.md`, `.project/TASKS.md`, `README.md`, `ARCHITECTURE.md`
+  - Affected files: `.project/SPECIFICATION.md`, `.project/IMPLEMENTATION.md`, `.project/TASKS.md`, `README.md`, `ARCHITECTURE.md`, `SUPPORTED.md`
   - Effort: 8h
-- [ ] Add the missing root `LICENSE` file or stop claiming MIT
-  - Affected files: `LICENSE`, docs
-  - Effort: 1h
-- [ ] Make heuristic probe features impossible to misread as packet-level truth
-  - Affected files: `internal/probe/probe.go`, `internal/cli/output.go`, `internal/dashboard/assets/app.js`
-  - Effort: 6h
-- [ ] Fix the local `staticcheck` failure in `internal/quic/wire/more_test.go`
-  - Affected files: `internal/quic/wire/more_test.go`
-  - Effort: 1h
+- [x] Make heuristic probe features much harder to misread as packet-level truth
+  - Completed in: `internal/probe/probe.go`, `internal/cli/output.go`, `internal/dashboard/assets/app.js`
+  - Notes: CLI/dashboard labels and `fidelity_summary` now distinguish `full`, `partial`, and `observed` fidelity, but packet-level implementations are still future work
 
 ## Phase 2: Core Completion (Week 3-6)
 
 ### Complete missing core features that fit the actual product direction
 
-- [ ] Add formal API and operator-surface documentation for dashboard endpoints
+- [x] Add formal API and operator-surface documentation for dashboard endpoints
   - Spec reference: dashboard/API portions of Spec §9
-  - Current gap: JSON endpoints exist but have no formal contract doc
-  - Effort: 6h
+  - Completed in: `API.md`
+  - Notes: current route set, error shape, list query semantics, typed summary fields, and fidelity semantics are now documented
 - [ ] Improve trace browsing and result detail views in dashboard
   - Current gap: overview is useful but still shallow
   - Effort: 12-18h
-- [ ] Split `internal/probe/probe.go` into maintainable modules
-  - Current gap: orchestration and analytics are tightly packed
-  - Effort: 12-20h
+- [x] Split `internal/probe/probe.go` into maintainable modules
+  - Completed in: `internal/probe/probe.go`, `internal/probe/models.go`, `internal/probe/support.go`, `internal/probe/analytics.go`
+  - Notes: probe orchestration remains in `probe.go`; models, support/fidelity logic, and analytics helpers are now separated
 - [ ] Add stronger CLI affordances around supported vs experimental modes
   - Current gap: `lab` exists, but the distinction can still be clearer in help/output
   - Effort: 4-6h
@@ -55,10 +49,12 @@ What is working well:
 
 ### Security, error handling, and operator safety
 
-- [ ] Add explicit "estimated/heuristic" tags to 0-RTT, migration, QPACK, loss, congestion, retry, ECN, and spin-bit results
+- [x] Add explicit "estimated/heuristic" tags to 0-RTT, migration, QPACK, loss, congestion, retry, ECN, and spin-bit results
+- [ ] Push the same fidelity language into any remaining API/docs examples and future export formats
 - [ ] Review dashboard auth and remote-bind defaults again under a deployment checklist
 - [ ] Add a startup/runtime banner when experimental transport is enabled outside loopback
-- [ ] Add documented retention, log, and trace disk-usage guidance
+- [x] Add documented retention, log, and trace disk-usage guidance
+  - Completed in: `OPERATIONS.md`
 - [ ] Decide whether to de-emphasize or quarantine `internal/quic/*` further for non-lab builds
 
 ## Phase 4: Testing (Week 9-10)
@@ -67,9 +63,13 @@ What is working well:
 
 - [ ] Make local and CI race testing symmetric where possible
   - Current gap: local `go test -race ./...` could not run with CGO disabled
-- [ ] Add API contract tests for dashboard list/filter/sort behavior
-- [ ] Add regression tests around CLI output labels for heuristic probe features
-- [ ] Add browserless smoke tests for dashboard asset rendering
+- [x] Add API contract tests for dashboard list/filter/sort behavior
+  - Completed in: `internal/dashboard/server_test.go`
+  - Notes: filter, sort, limit, offset pagination, summary-view shaping, and list metadata headers are covered
+- [x] Add regression tests around CLI output labels and fidelity summaries for heuristic probe features
+- [x] Add browserless smoke tests for dashboard asset rendering
+  - Completed in: `internal/dashboard/server_test.go`
+  - Notes: embedded HTML, JS asset serving, HEAD handling, and renderer/pagination hints are exercised without a browser
 - [ ] Add benchmark-style load checks for larger result stores
 
 ## Phase 5: Performance & Optimization (Week 11-12)
@@ -78,7 +78,26 @@ What is working well:
 
 - [ ] Profile probe hot paths and repeated sampling overhead
 - [ ] Reduce filesystem churn for large result/traces directories
-- [ ] Add pagination or more efficient filtering for larger dashboard result sets
+- [x] Add pagination or more efficient filtering for larger dashboard result sets
+  - Completed in: `internal/dashboard/server.go`, `internal/dashboard/assets/app.js`
+- [x] Reduce dashboard list payload size for repeated summary views
+  - Completed in: `internal/dashboard/server.go`, `internal/dashboard/assets/app.js`
+  - Notes: `view=summary` now omits heavier raw list fields while preserving typed summary projections
+- [x] Split `internal/dashboard/server.go` into maintainable modules
+  - Completed in: `internal/dashboard/server.go`, `internal/dashboard/models.go`, `internal/dashboard/summaries.go`, `internal/dashboard/lists.go`
+  - Notes: HTTP orchestration now stays in `server.go`; models, summary/cache logic, and list/query helpers are isolated
+- [x] Reduce repeated filesystem list overhead for dashboard polling
+  - Completed in: `internal/storage/filesystem.go`
+  - Notes: storage category listings now reuse cached results when directory metadata is unchanged, while still invalidating on writes and external deletes
+- [x] Cache repeated dashboard query/filter/sort/view combinations
+  - Completed in: `internal/dashboard/server.go`, `internal/dashboard/lists.go`
+  - Notes: repeated list requests now reuse cached post-filter/post-sort summary sets until underlying item signatures change
+- [x] Persist compact probe/bench summaries beside full results
+  - Completed in: `internal/storage/filesystem.go`, `internal/cli/app.go`, `internal/dashboard/summaries.go`
+  - Notes: probe/bench commands now write sidecar summaries and dashboard list views prefer them, reducing first-hit decode cost after restart
+- [x] Persist category-level summary manifest indexes
+  - Completed in: `internal/storage/filesystem.go`
+  - Notes: summary loads now prefer a persisted per-category `index.json`, so cold-start reads do not require opening every sidecar file individually
 - [ ] Measure bundle/render cost of the embedded dashboard at larger data volumes
 - [ ] Evaluate whether app-side compare/trend rendering should move partially server-side
 
@@ -86,11 +105,13 @@ What is working well:
 
 ### Documentation and contributor clarity
 
-- [ ] Publish an authoritative "Supported Features" document
+- [x] Publish an authoritative "Supported Features" document
 - [ ] Publish an "Experimental Lab Surface" document for `internal/quic/*` and `triton lab`
 - [ ] Add a concise onboarding path for contributors
-- [ ] Add a config reference with examples for server, probe, bench, traces, and dashboard auth
-- [ ] Document CI expectations, including race/staticcheck behavior
+- [x] Add a config reference with examples for server, probe, bench, traces, and dashboard auth
+  - Completed in: `CONFIG.md`
+- [x] Document CI expectations, including race/staticcheck behavior
+  - Completed in: `TROUBLESHOOTING.md`
 
 ## Phase 7: Release Preparation (Week 15-16)
 
@@ -99,7 +120,8 @@ What is working well:
 - [ ] Ensure release artifacts and `.goreleaser.yml` are still aligned with actual product positioning
 - [ ] Add version/build metadata to all user-visible surfaces
 - [ ] Add deployment checklist for self-signed vs custom cert operation
-- [ ] Add operational monitoring guidance around `/healthz`, `/readyz`, `/metrics`, access logs, and traces
+- [x] Add operational monitoring guidance around `/healthz`, `/readyz`, `/metrics`, access logs, and traces
+  - Completed in: `OPERATIONS.md`
 - [ ] Verify container image hardening and runtime assumptions
 
 ## Beyond v1.0: Future Enhancements

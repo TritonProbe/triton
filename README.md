@@ -15,6 +15,8 @@ Current product positioning is pragmatic: real HTTP diagnostics and real HTTP/3 
 
 ## Supported Today
 
+Canonical reference: [SUPPORTED.md](/d:/Codebox/TritonProbe/SUPPORTED.md)
+
 Treat the following as the implementation truth for this repository today:
 
 - Supported server path:
@@ -159,7 +161,7 @@ Current implementation note:
 
 ## Architecture
 
-When there is a conflict between the long-term architecture vision below and the running code, prefer the "Supported Today" section above plus [ARCHITECTURE.md](/d:/Codebox/TritonProbe/ARCHITECTURE.md) and the generated audit docs under `.project/`.
+When there is a conflict between the long-term architecture vision below and the running code, prefer [SUPPORTED.md](/d:/Codebox/TritonProbe/SUPPORTED.md), this "Supported Today" section, [ARCHITECTURE.md](/d:/Codebox/TritonProbe/ARCHITECTURE.md), and the generated audit docs under `.project/`.
 
 The specification organizes Triton into these major layers:
 
@@ -464,8 +466,8 @@ The embedded dashboard is currently a lightweight scaffold that serves:
 - `/api/v1/traces/:name`
 
 The UI now renders status/config snapshots plus typed summaries for recent probes, benches, and trace files instead of showing only raw JSON blobs, including a top-level overview panel, probe test-plan/skipped-test hints, `0rtt` / `migration` probe summary hints, support-coverage pills, and richer benchmark summary pills plus bench health rollups.
-The dashboard also supports in-page filtering, sorting, and result limits for probe, bench, and trace lists via query-driven API calls.
-List endpoints (`/api/v1/probes`, `/api/v1/benches`, `/api/v1/traces`) now accept `q`, `sort`, and `limit` query parameters.
+The dashboard also supports in-page filtering, sorting, offset-based pagination, and result limits for probe, bench, and trace lists via query-driven API calls.
+List endpoints (`/api/v1/probes`, `/api/v1/benches`, `/api/v1/traces`) now accept `q`, `sort`, `limit`, and `offset` query parameters, and probe/bench list endpoints also support `view=summary` to omit heavier raw fields while keeping typed dashboard summaries.
 It now includes a compare/trend panel that contrasts recent probe coverage and bench health/best-protocol latency across the latest runs.
 
 Current hardening features:
@@ -590,6 +592,11 @@ High-value next steps from the specification and the current code trajectory:
 
 Project planning and product definition live under `.project/`:
 
+- [API.md](/d:/Codebox/TritonProbe/API.md)
+- [CONFIG.md](/d:/Codebox/TritonProbe/CONFIG.md)
+- [OPERATIONS.md](/d:/Codebox/TritonProbe/OPERATIONS.md)
+- [TROUBLESHOOTING.md](/d:/Codebox/TritonProbe/TROUBLESHOOTING.md)
+- [SUPPORTED.md](/d:/Codebox/TritonProbe/SUPPORTED.md)
 - [SPECIFICATION.md](/d:/Codebox/TritonProbe/.project/SPECIFICATION.md)
 - [IMPLEMENTATION.md](/d:/Codebox/TritonProbe/.project/IMPLEMENTATION.md)
 - [TASKS.md](/d:/Codebox/TritonProbe/.project/TASKS.md)

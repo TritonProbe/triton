@@ -30,6 +30,15 @@ func supportSummaryFromAnalysis(t *testing.T, analysis map[string]any) SupportSu
 	return summary
 }
 
+func fidelitySummaryFromAnalysis(t *testing.T, analysis map[string]any) FidelitySummary {
+	t.Helper()
+	summary, ok := analysis["fidelity_summary"].(FidelitySummary)
+	if !ok {
+		t.Fatalf("expected typed fidelity summary, got %#v", analysis)
+	}
+	return summary
+}
+
 func testPlanFromAnalysis(t *testing.T, analysis map[string]any) TestPlan {
 	t.Helper()
 	plan, ok := analysis["test_plan"].(TestPlan)
@@ -315,8 +324,21 @@ func TestRunStandardH3Probe(t *testing.T) {
 	}
 	support := supportEntriesFromAnalysis(t, result.Analysis)
 	supportSummary := supportSummaryFromAnalysis(t, result.Analysis)
+	fidelitySummary := fidelitySummaryFromAnalysis(t, result.Analysis)
 	if supportSummary.RequestedTests < 1 || supportSummary.Available < 1 {
 		t.Fatalf("expected support rollup counts, got %#v", supportSummary)
+	}
+	if fidelitySummary.PacketLevel {
+		t.Fatalf("expected mixed-fidelity advanced probe summary, got %#v", fidelitySummary)
+	}
+	if !containsString(fidelitySummary.Partial, "0rtt") || !containsString(fidelitySummary.Partial, "qpack") || !containsString(fidelitySummary.Partial, "migration") {
+		t.Fatalf("expected partial fidelity markers for advanced tests, got %#v", fidelitySummary)
+	}
+	if !containsString(fidelitySummary.Observed, "version") || !containsString(fidelitySummary.Observed, "retry") || !containsString(fidelitySummary.Observed, "ecn") {
+		t.Fatalf("expected observed fidelity markers, got %#v", fidelitySummary)
+	}
+	if fidelitySummary.Notice == "" {
+		t.Fatalf("expected fidelity notice, got %#v", fidelitySummary)
 	}
 	zeroRTTSupport, ok := support["0rtt"]
 	if !ok || zeroRTTSupport.Coverage != "partial" {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/tritonprobe/triton/internal/bench"
 	"github.com/tritonprobe/triton/internal/config"
+	"github.com/tritonprobe/triton/internal/dashboard"
 	"github.com/tritonprobe/triton/internal/probe"
 	"github.com/tritonprobe/triton/internal/server"
 	"github.com/tritonprobe/triton/internal/storage"
@@ -207,6 +208,9 @@ func (a *App) runProbe(args []string) error {
 	if err := store.SaveProbe(result.ID, result); err != nil {
 		return err
 	}
+	if err := store.SaveProbeSummary(result.ID, dashboard.BuildProbeSummary(*result)); err != nil {
+		return err
+	}
 	return renderOutput(a.stdout, opts.FormatOrDefault(cfg.Probe.DefaultFormat), result)
 }
 
@@ -235,6 +239,9 @@ func (a *App) runBench(args []string) error {
 		return err
 	}
 	if err := store.SaveBench(result.ID, result); err != nil {
+		return err
+	}
+	if err := store.SaveBenchSummary(result.ID, dashboard.BuildBenchSummary(*result)); err != nil {
 		return err
 	}
 	return renderOutput(a.stdout, opts.FormatOrDefault("table"), result)

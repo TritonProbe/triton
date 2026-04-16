@@ -196,7 +196,9 @@ func TestDashboardProbeAndBenchListsReturnSummaries(t *testing.T) {
 		Proto:    "HTTP/2.0",
 		Duration: 150 * time.Millisecond,
 		Analysis: map[string]any{
-			"latency": map[string]any{"p95": 12.5},
+			"latency":          map[string]any{"p95": 12.5},
+			"support_summary":  probe.SupportSummary{RequestedTests: 3, Available: 1, NotRun: 1, Unavailable: 1, CoverageRatio: 0.33},
+			"fidelity_summary": probe.FidelitySummary{Partial: []string{"qpack"}, Observed: []string{"version"}, PacketLevel: false, Notice: "advanced probe fields are not all packet-level telemetry"},
 		},
 	}); err != nil {
 		t.Fatal(err)
@@ -230,7 +232,7 @@ func TestDashboardProbeAndBenchListsReturnSummaries(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 from probes list, got %d", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), `"target":"https://example.com"`) || !strings.Contains(rec.Body.String(), `"latency"`) {
+	if !strings.Contains(rec.Body.String(), `"target":"https://example.com"`) || !strings.Contains(rec.Body.String(), `"latency"`) || !strings.Contains(rec.Body.String(), `"fidelity_summary"`) || !strings.Contains(rec.Body.String(), `"packet_level":false`) {
 		t.Fatalf("expected enriched probe summary payload, got %q", rec.Body.String())
 	}
 
@@ -242,6 +244,26 @@ func TestDashboardProbeAndBenchListsReturnSummaries(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"protocols":["h1","h2"]`) || !strings.Contains(rec.Body.String(), `"latency_ms"`) || !strings.Contains(rec.Body.String(), `"summary"`) || !strings.Contains(rec.Body.String(), `"stats_view"`) {
 		t.Fatalf("expected enriched bench summary payload, got %q", rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/probes?view=summary", nil)
+	rec = httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from summary probes list, got %d", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), `"analysis":{"`) || !strings.Contains(rec.Body.String(), `"analysis_view"`) {
+		t.Fatalf("expected summary probe payload to omit raw analysis and keep analysis_view, got %q", rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/benches?view=summary", nil)
+	rec = httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from summary benches list, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"stats":null`) || !strings.Contains(rec.Body.String(), `"stats_view"`) {
+		t.Fatalf("expected summary bench payload to omit raw stats and keep stats_view, got %q", rec.Body.String())
 	}
 }
 
@@ -300,6 +322,9 @@ func TestDashboardListQueryFilteringSortingAndLimit(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `"probe-b"`) || strings.Contains(rec.Body.String(), `"probe-a"`) {
 		t.Fatalf("expected filtered probe list, got %q", rec.Body.String())
 	}
+	if got := rec.Header().Get("X-Total-Count"); got != "1" {
+		t.Fatalf("expected filtered total count header, got %q", got)
+	}
 
 	req = httptest.NewRequest(http.MethodGet, "/api/v1/benches?q=h3&sort=concurrency_desc&limit=1", nil)
 	rec = httptest.NewRecorder()
@@ -309,6 +334,188 @@ func TestDashboardListQueryFilteringSortingAndLimit(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"bench-b"`) || strings.Contains(rec.Body.String(), `"bench-a"`) {
 		t.Fatalf("expected filtered bench list, got %q", rec.Body.String())
+	}
+}
+
+func TestDashboardListQueryOffsetPagination(t *testing.T) {
+	store, err := storage.NewFileStore(t.TempDir(), 20, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []struct {
+		id     string
+		target string
+	}{
+		{"probe-a", "https://alpha.example.com"},
+		{"probe-b", "https://beta.example.com"},
+		{"probe-c", "https://gamma.example.com"},
+	} {
+		if err := store.SaveProbe(item.id, probe.Result{
+			ID:       item.id,
+			Target:   item.target,
+			Status:   http.StatusOK,
+			Proto:    "HTTP/2.0",
+			Duration: 100 * time.Millisecond,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	srv := New("127.0.0.1:0", store, Options{})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/probes?sort=target_asc&limit=1&offset=1", nil)
+	rec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from paginated probes query, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"probe-b"`) || strings.Contains(rec.Body.String(), `"probe-a"`) || strings.Contains(rec.Body.String(), `"probe-c"`) {
+		t.Fatalf("expected middle paginated probe item, got %q", rec.Body.String())
+	}
+	if got := rec.Header().Get("X-Total-Count"); got != "3" {
+		t.Fatalf("expected total count 3, got %q", got)
+	}
+	if got := rec.Header().Get("X-Page-Offset"); got != "1" {
+		t.Fatalf("expected page offset 1, got %q", got)
+	}
+	if got := rec.Header().Get("X-Page-Limit"); got != "1" {
+		t.Fatalf("expected page limit 1, got %q", got)
+	}
+	if got := rec.Header().Get("X-Has-More"); got != "true" {
+		t.Fatalf("expected has more true, got %q", got)
+	}
+	if got := rec.Header().Get("X-Next-Offset"); got != "2" {
+		t.Fatalf("expected next offset 2, got %q", got)
+	}
+}
+
+func TestDashboardListUsesCachedProbeSummary(t *testing.T) {
+	store, err := storage.NewFileStore(t.TempDir(), 10, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveProbe("probe-cache", probe.Result{
+		ID:       "probe-cache",
+		Target:   "https://cache.example.com",
+		Status:   http.StatusOK,
+		Proto:    "HTTP/2.0",
+		Duration: 100 * time.Millisecond,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := New("127.0.0.1:0", store, Options{})
+	items, err := store.List("probes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected one stored probe item, got %d", len(items))
+	}
+	summary, err := srv.probeSummary(items[0])
+	if err != nil || summary.ID != "probe-cache" {
+		t.Fatalf("expected initial cached probe summary, got summary=%#v err=%v", summary, err)
+	}
+	if err := os.Remove(items[0].Path); err != nil {
+		t.Fatal(err)
+	}
+	summary, err = srv.probeSummary(items[0])
+	if err != nil || summary.ID != "probe-cache" {
+		t.Fatalf("expected cached probe summary to survive repeated lookup, got summary=%#v err=%v", summary, err)
+	}
+}
+
+func TestDashboardListCacheInvalidatesWhenUnderlyingItemsChange(t *testing.T) {
+	store, err := storage.NewFileStore(t.TempDir(), 10, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveProbe("probe-cache-list", probe.Result{
+		ID:       "probe-cache-list",
+		Target:   "https://cache-list.example.com",
+		Status:   http.StatusOK,
+		Proto:    "HTTP/2.0",
+		Duration: 100 * time.Millisecond,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := New("127.0.0.1:0", store, Options{})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/probes?q=cache&sort=target_asc", nil)
+	rec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"probe-cache-list"`) {
+		t.Fatalf("expected initial cached list response, got code=%d body=%q", rec.Code, rec.Body.String())
+	}
+	if len(srv.probeListCache) == 0 {
+		t.Fatal("expected probe list cache to be populated")
+	}
+
+	items, err := store.List("probes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected one stored probe item, got %d", len(items))
+	}
+	if err := os.Remove(items[0].Path); err != nil {
+		t.Fatal(err)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/probes?q=cache&sort=target_asc", nil)
+	rec = httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 after underlying delete, got %d", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), `"probe-cache-list"`) {
+		t.Fatalf("expected stale probe list cache to be invalidated, got %q", rec.Body.String())
+	}
+}
+
+func TestDashboardProbeListPrefersPersistedSummary(t *testing.T) {
+	store, err := storage.NewFileStore(t.TempDir(), 10, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := probe.Result{
+		ID:        "probe-sidecar",
+		Target:    "https://sidecar.example.com",
+		Timestamp: time.Now().UTC(),
+		Status:    http.StatusOK,
+		Proto:     "HTTP/3.0",
+		Duration:  150 * time.Millisecond,
+		Analysis: map[string]any{
+			"fidelity_summary": probe.FidelitySummary{Observed: []string{"version"}, PacketLevel: false},
+		},
+	}
+	if err := store.SaveProbe(result.ID, result); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveProbeSummary(result.ID, BuildProbeSummary(result)); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := store.List("probes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected one stored probe item, got %d", len(items))
+	}
+	if err := os.WriteFile(items[0].Path, []byte("not-gzip"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := New("127.0.0.1:0", store, Options{})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/probes", nil)
+	rec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from probes list with sidecar summary, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"probe-sidecar"`) || !strings.Contains(rec.Body.String(), `sidecar.example.com`) {
+		t.Fatalf("expected persisted summary-backed probe list, got %q", rec.Body.String())
 	}
 }
 
@@ -372,6 +579,9 @@ func TestDashboardAssetsAndHead(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "supportPills") || !strings.Contains(rec.Body.String(), ".coverage") {
 		t.Fatalf("expected support coverage renderer hints in app.js, got %q", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "loadCollection") || !strings.Contains(rec.Body.String(), "X-Total-Count") || !strings.Contains(rec.Body.String(), "pager") {
+		t.Fatalf("expected pagination renderer hints in app.js, got %q", rec.Body.String())
 	}
 }
 

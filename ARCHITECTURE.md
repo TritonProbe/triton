@@ -14,6 +14,22 @@ The supported production-like path is the real HTTP server + real HTTP/3 via `qu
 The in-repo `internal/quic` and `internal/h3` stacks are intentionally experimental.
 Product positioning and conditional custom-engine milestones are tracked in [.project/ENGINE_STRATEGY.md](./.project/ENGINE_STRATEGY.md).
 
+## Probe Fidelity Boundary
+
+The probe surface now exposes both `support` and `fidelity_summary` metadata so callers can distinguish implemented transport truth from approximations.
+
+- `full`: directly implemented and supported in the current product path
+- `observed`: derived from visible protocol/client-layer state, not packet capture
+- `partial`: heuristic, capability-check, or estimate-based
+
+Today that means:
+
+- `version`, `retry`, and `ecn` are surfaced as `observed`
+- `0rtt`, `migration`, `qpack`, `loss`, `congestion`, and `spin-bit` are surfaced as `partial`
+- only the baseline probe dimensions such as handshake, TLS metadata, throughput, latency, streams, and Alt-Svc should be read as fully implemented current-path diagnostics
+
+CLI output, dashboard cards, and JSON results are expected to preserve that distinction.
+
 ## Runtime Profiles
 
 ### `triton server`
@@ -73,3 +89,4 @@ Product positioning and conditional custom-engine milestones are tracked in [.pr
 - Several advanced QUIC/H3 analyses are still approximation-based.
 - Experimental in-repo transport remains lab-grade.
 - Dashboard is a lightweight operator surface, not a full live protocol workbench.
+- Packet-level transport claims should be reserved for future work unless the implementation explicitly graduates from `observed`/`partial` fidelity.

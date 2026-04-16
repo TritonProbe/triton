@@ -14,6 +14,10 @@ function pillWarn(value) {
   return `<span class="pill pill-warn">${escapeHTML(String(value))}</span>`;
 }
 
+function pillHeuristic(value) {
+  return `<span class="pill pill-warn">${escapeHTML(String(value))}</span>`;
+}
+
 function pillState(value, state) {
   const css = state ? `pill pill-${state}` : "pill";
   return `<span class="${css}">${escapeHTML(String(value))}</span>`;
@@ -232,9 +236,9 @@ function buildPlanPills(requested, executed, skipped) {
 
 function buildSupportPills(zeroRTTSupport, migrationSupport) {
   return joinNonEmpty([
-    zeroRTTSupport.coverage ? pillMuted(`0rtt ${zeroRTTSupport.coverage}`) : "",
+    zeroRTTSupport.coverage ? (zeroRTTSupport.coverage === "partial" ? pillHeuristic(`0rtt ${zeroRTTSupport.coverage}`) : pillMuted(`0rtt ${zeroRTTSupport.coverage}`)) : "",
     zeroRTTSupport.state ? pill(zeroRTTSupport.state) : "",
-    migrationSupport.coverage ? pillMuted(`migration ${migrationSupport.coverage}`) : "",
+    migrationSupport.coverage ? (migrationSupport.coverage === "partial" ? pillHeuristic(`migration ${migrationSupport.coverage}`) : pillMuted(`migration ${migrationSupport.coverage}`)) : "",
     migrationSupport.state ? pill(migrationSupport.state) : "",
   ]);
 }
@@ -252,24 +256,25 @@ function buildAdvancedPills(context) {
     spin,
   } = context;
   return joinNonEmpty([
-    zeroRTT.mode ? pillMuted(`0rtt ${zeroRTT.resumed ? "resumed" : "checked"}`) : "",
+    zeroRTT.mode ? pillHeuristic(`0rtt ${zeroRTT.resumed ? "resumed" : "checked"}`) : "",
     typeof zeroRTT.time_saved_ms === "number" ? pill(`resume saved ${Number(zeroRTT.time_saved_ms).toFixed(2)}ms`) : "",
-    migration.mode ? pillMuted(`migration ${migration.supported ? "reachable" : "checked"}`) : "",
+    migration.mode ? pillHeuristic(`migration ${migration.supported ? "reachable" : "checked"}`) : "",
     typeof migration.duration_ms === "number" ? pill(`migration ${Number(migration.duration_ms).toFixed(2)}ms`) : "",
-    qpack.mode ? pillMuted(`qpack ${qpack.mode}`) : "",
+    qpack.mode ? pillHeuristic(`qpack ${qpack.mode}`) : "",
     typeof qpack.estimated_ratio === "number" ? pill(`qpack ratio ${Number(qpack.estimated_ratio).toFixed(2)}`) : "",
-    loss.mode ? pillMuted(`loss ${loss.signal || "checked"}`) : "",
-    congestion.mode ? pillMuted(`congestion ${congestion.signal || "checked"}`) : "",
-    version.mode ? pillMuted(`version ${version.alpn || version.observed_proto || "checked"}`) : "",
-    retry.mode ? pillMuted(`retry ${retry.retry_observed ? "observed" : "not-seen"}`) : "",
-    ecn.mode ? pillMuted(`ecn ${ecn.ecn_visible ? "visible" : "not-seen"}`) : "",
-    spin.mode ? pillMuted(`spin ${spin.stability || "checked"}`) : "",
+    loss.mode ? pillHeuristic(`loss ${loss.signal || "checked"}`) : "",
+    congestion.mode ? pillHeuristic(`congestion ${congestion.signal || "checked"}`) : "",
+    version.mode ? pillHeuristic(`version ${version.alpn || version.observed_proto || "checked"}`) : "",
+    retry.mode ? pillHeuristic(`retry ${retry.retry_observed ? "observed" : "not-seen"}`) : "",
+    ecn.mode ? pillHeuristic(`ecn ${ecn.ecn_visible ? "visible" : "not-seen"}`) : "",
+    spin.mode ? pillHeuristic(`spin ${spin.stability || "checked"}`) : "",
   ]);
 }
 
 function buildProbeNotes(context) {
   const {
     skipped,
+    support,
     otherSupport,
     supportSummary,
     zeroRTT,
@@ -284,7 +289,14 @@ function buildProbeNotes(context) {
     zeroRTTSupport,
     migrationSupport,
   } = context;
+  const heuristicNames = [];
+  for (const [name, entry] of Object.entries(support || {})) {
+    if (entry && entry.coverage === "partial") {
+      heuristicNames.push(name);
+    }
+  }
   return [
+    heuristicNames.length ? `<p class="mini">Notice: advanced probe fields are not all packet-level telemetry. Partial coverage: ${escapeHTML(heuristicNames.join(", "))}</p>` : "",
     otherSupport.length ? `<p class="mini">Advanced support: ${escapeHTML(otherSupport.join(" | "))}</p>` : "",
     supportSummary.requested_tests ? `<p class="mini">Support summary: requested ${supportSummary.requested_tests}, available ${supportSummary.available || 0}, not-run ${supportSummary.not_run || 0}, unavailable ${supportSummary.unavailable || 0}</p>` : "",
     skipped.length ? `<p class="mini">Skipped: ${escapeHTML(skipped.map((entry) => `${entry.name}: ${entry.reason}`).join(" | "))}</p>` : "",
@@ -309,6 +321,7 @@ function probeMetricValues(latency, streams, response, zeroRTT, migration, suppo
   const zeroRTTState = zeroRTT.mode ? (zeroRTT.resumed ? "resumed" : "checked") : "n/a";
   const migrationState = migration.mode ? (migration.supported ? "reachable" : "checked") : "n/a";
   const coverage = typeof supportSummary.coverage_ratio === "number" ? `${Math.round(supportSummary.coverage_ratio * 100)}%` : "n/a";
+  const advancedLabel = (zeroRTT.mode || migration.mode) ? "partial" : "n/a";
   return {
     p95,
     streams: streams.attempted || 0,
@@ -316,6 +329,7 @@ function probeMetricValues(latency, streams, response, zeroRTT, migration, suppo
     zeroRTTState,
     migrationState,
     coverage,
+    advancedLabel,
     latencySamples: latency.samples || 0,
     streamSuccess,
     throughput,
@@ -373,6 +387,7 @@ function renderProbes(target, items) {
     const supportPills = buildSupportPills(zeroRTTSupport, migrationSupport);
     const notes = buildProbeNotes({
       skipped,
+      support,
       otherSupport,
       supportSummary,
       zeroRTT,
@@ -402,6 +417,7 @@ function renderProbes(target, items) {
           ${metric("Bytes", metrics.bytes)}
           ${metric("0-RTT", metrics.zeroRTTState)}
           ${metric("Migration", metrics.migrationState)}
+          ${metric("Advanced", metrics.advancedLabel)}
           ${metric("Coverage", metrics.coverage)}
         </div>
         <div class="pill-row">
@@ -409,6 +425,7 @@ function renderProbes(target, items) {
           ${pill(`latency samples ${metrics.latencySamples}`)}
           ${pill(`stream success ${metrics.streamSuccess}`)}
           ${pill(`throughput ${metrics.throughput}`)}
+          ${metrics.advancedLabel === "partial" ? pillHeuristic("advanced metrics are heuristic/partial") : ""}
         </div>
         <div class="pill-row">${supportPills}</div>
         <div class="pill-row">${advancedPills}</div>
@@ -470,6 +487,29 @@ function renderTraces(target, items) {
   `).join("")}</div>`;
 }
 
+function collectionState(prefix) {
+  if (!window.__tritonCollections) {
+    window.__tritonCollections = {};
+  }
+  if (!window.__tritonCollections[prefix]) {
+    window.__tritonCollections[prefix] = { offset: 0, limit: 0, total: 0, hasMore: false };
+  }
+  return window.__tritonCollections[prefix];
+}
+
+function pagerHTML(prefix) {
+  const state = collectionState(prefix);
+  const start = state.total === 0 ? 0 : state.offset + 1;
+  const end = state.limit > 0 ? Math.min(state.offset + state.limit, state.total) : state.total;
+  return `
+    <div class="pager">
+      <button id="${prefix}-prev" class="pager-btn" ${state.offset <= 0 ? "disabled" : ""}>Prev</button>
+      <span class="pager-status">Showing ${start}-${end} of ${state.total}</span>
+      <button id="${prefix}-next" class="pager-btn" ${!state.hasMore ? "disabled" : ""}>Next</button>
+    </div>
+  `;
+}
+
 function traceRecencyPill(modifiedAt) {
   const modified = Date.parse(modifiedAt || "");
   if (!Number.isFinite(modified)) {
@@ -497,6 +537,7 @@ async function load(id, path, render) {
 }
 
 function readCollectionFilters(prefix) {
+  const state = collectionState(prefix);
   const query = document.getElementById(`${prefix}-query`);
   const sort = document.getElementById(`${prefix}-sort`);
   const limit = document.getElementById(`${prefix}-limit`);
@@ -509,6 +550,10 @@ function readCollectionFilters(prefix) {
   }
   if (limit && limit.value.trim()) {
     params.set("limit", limit.value.trim());
+    state.limit = Number(limit.value.trim()) || 0;
+  }
+  if (state.offset > 0) {
+    params.set("offset", String(state.offset));
   }
   return params.toString();
 }
@@ -520,8 +565,54 @@ function bindCollectionFilters(prefix, reload) {
     if (!node) {
       continue;
     }
-    node.addEventListener("input", reload);
-    node.addEventListener("change", reload);
+    const handler = () => {
+      collectionState(prefix).offset = 0;
+      reload();
+    };
+    node.addEventListener("input", handler);
+    node.addEventListener("change", handler);
+  }
+}
+
+function bindPager(prefix, reload) {
+  const prev = document.getElementById(`${prefix}-prev`);
+  const next = document.getElementById(`${prefix}-next`);
+  if (prev) {
+    prev.addEventListener("click", () => {
+      const state = collectionState(prefix);
+      const step = state.limit || 0;
+      state.offset = Math.max(0, state.offset - step);
+      reload();
+    });
+  }
+  if (next) {
+    next.addEventListener("click", () => {
+      const state = collectionState(prefix);
+      const step = state.limit || 0;
+      if (state.hasMore && step > 0) {
+        state.offset += step;
+        reload();
+      }
+    });
+  }
+}
+
+async function loadCollection(id, prefix, path, render) {
+  const target = document.getElementById(id);
+  try {
+    const response = await fetch(path);
+    const data = await response.json();
+    const state = collectionState(prefix);
+    state.total = Number(response.headers.get("X-Total-Count") || 0);
+    state.hasMore = response.headers.get("X-Has-More") === "true";
+    render(target, data);
+    target.insertAdjacentHTML("beforeend", pagerHTML(prefix));
+    bindPager(prefix, () => {
+      const query = readCollectionFilters(prefix);
+      loadCollection(id, prefix, `/api/v1/${prefix}${query ? `?${query}` : ""}`, render);
+    });
+  } catch (error) {
+    target.textContent = String(error);
   }
 }
 
@@ -529,8 +620,8 @@ async function loadOverview() {
   const target = document.getElementById("overview");
   try {
     const [probesResponse, benchesResponse] = await Promise.all([
-      fetch("/api/v1/probes"),
-      fetch("/api/v1/benches"),
+      fetch("/api/v1/probes?view=summary"),
+      fetch("/api/v1/benches?view=summary"),
     ]);
     const probes = await probesResponse.json();
     const benches = await benchesResponse.json();
@@ -544,8 +635,8 @@ async function loadCompare() {
   const target = document.getElementById("compare");
   try {
     const [probesResponse, benchesResponse] = await Promise.all([
-      fetch("/api/v1/probes?sort=newest&limit=20"),
-      fetch("/api/v1/benches?sort=newest&limit=20"),
+      fetch("/api/v1/probes?view=summary&sort=newest&limit=20"),
+      fetch("/api/v1/benches?view=summary&sort=newest&limit=20"),
     ]);
     const probes = await probesResponse.json();
     const benches = await benchesResponse.json();
@@ -559,15 +650,17 @@ load("status", "/api/v1/status", renderStatus);
 load("config", "/api/v1/config", renderConfig);
 const reloadProbes = () => {
   const query = readCollectionFilters("probes");
-  load("probes", `/api/v1/probes${query ? `?${query}` : ""}`, renderProbes);
+  const prefix = query ? `?view=summary&${query}` : "?view=summary";
+  loadCollection("probes", "probes", `/api/v1/probes${prefix}`, renderProbes);
 };
 const reloadBenches = () => {
   const query = readCollectionFilters("benches");
-  load("benches", `/api/v1/benches${query ? `?${query}` : ""}`, renderBenches);
+  const prefix = query ? `?view=summary&${query}` : "?view=summary";
+  loadCollection("benches", "benches", `/api/v1/benches${prefix}`, renderBenches);
 };
 const reloadTraces = () => {
   const query = readCollectionFilters("traces");
-  load("traces", `/api/v1/traces${query ? `?${query}` : ""}`, renderTraces);
+  loadCollection("traces", "traces", `/api/v1/traces${query ? `?${query}` : ""}`, renderTraces);
 };
 bindCollectionFilters("probes", reloadProbes);
 bindCollectionFilters("benches", reloadBenches);

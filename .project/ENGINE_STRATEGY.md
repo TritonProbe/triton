@@ -10,12 +10,15 @@ Triton's product track is now explicitly:
 
 The in-repo custom QUIC/H3 engine (`internal/quic`, `internal/h3`) is explicitly a **lab/research track**.
 
+The same boundary applies to advanced probe telemetry: the product path may expose useful `observed` and `partial` diagnostics, but that is still different from packet-level transport instrumentation.
+
 ## Product vs Lab Boundary
 
 - Product-safe runtime:
 - `triton server` with `listen_tcp` and optional `listen_h3`
 - `h3://` probe and bench paths
 - Dashboard APIs and UI summaries
+- JSON/CLI/dashboard probe outputs that preserve `full` vs `observed` vs `partial` fidelity
 
 - Lab runtime:
 - `triton lab`

@@ -20,6 +20,7 @@ Key metrics from the audited tree:
 | Markdown docs | 13 |
 | Frontend framework files (`.tsx/.ts/.jsx`) | 0 |
 | Embedded dashboard asset LOC | 786 |
+| Dashboard backend LOC | ~580 |
 | Go packages | 20 |
 | External Go dependencies | 8 |
 
@@ -34,8 +35,10 @@ Top strengths:
 Top concerns:
 
 - The target specification still overstates reality by a wide margin: custom QUIC-TLS, packet protection, real QPACK, live migration, live 0-RTT, SSE/WebSocket dashboard, and many planned packages do not exist.
-- Several "advanced" probe features are approximations, not packet-level instrumentation; the code says so directly (`internal/probe/probe.go:275`, `internal/probe/probe.go:280`, `internal/probe/probe.go:1104-1225`).
-- CI promises are ahead of local ergonomics: local `go test -race ./...` failed here because CGO is disabled, and local `staticcheck ./...` fails on unused test helper code in `internal/quic/wire/more_test.go:11-15`.
+- Several "advanced" probe features are approximations, not packet-level instrumentation; the code now labels them explicitly in the CLI, dashboard, and machine-readable `fidelity_summary`, but the underlying implementation is still not packet-level (`internal/probe/probe.go`, `internal/cli/output.go`, `internal/dashboard/assets/app.js`).
+- CI promises are still slightly ahead of local ergonomics: local `go test -race ./...` failed here because CGO is disabled. `staticcheck ./...` is now clean locally after removing the unused test helper that initially triggered the warning.
+- `SUPPORTED.md` now gives the repo a single current-state reference for supported runtime, dashboard scope, endpoint inventory, and probe fidelity semantics.
+- `API.md` now documents the dashboard route set, error format, list query semantics, and typed summary surfaces from the running code.
 
 ## 2. Architecture Analysis
 
@@ -84,7 +87,7 @@ Package inventory and responsibility:
 | `internal/storage` | gzip JSON result persistence and retention | cohesive |
 | `internal/appmux` | shared HTTP handler surface for server/lab/probe targets | cohesive |
 | `internal/server` | listener orchestration, certificates, middleware, rate limiting | good separation |
-| `internal/dashboard` | embedded dashboard assets and read-only APIs | cohesive |
+| `internal/dashboard` | embedded dashboard assets and read-only APIs | cohesive; improved after modular split |
 | `internal/observability` | request IDs, access logging, qlog helpers | cohesive |
 | `internal/probe` | probing orchestration, analysis models, support summaries | too much in one file |
 | `internal/bench` | benchmark orchestration and summarization | acceptable |
@@ -102,7 +105,8 @@ Package inventory and responsibility:
 Package cohesion notes:
 
 - Best-separated packages: `config`, `storage`, `observability`, `realh3`.
-- Biggest cohesion problem: [`internal/probe/probe.go`](../internal/probe/probe.go) is a 1,700+ line file containing models, orchestration, request execution, support matrix logic, and heuristic analytics.
+- Probe cohesion improved materially: orchestration remains in [`internal/probe/probe.go`](../internal/probe/probe.go), while models, support/fidelity logic, and analytics helpers now live in dedicated files under `internal/probe/`.
+- Dashboard cohesion improved materially too: routing/orchestration remains in [`internal/dashboard/server.go`](../internal/dashboard/server.go), while models, summary/cache logic, and list/query helpers now live in dedicated files under `internal/dashboard/`.
 - `internal/cli` is serviceable, but command parsing, option structs, and formatting could be split more clearly if the CLI expands.
 
 Circular dependency risk:
@@ -143,7 +147,7 @@ Dependency hygiene:
 #### Frontend dependencies
 
 - No `package.json`, `web/package.json`, `ui/package.json`, or `frontend/package.json` exists.
-- The dashboard is plain embedded `index.html`, `app.css`, and `app.js`.
+- The dashboard is plain embedded `index.html`, `app.css`, and `app.js`, backed by a small read-only API layer plus dedicated models and summary/list helper files.
 - External frontend dependency count: **0**.
 
 ### 2.4 API & Interface Design
@@ -179,21 +183,21 @@ Routes are registered in [`internal/dashboard/server.go`](../internal/dashboard/
 
 | Method | Path | Registration |
 |---|---|---|
-| `GET` | `/api/v1/status` | `internal/dashboard/server.go:184` |
-| `GET` | `/api/v1/config` | `internal/dashboard/server.go:185` |
-| `GET` | `/api/v1/probes` | `internal/dashboard/server.go:186` |
-| `GET` | `/api/v1/benches` | `internal/dashboard/server.go:187` |
-| `GET` | `/api/v1/probes/:id` | `internal/dashboard/server.go:188` |
-| `GET` | `/api/v1/benches/:id` | `internal/dashboard/server.go:189` |
-| `GET` | `/api/v1/traces` | `internal/dashboard/server.go:190` |
-| `GET` | `/api/v1/traces/meta/:name` | `internal/dashboard/server.go:191` |
-| `GET` | `/api/v1/traces/:name` | `internal/dashboard/server.go:192` |
+| `GET` | `/api/v1/status` | `internal/dashboard/server.go` |
+| `GET` | `/api/v1/config` | `internal/dashboard/server.go` |
+| `GET` | `/api/v1/probes` | `internal/dashboard/server.go` |
+| `GET` | `/api/v1/benches` | `internal/dashboard/server.go` |
+| `GET` | `/api/v1/probes/:id` | `internal/dashboard/server.go` |
+| `GET` | `/api/v1/benches/:id` | `internal/dashboard/server.go` |
+| `GET` | `/api/v1/traces` | `internal/dashboard/server.go` |
+| `GET` | `/api/v1/traces/meta/:name` | `internal/dashboard/server.go` |
+| `GET` | `/api/v1/traces/:name` | `internal/dashboard/server.go` |
 
 API consistency assessment:
 
 - Server endpoints are simple and intentionally ad hoc.
 - Dashboard APIs return structured JSON and mostly sanitize error details well.
-- List APIs support `q`, `sort`, and `limit`, which is a nice operator-focused touch.
+- List APIs support `q`, `sort`, `limit`, `offset`, and `view=summary`, which is a useful operator-focused step toward safer browsing at larger result volumes.
 - There is no formal OpenAPI schema.
 
 Authentication/authorization:
@@ -217,7 +221,7 @@ Style consistency:
 
 - Source is broadly `gofmt`-clean.
 - Naming is clear.
-- Function size is reasonable almost everywhere except `internal/probe/probe.go`.
+- Function size is reasonable across most packages after the recent `internal/probe` and `internal/dashboard` modular splits.
 
 Error handling:
 
@@ -327,7 +331,7 @@ Secrets management:
 
 - No hardcoded credentials found.
 - TLS/dashboard credentials are config-driven.
-- `LICENSE` file is absent even though docs claim MIT; this is a legal/documentation issue, not a code secret issue.
+- The repo now includes an MIT `LICENSE` file, which resolves the legal/documentation gap noted during the initial audit pass.
 
 TLS/HTTPS:
 
@@ -362,7 +366,7 @@ Runtime verification:
 - `go vet ./...` -> passed
 - `go test ./... -cover` -> passed for every package
 - `go test -race ./...` -> failed locally because CGO is disabled
-- `staticcheck ./...` -> failed on unused test-only helper code in `internal/quic/wire/more_test.go:11-15`
+- `staticcheck ./...` -> passed
 
 Package coverage from `go test ./... -cover`:
 
@@ -472,10 +476,10 @@ Major deviations:
    - Improvement over deleting it or pretending it is stable.
    - This makes the architecture dual-track instead of pure custom-stack.
 
-3. **Advanced probe features are surfaced as partial support summaries rather than omitted.**
+3. **Advanced probe features are surfaced with explicit support and fidelity summaries rather than omitted.**
    - Mixed outcome.
    - Better UX than pretending the features do not exist.
-   - Worse if an operator mistakes approximation for packet truth.
+   - The recent labeling work materially reduces misread risk, but the implementation is still heuristic for several fields.
 
 4. **Dashboard is an operator overview, not a live control-plane workbench.**
    - Sensible scope reduction.
@@ -519,7 +523,7 @@ Most critical missing pieces relative to the specification:
 3. Live migration and true 0-RTT packet-level support
 4. Full dashboard workbench with SSE/WebSocket/live charts
 5. ACME and broader production certificate automation
-6. Formal API/docs/license completeness
+6. Formal API/docs completeness
 
 If the project keeps the current strategic direction, items 1-3 may no longer be v1 blockers for the product track, but they are still blockers for the original spec.
 
@@ -536,7 +540,7 @@ Supported path:
 Potential bottlenecks:
 
 - [`internal/probe/probe.go`](../internal/probe/probe.go) does a lot of serial orchestration and repeated request sampling in one package; maintainability is a bigger issue than raw speed.
-- Dashboard list and trace views read from filesystem-backed storage; adequate for moderate operator use, not ideal for very large result sets.
+- Dashboard list and trace views are still filesystem-backed, but the current implementation is healthier than the initial audit pass: list APIs now support offset pagination, probe/bench summary views can omit heavier raw payload fields, probe/bench runs now persist compact summary sidecars plus category manifest indexes for restart-friendly first-list performance, dashboard summary generation is cached in-process to reduce repeated gzip/decode work, repeated query/filter/sort/view combinations are cached in-process at the dashboard layer, the storage layer caches category listings behind directory metadata checks to cut repeat `glob/stat` work, and the backend no longer concentrates all handler/models/helper logic in one file.
 - The frontend pulls JSON endpoints directly and renders large strings in one pass; acceptable for current size.
 
 ### 6.2 Scalability Assessment
@@ -588,7 +592,7 @@ Strengths:
 
 Weaknesses:
 
-- There is no root `LICENSE` file even though docs repeatedly claim MIT.
+- The root `LICENSE` file now exists and matches the MIT claims in project docs.
 - Some docs still describe packages and subsystems that do not exist.
 - There is no formal API schema.
 
@@ -618,25 +622,20 @@ Container readiness:
   - Fix: split "supported product architecture" and "research roadmap" into separate authoritative docs.
   - Effort: 6-10h
 
-- `Advanced probe features marketed above actual fidelity`
-  - Location: `internal/probe/probe.go:275-280`, `internal/probe/probe.go:1104-1225`
-  - Problem: 0-RTT, migration, QPACK, retry, ECN, spin-bit, loss, and congestion are often estimators or contract checks.
-  - Fix: label these as heuristic/estimated in CLI and dashboard output everywhere, or reduce claims.
-  - Effort: 4-8h
+- `Advanced probe implementation still below advertised transport fidelity`
+  - Location: `internal/probe/probe.go`, `internal/cli/output.go`, `internal/dashboard/assets/app.js`
+  - Problem: 0-RTT, migration, QPACK, retry, ECN, spin-bit, loss, and congestion are still estimators or contract checks even though the UX now labels them honestly.
+  - Fix: either keep narrowing claims or replace heuristics with direct transport telemetry over time.
+  - Effort: 12-40h depending on how much packet-level work is attempted
 
-- `License file missing`
-  - Location: repo root
-  - Problem: docs state MIT, but no `LICENSE` file was found.
-  - Fix: add the actual license text or stop claiming MIT.
-  - Effort: <1h
 
 ### 🟡 Important
 
-- `Probe package too large`
+- `Probe orchestration is still central even after modular split`
   - Location: `internal/probe/probe.go`
-  - Problem: orchestration, models, support matrix, and estimators are all in one file.
-  - Fix: split into runner, analyzers, models, and support-report modules.
-  - Effort: 8-16h
+  - Problem: the package is much healthier now, but orchestration for standard/H3/loopback/remote probe paths is still concentrated in one file.
+  - Fix: if the package grows again, split transport runners from orchestration entrypoints.
+  - Effort: 4-8h
 
 - `Experimental transport may be mistaken for production`
   - Location: `internal/quic/*`, `internal/h3/*`, CLI/docs
@@ -650,11 +649,6 @@ Container readiness:
   - Fix: add minimal API-contract and HTML rendering smoke coverage.
   - Effort: 4-8h
 
-- `Staticcheck fails locally`
-  - Location: `internal/quic/wire/more_test.go:11-15`
-  - Problem: unused `badFrame` helper breaks the advertised staticcheck-clean state.
-  - Fix: delete it or use it.
-  - Effort: <1h
 
 ### 🟢 Minor
 
