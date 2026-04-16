@@ -244,6 +244,11 @@ func (s *Server) Run() error {
 			shutdownErr = errors.Join(shutdownErr, fmt.Errorf("close udp listener: %w", err))
 		}
 	}
+	if s.h3 != nil {
+		if err := s.h3.Close(); err != nil {
+			shutdownErr = errors.Join(shutdownErr, fmt.Errorf("close experimental h3 listener: %w", err))
+		}
+	}
 	if s.h3real != nil {
 		if err := s.h3real.Shutdown(ctx); err != nil {
 			shutdownErr = errors.Join(shutdownErr, fmt.Errorf("shutdown http/3 server: %w", err))

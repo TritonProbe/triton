@@ -102,10 +102,18 @@ func (s *FileStore) save(category, id string, data any) error {
 	defer file.Close()
 
 	zip := gzip.NewWriter(file)
-	defer zip.Close()
 
 	if err := json.NewEncoder(zip).Encode(data); err != nil {
+		_ = zip.Close()
+		_ = file.Close()
 		return err
+	}
+	if err := zip.Close(); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("gzip close: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("file close: %w", err)
 	}
 	s.invalidateListCache(category)
 	return s.cleanup(category)

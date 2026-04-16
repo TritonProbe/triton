@@ -200,7 +200,12 @@ func (s *Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTraceMeta(w http.ResponseWriter, r *http.Request) {
-	name := path.Base(strings.TrimPrefix(r.URL.Path, "/api/v1/traces/meta/"))
+	rawPath := strings.TrimPrefix(r.URL.Path, "/api/v1/traces/meta/")
+	if strings.Contains(rawPath, "/") {
+		writeAPIError(w, http.StatusNotFound, "trace not found", nil)
+		return
+	}
+	name := path.Base(rawPath)
 	item, err := s.traceMetadata(name)
 	if err != nil {
 		writeAPIError(w, http.StatusNotFound, "trace not found", err)
@@ -210,7 +215,12 @@ func (s *Server) handleTraceMeta(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTrace(w http.ResponseWriter, r *http.Request) {
-	name := path.Base(strings.TrimPrefix(r.URL.Path, "/api/v1/traces/"))
+	rawPath := strings.TrimPrefix(r.URL.Path, "/api/v1/traces/")
+	if strings.Contains(rawPath, "/") {
+		writeAPIError(w, http.StatusNotFound, "trace not found", nil)
+		return
+	}
+	name := path.Base(rawPath)
 	_, err := s.traceMetadata(name)
 	if err != nil {
 		writeAPIError(w, http.StatusNotFound, "trace not found", err)

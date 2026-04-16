@@ -348,6 +348,8 @@ func encodeListQuery(query listQuery) string {
 		query.Q,
 		query.Sort,
 		query.View,
+		strconv.Itoa(query.Limit),
+		strconv.Itoa(query.Offset),
 	}, "|")
 }
 

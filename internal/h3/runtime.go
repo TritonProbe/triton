@@ -102,3 +102,11 @@ func RoundTripAddress(address, method, path string, body []byte, timeout time.Du
 	}
 	return resp, nil
 }
+
+// Close shuts down the UDP server by closing the underlying listener
+func (s *UDPServer) Close() error {
+	if s.listener != nil {
+		return s.listener.Close()
+	}
+	return nil
+}

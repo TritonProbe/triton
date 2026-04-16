@@ -43,6 +43,8 @@ func ListenQUIC(address string) (*Listener, error) {
 		connReady: make(chan struct{}, 1),
 		closed:    make(chan struct{}),
 	}
+	// Start background cleanup goroutine to prevent memory leaks
+	go l.cleanupLoop()
 	go l.serve()
 	return l, nil
 }
@@ -261,4 +263,31 @@ func (l *Listener) RemoteAddr(conn *connection.Connection) *net.UDPAddr {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.addrs[key]
+}
+
+// cleanupLoop periodically removes closed connections to prevent memory leaks
+func (l *Listener) cleanupLoop() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			l.removeClosedConnections()
+		case <-l.closed:
+			return
+		}
+	}
+}
+
+// removeClosedConnections removes connections that are in closed state
+func (l *Listener) removeClosedConnections() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for key, conn := range l.conns {
+		if conn.State() == connection.StateClosed {
+			delete(l.conns, key)
+			delete(l.nextPN, key)
+			delete(l.addrs, key)
+		}
+	}
 }

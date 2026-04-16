@@ -34,14 +34,14 @@ type Result struct {
 }
 
 type Summary struct {
-	Protocols        int     `json:"protocols" yaml:"protocols"`
-	HealthyProtocols int     `json:"healthy_protocols" yaml:"healthy_protocols"`
-	DegradedProtocols int    `json:"degraded_protocols" yaml:"degraded_protocols"`
-	FailedProtocols  int     `json:"failed_protocols" yaml:"failed_protocols"`
-	BestProtocol     string  `json:"best_protocol,omitempty" yaml:"best_protocol,omitempty"`
-	BestReqPerSec    float64 `json:"best_req_per_sec,omitempty" yaml:"best_req_per_sec,omitempty"`
-	RiskiestProtocol string  `json:"riskiest_protocol,omitempty" yaml:"riskiest_protocol,omitempty"`
-	HighestErrorRate float64 `json:"highest_error_rate,omitempty" yaml:"highest_error_rate,omitempty"`
+	Protocols         int     `json:"protocols" yaml:"protocols"`
+	HealthyProtocols  int     `json:"healthy_protocols" yaml:"healthy_protocols"`
+	DegradedProtocols int     `json:"degraded_protocols" yaml:"degraded_protocols"`
+	FailedProtocols   int     `json:"failed_protocols" yaml:"failed_protocols"`
+	BestProtocol      string  `json:"best_protocol,omitempty" yaml:"best_protocol,omitempty"`
+	BestReqPerSec     float64 `json:"best_req_per_sec,omitempty" yaml:"best_req_per_sec,omitempty"`
+	RiskiestProtocol  string  `json:"riskiest_protocol,omitempty" yaml:"riskiest_protocol,omitempty"`
+	HighestErrorRate  float64 `json:"highest_error_rate,omitempty" yaml:"highest_error_rate,omitempty"`
 }
 
 type Stats struct {
@@ -266,9 +266,6 @@ func runLoopbackH3Protocol(target string, duration time.Duration, concurrency in
 				}
 				total := time.Since(start)
 				firstByte := total
-				if len(resp.Body) == 0 {
-					firstByte = 0
-				}
 				collector.recordSuccess(benchMeasurement{
 					Total:     total,
 					FirstByte: firstByte,
