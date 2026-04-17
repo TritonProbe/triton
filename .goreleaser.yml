@@ -5,6 +5,7 @@ project_name: triton
 before:
   hooks:
     - go test ./... -count=1
+    - make smoke
 
 builds:
   - id: triton

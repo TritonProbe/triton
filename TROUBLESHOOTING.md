@@ -195,6 +195,48 @@ Fix:
 - use a CGO-capable Go toolchain locally, or
 - rely on the dedicated CI race job for authoritative race coverage
 
+## Local verification differs from CI
+
+Cause:
+
+- local runs often stop at `go test ./...`
+- CI also checks formatting, vet, static analysis, security scan, smoke flow, benchmark guard, and race coverage
+
+Fix:
+
+- run `go test ./... -count=1`
+- run `go vet ./...`
+- run `staticcheck ./...`
+- run `gosec ./...`
+- run `bash ./scripts/ci-smoke.sh` on bash-capable environments
+- or run `pwsh -File ./scripts/ci-smoke.ps1` on Windows/PowerShell
+- run `bash ./scripts/ci-bench-guard.sh`
+- if CGO is available, also run `CGO_ENABLED=1 go test -race ./... -count=1`
+
+Notes:
+
+- CI is still the final authority for release readiness
+- the local goal is to reduce surprises before push or tagging
+
+## Release workflow fails before publishing artifacts
+
+Cause:
+
+- the `v*` tag triggered `.github/workflows/release.yml`, but GoReleaser failed its pre-package checks
+- the release runner could not build or smoke-test the current tree
+
+Fix:
+
+- confirm the tag points at the intended commit on `main`
+- rerun `go test ./... -count=1`
+- rerun the smoke flow with `bash ./scripts/ci-smoke.sh` or `pwsh -File ./scripts/ci-smoke.ps1`
+- inspect `.goreleaser.yml` and the failed GitHub Actions log for the first failing step
+
+Notes:
+
+- release artifacts are tag-driven, so a bad tag can still start the workflow even if the tree was not fully verified locally
+- prefer fixing the underlying issue and publishing a new tag rather than force-editing release outputs
+
 ## Which docs should I trust?
 
 For current-state truth, prefer:

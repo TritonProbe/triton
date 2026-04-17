@@ -69,6 +69,12 @@ See [triton.yaml.example](/d:/Codebox/TritonProbe/triton.yaml.example) for a ful
 
 If omitted, Triton uses its existing runtime cert behavior instead of requiring user-provided cert files.
 
+Certificate guidance:
+
+- local-only or disposable environments can use the runtime certificate behavior
+- shared, remote, or operator-facing environments should set both `server.cert` and `server.key`
+- if clients outside your machine will connect, treat custom certificates as the safer default
+
 ### `server.dashboard`
 
 - Type: boolean
@@ -265,6 +271,10 @@ Use `h3` explicitly when benchmarking supported real HTTP/3 targets.
 - Default: `720h`
 - Validation: must be positive
 
+Operational note:
+
+- retention and trace directories should be planned together so result JSON and qlog files do not grow without review
+
 ## Validation Rules That Matter Most
 
 Triton intentionally blocks a few risky combinations:
@@ -288,6 +298,29 @@ server:
   dashboard: true
   dashboard_listen: "127.0.0.1:9090"
 ```
+
+### Remote supported deployment
+
+```yaml
+server:
+  listen_tcp: ":8443"
+  listen_h3: ":4434"
+  cert: "/etc/triton/tls/fullchain.pem"
+  key: "/etc/triton/tls/privkey.pem"
+  dashboard: true
+  dashboard_listen: "127.0.0.1:9090"
+  trace_dir: "/var/lib/triton/traces"
+storage:
+  results_dir: "/var/lib/triton/results"
+  max_results: 1000
+  retention: "168h"
+```
+
+Notes:
+
+- keep the dashboard on loopback unless you have a real remote access requirement
+- enable `server.listen_h3` only when you actually intend to serve supported HTTP/3
+- size `storage.retention` and trace directories with disk headroom in mind
 
 ### Lab transport work
 

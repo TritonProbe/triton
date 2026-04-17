@@ -583,6 +583,8 @@ Developer verification helpers:
 - `make perf-check`
 - `make lint`
 - `make security`
+- `bash ./scripts/ci-smoke.sh` on bash-capable environments
+- `pwsh -File ./scripts/ci-smoke.ps1` on Windows/PowerShell
 
 Repository maintenance helper:
 
