@@ -64,10 +64,19 @@ func (a *App) Run(args []string) error {
 func (a *App) printHelp() {
 	fmt.Fprintln(a.stdout, "Triton - HTTP test server and benchmarking platform")
 	fmt.Fprintln(a.stdout, "")
+	fmt.Fprintln(a.stdout, "Supported product path:")
+	fmt.Fprintln(a.stdout, "  server  HTTPS/TCP test server with optional real HTTP/3 via quic-go and optional dashboard")
+	fmt.Fprintln(a.stdout, "  probe   Supported targets are https://... and h3://...")
+	fmt.Fprintln(a.stdout, "  bench   Supported comparisons run against normal HTTPS targets")
+	fmt.Fprintln(a.stdout, "")
+	fmt.Fprintln(a.stdout, "Experimental surface:")
+	fmt.Fprintln(a.stdout, "  lab     In-repo Triton UDP H3 transport for lab-only transport research")
+	fmt.Fprintln(a.stdout, "  note    triton://... targets and --listen are experimental and should not be treated as production-stable")
+	fmt.Fprintln(a.stdout, "")
 	fmt.Fprintln(a.stdout, "Commands:")
-	fmt.Fprintln(a.stdout, "  server   Run the test server with dashboard and TCP fallback")
-	fmt.Fprintln(a.stdout, "  lab      Run the experimental Triton UDP H3 lab listener")
-	fmt.Fprintln(a.stdout, "  probe    Probe an external endpoint and store structured results")
+	fmt.Fprintln(a.stdout, "  server   Run the supported server runtime")
+	fmt.Fprintln(a.stdout, "  lab      Run only the experimental lab runtime")
+	fmt.Fprintln(a.stdout, "  probe    Probe a target and store structured results")
 	fmt.Fprintln(a.stdout, "  bench    Benchmark one target across protocols")
 	fmt.Fprintln(a.stdout, "  version  Print version information")
 }
@@ -130,6 +139,10 @@ func flagTakesValue(arg string) bool {
 }
 
 func (a *App) runServer(args []string) error {
+	if hasHelpFlag(args) {
+		printServerCommandHelp(a.stdout)
+		return nil
+	}
 	opts, err := parseServerOptions(args)
 	if err != nil {
 		return err
@@ -150,6 +163,10 @@ func (a *App) runServer(args []string) error {
 }
 
 func (a *App) runLab(args []string) error {
+	if hasHelpFlag(args) {
+		printLabCommandHelp(a.stdout)
+		return nil
+	}
 	opts, err := parseServerOptions(args)
 	if err != nil {
 		return err
@@ -182,6 +199,10 @@ func (a *App) runLab(args []string) error {
 }
 
 func (a *App) runProbe(args []string) error {
+	if hasHelpFlag(args) {
+		printProbeCommandHelp(a.stdout)
+		return nil
+	}
 	opts, err := parseProbeOptions(args)
 	if err != nil {
 		return err
@@ -215,6 +236,10 @@ func (a *App) runProbe(args []string) error {
 }
 
 func (a *App) runBench(args []string) error {
+	if hasHelpFlag(args) {
+		printBenchCommandHelp(a.stdout)
+		return nil
+	}
 	opts, err := parseBenchOptions(args)
 	if err != nil {
 		return err
@@ -245,4 +270,13 @@ func (a *App) runBench(args []string) error {
 		return err
 	}
 	return renderOutput(a.stdout, opts.FormatOrDefault("table"), result)
+}
+
+func hasHelpFlag(args []string) bool {
+	for _, arg := range args {
+		if arg == "-h" || arg == "--help" {
+			return true
+		}
+	}
+	return false
 }

@@ -13,8 +13,72 @@ func TestAppHelp(t *testing.T) {
 	if err := app.Run(nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := out.String(); !strings.Contains(got, "Commands:") || !strings.Contains(got, "lab") {
+	if got := out.String(); !strings.Contains(got, "Supported product path:") || !strings.Contains(got, "Experimental surface:") || !strings.Contains(got, "lab-only transport research") {
 		t.Fatalf("unexpected help output: %q", got)
+	}
+}
+
+func TestAppCommandHelpClarifiesBoundaries(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		contains []string
+	}{
+		{
+			name: "server",
+			args: []string{"server", "--help"},
+			contains: []string{
+				"Usage: triton server [flags]",
+				"Supported runtime:",
+				"Experimental surface:",
+				"lab-only",
+			},
+		},
+		{
+			name: "lab",
+			args: []string{"lab", "--help"},
+			contains: []string{
+				"Usage: triton lab [flags]",
+				"Lab-only runtime:",
+				"transport research",
+			},
+		},
+		{
+			name: "probe",
+			args: []string{"probe", "--help"},
+			contains: []string{
+				"Usage: triton probe [flags] [target]",
+				"Supported targets:",
+				"triton://... is lab-only",
+				"full, observed, or partial",
+			},
+		},
+		{
+			name: "bench",
+			args: []string{"bench", "--help"},
+			contains: []string{
+				"Usage: triton bench [flags] [target]",
+				"Supported comparisons:",
+				"triton://... uses the lab transport",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			app := NewApp("dev", "unknown")
+			app.SetStdout(&out)
+			if err := app.Run(tc.args); err != nil {
+				t.Fatalf("Run returned error: %v", err)
+			}
+			got := out.String()
+			for _, want := range tc.contains {
+				if !strings.Contains(got, want) {
+					t.Fatalf("expected help output to contain %q, got %q", want, got)
+				}
+			}
+		})
 	}
 }
 

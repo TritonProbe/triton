@@ -3,6 +3,8 @@ package cli
 import (
 	"errors"
 	"flag"
+	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -47,8 +49,9 @@ type serverOptions struct {
 	TraceDir                  string
 }
 
-func parseServerOptions(args []string) (serverOptions, error) {
+func newServerFlagSet(output io.Writer) (*flag.FlagSet, *serverOptions) {
 	fs := flag.NewFlagSet("server", flag.ContinueOnError)
+	fs.SetOutput(output)
 	var opts serverOptions
 	fs.StringVar(&opts.ConfigPath, "config", "triton.yaml", "config file path")
 	fs.StringVar(&opts.Listen, "listen", "", "experimental Triton UDP H3 listen address")
@@ -67,10 +70,15 @@ func parseServerOptions(args []string) (serverOptions, error) {
 	fs.Int64Var(&opts.MaxBodyBytes, "max-body-bytes", 0, "maximum accepted request body size in bytes")
 	fs.StringVar(&opts.AccessLog, "access-log", "", "write JSON access logs to this file")
 	fs.StringVar(&opts.TraceDir, "trace-dir", "", "directory for qlog trace files")
+	return fs, &opts
+}
+
+func parseServerOptions(args []string) (serverOptions, error) {
+	fs, opts := newServerFlagSet(io.Discard)
 	if err := fs.Parse(args); err != nil {
-		return opts, err
+		return *opts, err
 	}
-	return opts, nil
+	return *opts, nil
 }
 
 func (o serverOptions) Apply(cfg *config.Config) {
@@ -129,8 +137,9 @@ type probeOptions struct {
 	Migration        bool
 }
 
-func parseProbeOptions(args []string) (probeOptions, error) {
+func newProbeFlagSet(output io.Writer) (*flag.FlagSet, *probeOptions) {
 	fs := flag.NewFlagSet("probe", flag.ContinueOnError)
+	fs.SetOutput(output)
 	var opts probeOptions
 	fs.StringVar(&opts.ConfigPath, "config", "triton.yaml", "config file path")
 	fs.StringVar(&opts.Target, "target", "", "target URL")
@@ -144,10 +153,15 @@ func parseProbeOptions(args []string) (probeOptions, error) {
 	fs.BoolVar(&opts.Full, "full", false, "run the full available probe suite")
 	fs.BoolVar(&opts.ZeroRTT, "0rtt", false, "request 0-RTT probe coverage")
 	fs.BoolVar(&opts.Migration, "migration", false, "request migration probe coverage")
+	return fs, &opts
+}
+
+func parseProbeOptions(args []string) (probeOptions, error) {
+	fs, opts := newProbeFlagSet(io.Discard)
 	if err := fs.Parse(args); err != nil {
-		return opts, err
+		return *opts, err
 	}
-	return opts, nil
+	return *opts, nil
 }
 
 func (o probeOptions) Apply(cfg *config.Config) {
@@ -222,8 +236,9 @@ type benchOptions struct {
 	TraceDir         string
 }
 
-func parseBenchOptions(args []string) (benchOptions, error) {
+func newBenchFlagSet(output io.Writer) (*flag.FlagSet, *benchOptions) {
 	fs := flag.NewFlagSet("bench", flag.ContinueOnError)
+	fs.SetOutput(output)
 	var opts benchOptions
 	fs.StringVar(&opts.ConfigPath, "config", "triton.yaml", "config file path")
 	fs.StringVar(&opts.Target, "target", "", "target URL")
@@ -234,10 +249,15 @@ func parseBenchOptions(args []string) (benchOptions, error) {
 	fs.BoolVar(&opts.Insecure, "insecure", false, "skip certificate verification")
 	fs.BoolVar(&opts.AllowInsecureTLS, "allow-insecure-tls", false, "explicitly allow insecure TLS for lab benchmarking")
 	fs.StringVar(&opts.TraceDir, "trace-dir", "", "directory for client qlog trace files")
+	return fs, &opts
+}
+
+func parseBenchOptions(args []string) (benchOptions, error) {
+	fs, opts := newBenchFlagSet(io.Discard)
 	if err := fs.Parse(args); err != nil {
-		return opts, err
+		return *opts, err
 	}
-	return opts, nil
+	return *opts, nil
 }
 
 func (o benchOptions) Apply(cfg *config.Config) {
@@ -283,4 +303,66 @@ func validateFormat(format string) error {
 	default:
 		return errors.New("unsupported output format")
 	}
+}
+
+func printServerCommandHelp(w io.Writer) {
+	fs, _ := newServerFlagSet(w)
+	fmt.Fprintln(w, "Usage: triton server [flags]")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Supported runtime:")
+	fmt.Fprintln(w, "  - HTTPS/TCP test server")
+	fmt.Fprintln(w, "  - optional real HTTP/3 via quic-go (--listen-h3)")
+	fmt.Fprintln(w, "  - optional embedded dashboard")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Experimental surface:")
+	fmt.Fprintln(w, "  - --listen enables the in-repo Triton UDP H3 listener")
+	fmt.Fprintln(w, "  - this path is lab-only and requires --allow-experimental-h3")
+	fmt.Fprintln(w, "  - mixing --listen with --listen-h3 requires explicit --allow-mixed-h3-planes")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Flags:")
+	fs.PrintDefaults()
+}
+
+func printLabCommandHelp(w io.Writer) {
+	fs, _ := newServerFlagSet(w)
+	fmt.Fprintln(w, "Usage: triton lab [flags]")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Lab-only runtime:")
+	fmt.Fprintln(w, "  - runs only the experimental in-repo Triton UDP H3 surface")
+	fmt.Fprintln(w, "  - disables supported HTTPS/TCP, real HTTP/3, and dashboard listeners")
+	fmt.Fprintln(w, "  - intended for transport research, not production-like service hosting")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Shared server flags:")
+	fs.PrintDefaults()
+}
+
+func printProbeCommandHelp(w io.Writer) {
+	fs, _ := newProbeFlagSet(w)
+	fmt.Fprintln(w, "Usage: triton probe [flags] [target]")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Supported targets:")
+	fmt.Fprintln(w, "  - https://... and h3://...")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Experimental target:")
+	fmt.Fprintln(w, "  - triton://... is lab-only and uses the in-repo transport")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Probe fidelity note:")
+	fmt.Fprintln(w, "  - advanced checks may be reported as full, observed, or partial")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Flags:")
+	fs.PrintDefaults()
+}
+
+func printBenchCommandHelp(w io.Writer) {
+	fs, _ := newBenchFlagSet(w)
+	fmt.Fprintln(w, "Usage: triton bench [flags] [target]")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Supported comparisons:")
+	fmt.Fprintln(w, "  - h1,h2,h3 against https://... targets")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Experimental target:")
+	fmt.Fprintln(w, "  - triton://... uses the lab transport and should not be read as internet-facing protocol truth")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Flags:")
+	fs.PrintDefaults()
 }

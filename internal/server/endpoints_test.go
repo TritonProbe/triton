@@ -388,4 +388,10 @@ func TestStartupSummaryLines(t *testing.T) {
 	if !strings.Contains(strings.Join(lines, " "), "mixed-plane mode enabled by explicit allow_mixed_h3_planes=true") {
 		t.Fatalf("expected explicit mixed-plane startup note, got %v", lines)
 	}
+	if !strings.Contains(strings.Join(lines, " "), "supported production-like path is HTTPS/TCP plus optional real HTTP/3 via quic-go") {
+		t.Fatalf("expected supported path warning, got %v", lines)
+	}
+	if !strings.Contains(strings.Join(lines, " "), "lab-only research") {
+		t.Fatalf("expected lab-only warning, got %v", lines)
+	}
 }

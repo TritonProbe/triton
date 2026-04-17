@@ -281,7 +281,8 @@ func startupSummaryLines(cfg config.ServerConfig) []string {
 		lines = append(lines, "mixed-plane mode enabled by explicit allow_mixed_h3_planes=true (real http/3 + experimental udp h3)")
 	}
 	if len(experimentalFeatures(cfg)) > 0 {
-		lines = append(lines, "warning: experimental Triton UDP H3 is enabled; this path is lab-grade and should not be treated as production-stable")
+		lines = append(lines, "warning: experimental Triton UDP H3 is enabled; the supported production-like path is HTTPS/TCP plus optional real HTTP/3 via quic-go")
+		lines = append(lines, "warning: treat the Triton UDP H3 listener as lab-only research and do not read it as a production-stable transport surface")
 	}
 	return lines
 }
