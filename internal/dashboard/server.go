@@ -22,6 +22,7 @@ import (
 var assets embed.FS
 
 func New(addr string, store *storage.FileStore, opts Options) *Server {
+	opts.withDefaults()
 	mux := http.NewServeMux()
 	logger := opts.Logger
 	if logger == nil {
@@ -39,6 +40,8 @@ func New(addr string, store *storage.FileStore, opts Options) *Server {
 		store:          store,
 		trace:          opts.TraceDir,
 		config:         cloneMap(opts.Config),
+		version:        opts.Version,
+		buildTime:      opts.BuildTime,
 		startedAt:      time.Now().UTC(),
 		probeCache:     map[string]cachedProbeSummary{},
 		benchCache:     map[string]cachedBenchSummary{},
@@ -111,6 +114,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 			StartedAt:     s.startedAt.Format(time.RFC3339),
 			UptimeSeconds: int64(time.Since(s.startedAt).Seconds()),
 			TraceEnabled:  s.trace != "",
+			Version:       s.version,
+			BuildTime:     s.buildTime,
 		},
 		Storage: StorageStatus{
 			Probes:  len(probes),

@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/tritonprobe/triton/internal/buildinfo"
 	"github.com/tritonprobe/triton/internal/cli"
 )
 
@@ -18,6 +19,7 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	buildinfo.Set(version, buildTime)
 	app := cli.NewApp(version, buildTime)
 	app.SetStdout(stdout)
 	if err := app.Run(args); err != nil {

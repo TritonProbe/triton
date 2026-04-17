@@ -132,7 +132,9 @@ What is working well:
 - [x] Ensure release artifacts and `.goreleaser.yml` are still aligned with actual product positioning
   - Completed in: `.goreleaser.yml`, `OPERATIONS.md`, `README.md`, `scripts/ci-smoke.sh`, `scripts/ci-smoke.ps1`
   - Notes: release prep now includes smoke verification and the documented release checklist matches current product positioning
-- [ ] Add version/build metadata to all user-visible surfaces
+- [x] Add version/build metadata to all user-visible surfaces
+  - Completed in: `cmd/triton/main.go`, `internal/buildinfo/buildinfo.go`, `internal/appmux/mux.go`, `internal/dashboard/server.go`, `internal/dashboard/assets/app.js`
+  - Notes: CLI, root/capability payloads, and dashboard status surfaces now share the same version/build metadata source
 - [x] Add deployment checklist for self-signed vs custom cert operation
   - Completed in: `OPERATIONS.md`, `CONFIG.md`
   - Notes: docs now distinguish local runtime certificate use from shared or remote deployments that should provide custom cert/key material

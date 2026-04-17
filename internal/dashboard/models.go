@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/tritonprobe/triton/internal/bench"
+	"github.com/tritonprobe/triton/internal/buildinfo"
 	"github.com/tritonprobe/triton/internal/observability"
 	"github.com/tritonprobe/triton/internal/probe"
 	"github.com/tritonprobe/triton/internal/storage"
@@ -16,6 +17,8 @@ type Server struct {
 	store          *storage.FileStore
 	trace          string
 	config         map[string]any
+	version        string
+	buildTime      string
 	startedAt      time.Time
 	cacheMu        sync.RWMutex
 	probeCache     map[string]cachedProbeSummary
@@ -125,6 +128,8 @@ type DashboardStatus struct {
 	StartedAt     string `json:"started_at"`
 	UptimeSeconds int64  `json:"uptime_seconds"`
 	TraceEnabled  bool   `json:"trace_enabled"`
+	Version       string `json:"version"`
+	BuildTime     string `json:"build_time"`
 }
 
 type StorageStatus struct {
@@ -153,9 +158,20 @@ type listQuery struct {
 }
 
 type Options struct {
-	Username string
-	Password string
-	Logger   *observability.ManagedLogger
-	TraceDir string
-	Config   map[string]any
+	Username  string
+	Password  string
+	Logger    *observability.ManagedLogger
+	TraceDir  string
+	Config    map[string]any
+	Version   string
+	BuildTime string
+}
+
+func (o *Options) withDefaults() {
+	if o.Version == "" {
+		o.Version = buildinfo.Version
+	}
+	if o.BuildTime == "" {
+		o.BuildTime = buildinfo.BuildTime
+	}
 }

@@ -111,6 +111,13 @@ func TestDashboardListsAndServesTraces(t *testing.T) {
 	if storagePayload["traces"] != float64(2) {
 		t.Fatalf("expected two traces in status payload, got %#v", storagePayload["traces"])
 	}
+	dashboardPayload, ok := payload["dashboard"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected dashboard object in status payload, got %#v", payload["dashboard"])
+	}
+	if dashboardPayload["version"] != "dev" || dashboardPayload["build_time"] != "unknown" {
+		t.Fatalf("expected default build metadata in status payload, got %#v", dashboardPayload)
+	}
 
 	req = httptest.NewRequest(http.MethodGet, "/api/v1/traces", nil)
 	rec = httptest.NewRecorder()

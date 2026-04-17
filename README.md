@@ -103,7 +103,7 @@ Main endpoints currently available:
 - `GET /migration-test`
 - `GET /.well-known/triton`
 
-The capability document at `/.well-known/triton` now reflects the active runtime configuration, including real HTTP/3 availability, whether the experimental Triton UDP H3 path is enabled, and the current deployment/stability profile.
+The capability document at `/.well-known/triton` now reflects the active runtime configuration, including real HTTP/3 availability, whether the experimental Triton UDP H3 path is enabled, the current deployment/stability profile, and build metadata.
 
 ### 2. Probe
 
@@ -474,7 +474,7 @@ The embedded dashboard is currently a lightweight scaffold that serves:
 - `/api/v1/traces`
 - `/api/v1/traces/:name`
 
-The UI now renders status/config snapshots plus typed summaries for recent probes, benches, and trace files instead of showing only raw JSON blobs, including a top-level overview panel, probe test-plan/skipped-test hints, `0rtt` / `migration` probe summary hints, support-coverage pills, and richer benchmark summary pills plus bench health rollups.
+The UI now renders status/config snapshots plus typed summaries for recent probes, benches, and trace files instead of showing only raw JSON blobs, including a top-level overview panel, build/version status context, probe test-plan/skipped-test hints, `0rtt` / `migration` probe summary hints, support-coverage pills, and richer benchmark summary pills plus bench health rollups.
 The dashboard also supports in-page filtering, sorting, offset-based pagination, and result limits for probe, bench, and trace lists via query-driven API calls.
 List endpoints (`/api/v1/probes`, `/api/v1/benches`, `/api/v1/traces`) now accept `q`, `sort`, `limit`, and `offset` query parameters, and probe/bench list endpoints also support `view=summary` to omit heavier raw fields while keeping typed dashboard summaries.
 It now includes a compare/trend panel that contrasts recent probe coverage and bench health/best-protocol latency across the latest runs.

@@ -75,7 +75,9 @@ Response shape:
   "dashboard": {
     "started_at": "2026-04-14T00:00:00Z",
     "uptime_seconds": 123,
-    "trace_enabled": true
+    "trace_enabled": true,
+    "version": "dev",
+    "build_time": "2026-04-18T00:00:00Z"
   },
   "storage": {
     "probes": 10,

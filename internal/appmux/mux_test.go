@@ -112,6 +112,8 @@ func TestRootReflectsConfiguredProtocols(t *testing.T) {
 		ExperimentalFeatures: []string{"triton-udp-h3"},
 		DeploymentProfile:    "mixed",
 		Stability:            "mixed-stability",
+		Version:              "test-version",
+		BuildTime:            "2026-04-18T00:00:00Z",
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -126,6 +128,9 @@ func TestRootReflectsConfiguredProtocols(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"deployment_profile":"mixed"`) {
 		t.Fatalf("expected deployment profile in root payload, got %q", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"version":"test-version"`) || !strings.Contains(rec.Body.String(), `"build_time":"2026-04-18T00:00:00Z"`) {
+		t.Fatalf("expected build metadata in root payload, got %q", rec.Body.String())
 	}
 }
 
@@ -174,6 +179,8 @@ func TestHeadersRedirectStreamsAndCapabilities(t *testing.T) {
 		ExperimentalFeatures: []string{"triton-udp-h3"},
 		DeploymentProfile:    "mixed",
 		Stability:            "mixed-stability",
+		Version:              "test-version",
+		BuildTime:            "2026-04-18T00:00:00Z",
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/headers/2", nil)
@@ -208,6 +215,9 @@ func TestHeadersRedirectStreamsAndCapabilities(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"stability":"mixed-stability"`) {
 		t.Fatalf("expected stability in capabilities response, got %q", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"version":"test-version"`) || !strings.Contains(rec.Body.String(), `"build_time":"2026-04-18T00:00:00Z"`) {
+		t.Fatalf("expected build metadata in capabilities response, got %q", rec.Body.String())
 	}
 }
 

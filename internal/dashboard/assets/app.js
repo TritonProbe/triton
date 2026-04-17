@@ -36,13 +36,14 @@ function renderStatus(target, data) {
   target.innerHTML = `
     <div class="metric-grid">
       ${metric("Status", data.status || "unknown")}
+      ${metric("Version", dashboard.version || "dev")}
       ${metric("Uptime", `${dashboard.uptime_seconds || 0}s`)}
       ${metric("Trace", dashboard.trace_enabled ? "enabled" : "disabled")}
       ${metric("Probes", storage.probes || 0)}
       ${metric("Benches", storage.benches || 0)}
       ${metric("Traces", storage.traces || 0)}
     </div>
-    <p class="mini">Started at ${escapeHTML(dashboard.started_at || "n/a")}</p>
+    <p class="mini">Started at ${escapeHTML(dashboard.started_at || "n/a")} | build ${escapeHTML(dashboard.build_time || "unknown")}</p>
   `;
 }
 

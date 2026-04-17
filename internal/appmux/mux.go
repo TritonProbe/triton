@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/tritonprobe/triton/internal/buildinfo"
 )
 
 type Options struct {
@@ -22,6 +24,8 @@ type Options struct {
 	ExperimentalFeatures []string
 	DeploymentProfile    string
 	Stability            string
+	Version              string
+	BuildTime            string
 }
 
 func New() http.Handler {
@@ -49,6 +53,12 @@ func NewWithOptions(opts Options) http.Handler {
 	}
 	if opts.Stability == "" {
 		opts.Stability = "stable"
+	}
+	if opts.Version == "" {
+		opts.Version = buildinfo.Version
+	}
+	if opts.BuildTime == "" {
+		opts.BuildTime = buildinfo.BuildTime
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", methodHandler(func(w http.ResponseWriter, r *http.Request) {
@@ -84,6 +94,8 @@ func handleRoot(w http.ResponseWriter, _ *http.Request, opts Options) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"name":               "triton",
 		"mode":               "server",
+		"version":            opts.Version,
+		"build_time":         opts.BuildTime,
 		"capabilities":       append([]string(nil), opts.Capabilities...),
 		"protocols":          append([]string(nil), opts.SupportedProtocols...),
 		"deployment_profile": opts.DeploymentProfile,
@@ -305,7 +317,8 @@ func handleMigration(w http.ResponseWriter, _ *http.Request) {
 func handleCapabilities(w http.ResponseWriter, _ *http.Request, opts Options) {
 	payload := map[string]any{
 		"name":               "triton",
-		"version":            "dev",
+		"version":            opts.Version,
+		"build_time":         opts.BuildTime,
 		"protocols":          append([]string(nil), opts.SupportedProtocols...),
 		"deployment_profile": opts.DeploymentProfile,
 		"stability":          opts.Stability,
