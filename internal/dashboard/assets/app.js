@@ -386,6 +386,236 @@ function buildBenchPills(protocols) {
   }).join("");
 }
 
+function detailRow(label, value) {
+  return `<div class="detail-row"><span class="detail-key">${escapeHTML(String(label))}</span><span class="detail-value">${escapeHTML(String(value))}</span></div>`;
+}
+
+function selectionStore() {
+  if (!window.__tritonSelection) {
+    window.__tritonSelection = { probe: "", bench: "" };
+  }
+  return window.__tritonSelection;
+}
+
+function selectedId(kind) {
+  return selectionStore()[kind] || "";
+}
+
+function setSelectedId(kind, id) {
+  selectionStore()[kind] = id || "";
+}
+
+function displayDuration(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return `${(value / 1000000).toFixed(2)}ms`;
+  }
+  return String(value || "n/a");
+}
+
+function encodePath(value) {
+  return encodeURIComponent(String(value || ""));
+}
+
+function probeRiskSummary(result, analysis) {
+  const status = Number(result.status || 0);
+  const supportSummary = objectField(analysis, "support_summary");
+  const fidelitySummary = objectField(analysis, "fidelity_summary");
+  const skipped = arrayField(objectField(analysis, "test_plan"), "skipped");
+  if (status >= 500) {
+    return { label: "high risk", state: "error", summary: "probe ended with a server-side failure status" };
+  }
+  if ((supportSummary.unavailable || 0) > 0 || fidelityState(fidelitySummary) === "mixed") {
+    return { label: "review fidelity", state: "warn", summary: "advanced results include observed or partial fidelity and unavailable checks" };
+  }
+  if (skipped.length > 0) {
+    return { label: "skipped checks", state: "warn", summary: "some requested checks were skipped on this path" };
+  }
+  return { label: "stable", state: "ok", summary: "supported checks completed on the current path" };
+}
+
+function benchRiskSummary(result) {
+  const summary = result && result.summary ? result.summary : {};
+  if (Number(summary.failed_protocols || 0) > 0) {
+    return { label: "failed protocol", state: "error", summary: "at least one requested protocol failed in this run" };
+  }
+  if (Number(summary.degraded_protocols || 0) > 0) {
+    return { label: "degraded run", state: "warn", summary: "the run completed, but some protocols look degraded" };
+  }
+  return { label: "healthy", state: "ok", summary: "bench protocols completed without flagged degradation" };
+}
+
+function renderProbeDetail(target, result) {
+  const analysis = probeAnalysisForItem(result);
+  const latency = objectField(analysis, "latency");
+  const streams = objectField(analysis, "streams");
+  const response = objectField(analysis, "response");
+  const supportSummary = objectField(analysis, "support_summary");
+  const fidelitySummary = objectField(analysis, "fidelity_summary");
+  const testPlan = objectField(analysis, "test_plan");
+  const support = objectField(analysis, "support");
+  const risk = probeRiskSummary(result, analysis);
+  const supportEntries = Object.entries(support)
+    .filter(([, entry]) => entry && typeof entry === "object")
+    .slice(0, 8)
+    .map(([name, entry]) => detailRow(name, `${entry.coverage || "unknown"} / ${entry.state || "unknown"}`))
+    .join("");
+
+  target.innerHTML = `
+    <div class="detail-summary">
+      <div class="detail-spotlight">
+        <div class="detail-head">
+          <div class="detail-title">
+            <strong>${escapeHTML(result.target || result.id || "probe")}</strong>
+            <span class="detail-meta">ID ${escapeHTML(result.id || "n/a")} | proto ${escapeHTML(result.proto || "n/a")} | duration ${escapeHTML(displayDuration(result.duration))}</span>
+          </div>
+          ${pillState(risk.label, risk.state)}
+        </div>
+        <div class="metric-grid">
+          ${metric("Status", result.status || "n/a")}
+          ${metric("Fidelity", fidelityState(fidelitySummary))}
+          ${metric("Coverage", typeof supportSummary.coverage_ratio === "number" ? `${Math.round(supportSummary.coverage_ratio * 100)}%` : "n/a")}
+          ${metric("P95", latency.p95 ? `${Number(latency.p95).toFixed(2)}ms` : "n/a")}
+          ${metric("Streams", streams.attempted || 0)}
+          ${metric("Throughput", response.throughput_bytes_sec ? `${Math.round(response.throughput_bytes_sec)} B/s` : "n/a")}
+        </div>
+        <p class="mini">${escapeHTML(risk.summary)}</p>
+      </div>
+      <div class="detail-columns">
+        <section class="detail-section">
+          <h3>Fidelity & Plan</h3>
+          <div class="pill-row">
+            ${Array.isArray(fidelitySummary.partial) && fidelitySummary.partial.length ? pillHeuristic(`partial ${fidelitySummary.partial.join(",")}`) : ""}
+            ${Array.isArray(fidelitySummary.observed) && fidelitySummary.observed.length ? pillMuted(`observed ${fidelitySummary.observed.join(",")}`) : ""}
+            ${Array.isArray(testPlan.executed) && testPlan.executed.length ? pill(`executed ${testPlan.executed.join(",")}`) : ""}
+          </div>
+          <p class="mini">${escapeHTML(fidelityLegend(fidelitySummary))}</p>
+          ${fidelitySummary.notice ? `<p class="mini">${escapeHTML(String(fidelitySummary.notice))}</p>` : ""}
+          ${Array.isArray(testPlan.skipped) && testPlan.skipped.length ? `<p class="mini">Skipped: ${escapeHTML(testPlan.skipped.map((entry) => `${entry.name}: ${entry.reason}`).join(" | "))}</p>` : ""}
+        </section>
+        <section class="detail-section">
+          <h3>Support Snapshot</h3>
+          <div class="detail-list">
+            ${detailRow("requested", supportSummary.requested_tests || 0)}
+            ${detailRow("available", supportSummary.available || 0)}
+            ${detailRow("not-run", supportSummary.not_run || 0)}
+            ${detailRow("unavailable", supportSummary.unavailable || 0)}
+            ${detailRow("full", supportSummary.full || 0)}
+            ${detailRow("observed", supportSummary.observed || 0)}
+            ${detailRow("partial", supportSummary.partial || 0)}
+          </div>
+        </section>
+      </div>
+      <section class="detail-section">
+        <h3>Advanced Checks</h3>
+        <div class="detail-list">
+          ${supportEntries || `<p class="mini">No advanced support entries captured for this probe.</p>`}
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderBenchDetail(target, result) {
+  const summary = result && result.summary ? result.summary : {};
+  const protocols = benchProtocolsForItem(result);
+  const risk = benchRiskSummary(result);
+  const protocolRows = protocols.slice(0, 8).map(([name, stats]) => {
+    const latency = stats && stats.latency_ms ? stats.latency_ms : {};
+    return detailRow(name, `req/s ${Number(stats.req_per_sec || 0).toFixed(2)} | p95 ${Number(latency.p95 || 0).toFixed(2)}ms | err ${Math.round(Number(stats.error_rate || 0) * 100)}%`);
+  }).join("");
+
+  target.innerHTML = `
+    <div class="detail-summary">
+      <div class="detail-spotlight">
+        <div class="detail-head">
+          <div class="detail-title">
+            <strong>${escapeHTML(result.target || result.id || "bench")}</strong>
+            <span class="detail-meta">ID ${escapeHTML(result.id || "n/a")} | duration ${escapeHTML(displayDuration(result.duration))} | concurrency ${escapeHTML(String(result.concurrency || 0))}</span>
+          </div>
+          ${pillState(risk.label, risk.state)}
+        </div>
+        <div class="metric-grid">
+          ${metric("Protocols", summary.protocols || protocols.length || 0)}
+          ${metric("Healthy", summary.healthy_protocols || 0)}
+          ${metric("Degraded", summary.degraded_protocols || 0)}
+          ${metric("Failed", summary.failed_protocols || 0)}
+          ${metric("Best", summary.best_protocol || "n/a")}
+          ${metric("Riskiest", summary.riskiest_protocol || "n/a")}
+        </div>
+        <p class="mini">${escapeHTML(risk.summary)}</p>
+      </div>
+      <div class="detail-columns">
+        <section class="detail-section">
+          <h3>Run Summary</h3>
+          <div class="detail-list">
+            ${detailRow("target", result.target || "n/a")}
+            ${detailRow("duration", displayDuration(result.duration))}
+            ${detailRow("concurrency", result.concurrency || 0)}
+            ${detailRow("best protocol", summary.best_protocol || "n/a")}
+            ${detailRow("riskiest protocol", summary.riskiest_protocol || "n/a")}
+          </div>
+        </section>
+        <section class="detail-section">
+          <h3>Protocol Health</h3>
+          <div class="detail-list">
+            ${protocolRows || `<p class="mini">No protocol stats captured for this bench.</p>`}
+          </div>
+        </section>
+      </div>
+    </div>
+  `;
+}
+
+async function loadDetail(kind, id) {
+  if (!id) {
+    return;
+  }
+  const target = document.getElementById(kind === "probe" ? "probe-detail" : "bench-detail");
+  if (!target) {
+    return;
+  }
+  const path = kind === "probe" ? `/api/v1/probes/${encodePath(id)}` : `/api/v1/benches/${encodePath(id)}`;
+  target.innerHTML = `<p class="mini">Loading ${escapeHTML(kind)} detail...</p>`;
+  try {
+    const response = await fetch(path);
+    const data = await response.json();
+    setSelectedId(kind, id);
+    if (kind === "probe") {
+      renderProbeDetail(target, data);
+    } else {
+      renderBenchDetail(target, data);
+    }
+  } catch (error) {
+    target.textContent = String(error);
+  }
+}
+
+function bindDetailButtons(target, kind) {
+  const buttons = target.querySelectorAll(`[data-${kind}-id]`);
+  buttons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = button.getAttribute(`data-${kind}-id`);
+      if (!id) {
+        return;
+      }
+      setSelectedId(kind, id);
+      loadDetail(kind, id);
+    });
+  });
+}
+
+function ensureDetailSelection(kind, items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return;
+  }
+  const current = selectedId(kind);
+  const match = items.find((item) => item && item.id === current);
+  const next = match ? current : items[0].id;
+  if (next) {
+    loadDetail(kind, next);
+  }
+}
+
 function renderProbes(target, items) {
   if (!Array.isArray(items) || items.length === 0) {
     const q = document.getElementById("probes-query");
@@ -442,13 +672,20 @@ function renderProbes(target, items) {
     const metrics = probeMetricValues(latency, streams, response, zeroRTT, migration, supportSummary);
     const statusValue = Number(item.status || 0);
     const statusState = statusValue >= 200 && statusValue < 400 ? "ok" : (statusValue >= 400 ? "error" : "muted");
+    const selected = item.id && item.id === selectedId("probe");
     return `
       <article class="record">
-        <h3>${escapeHTML(item.target || item.id || "probe")}</h3>
+        <div class="record-head">
+          <div class="record-title">
+            <h3>${escapeHTML(item.target || item.id || "probe")}</h3>
+            <span class="record-meta">ID ${escapeHTML(item.id || "n/a")} | proto ${escapeHTML(item.proto || "n/a")} | duration ${escapeHTML(displayDuration(item.duration))}</span>
+          </div>
+          <button class="record-action ${selected ? "is-selected" : ""}" data-probe-id="${escapeHTML(item.id || "")}">${selected ? "Selected" : "Inspect"}</button>
+        </div>
         <div class="metric-grid">
           ${metric("Status", item.status || "n/a")}
           ${metric("Proto", item.proto || "n/a")}
-          ${metric("Total", item.duration || "n/a")}
+          ${metric("Total", displayDuration(item.duration))}
           ${metric("P95", metrics.p95)}
           ${metric("Streams", metrics.streams)}
           ${metric("Bytes", metrics.bytes)}
@@ -471,6 +708,8 @@ function renderProbes(target, items) {
       </article>
     `;
   }).join("")}</div>`;
+  bindDetailButtons(target, "probe");
+  ensureDetailSelection("probe", items);
 }
 
 function renderBenches(target, items) {
@@ -485,11 +724,18 @@ function renderBenches(target, items) {
     const pills = buildBenchPills(protocols);
     const top = benchTopStats(protocols);
     const healthState = (summary.failed_protocols || 0) > 0 ? "error" : ((summary.degraded_protocols || 0) > 0 ? "warn" : "ok");
+    const selected = item.id && item.id === selectedId("bench");
     return `
       <article class="record">
-        <h3>${escapeHTML(item.target || item.id || "bench")}</h3>
+        <div class="record-head">
+          <div class="record-title">
+            <h3>${escapeHTML(item.target || item.id || "bench")}</h3>
+            <span class="record-meta">ID ${escapeHTML(item.id || "n/a")} | duration ${escapeHTML(displayDuration(item.duration))} | concurrency ${escapeHTML(String(item.concurrency || 0))}</span>
+          </div>
+          <button class="record-action ${selected ? "is-selected" : ""}" data-bench-id="${escapeHTML(item.id || "")}">${selected ? "Selected" : "Inspect"}</button>
+        </div>
         <div class="metric-grid">
-          ${metric("Duration", item.duration || "n/a")}
+          ${metric("Duration", displayDuration(item.duration))}
           ${metric("Concurrency", item.concurrency || 0)}
           ${metric("Protocols", protocols.length)}
           ${metric("Top Req/s", top.reqPerSec)}
@@ -503,6 +749,8 @@ function renderBenches(target, items) {
       </article>
     `;
   }).join("")}</div>`;
+  bindDetailButtons(target, "bench");
+  ensureDetailSelection("bench", items);
 }
 
 function renderTraces(target, items) {
