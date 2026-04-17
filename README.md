@@ -536,6 +536,10 @@ Run everything:
 go test ./...
 ```
 
+Coverage note:
+
+- generated coverage artifacts such as `coverage`, `coverage_review`, and `coverage.out` are local-only verification outputs and should not be committed
+
 ## Build And Distribution Goals
 
 Specification targets:
@@ -573,6 +577,11 @@ Developer verification helpers:
 - `make perf-check`
 - `make lint`
 - `make security`
+
+Repository maintenance helper:
+
+- `scripts/bootstrap-v1-hardening.ps1`
+- use `-DryRun` first to preview label, milestone, and issue creation before writing to GitHub
 
 ## Roadmap
 

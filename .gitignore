@@ -11,6 +11,8 @@
 *.test
 *.out
 *.coverprofile
+coverage
+coverage_review
 coverage.out
 
 # Local runtime data
