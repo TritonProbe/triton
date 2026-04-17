@@ -577,6 +577,14 @@ Current automation now includes:
 - tag-based release automation for `v*` tags via GoReleaser
 - cross-platform archives for Linux, macOS, and Windows
 
+Container runtime notes:
+
+- the image now runs as non-root user `10001`
+- default command is `triton server`
+- runtime state is expected under `/var/lib/triton`
+- exposed ports cover supported HTTPS/TCP (`8443/tcp`), supported real HTTP/3 (`4434/udp`), experimental lab UDP H3 (`4433/udp`), and dashboard (`9090/tcp`)
+- see [OPERATIONS.md](/d:/Codebox/TritonProbe/OPERATIONS.md) for persistence, cert, and remote-exposure guidance
+
 Developer verification helpers:
 
 - `make clean`

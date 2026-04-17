@@ -142,7 +142,9 @@ What is working well:
   - Notes: docs now distinguish local runtime certificate use from shared or remote deployments that should provide custom cert/key material
 - [x] Add operational monitoring guidance around `/healthz`, `/readyz`, `/metrics`, access logs, and traces
   - Completed in: `OPERATIONS.md`
-- [ ] Verify container image hardening and runtime assumptions
+- [x] Verify container image hardening and runtime assumptions
+  - Completed in: `Dockerfile`, `.dockerignore`, `OPERATIONS.md`, `README.md`
+  - Notes: the image now runs as non-root, carries CA roots, defaults to `triton server`, exposes the supported real HTTP/3 port, and documents writable runtime/persistence assumptions
 
 ## Beyond v1.0: Future Enhancements
 

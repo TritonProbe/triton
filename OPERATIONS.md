@@ -127,6 +127,30 @@ Recommendations:
 - periodically prune old `.sqlog` files
 - use dashboard trace list/filtering for inspection, not long-term archival
 
+## Container Runtime Assumptions
+
+The current container image is designed around these assumptions:
+
+- it runs as non-root user `10001`
+- default working directory is `/var/lib/triton`
+- default command is `triton server`
+- default writable runtime state lives under `/var/lib/triton/triton-data`
+- the image includes CA certificates for outbound `probe` and `bench` TLS verification
+
+Exposed ports:
+
+- `8443/tcp` for HTTPS/TCP
+- `4434/udp` for supported real HTTP/3 when enabled
+- `4433/udp` for experimental lab UDP H3 when enabled
+- `9090/tcp` for the dashboard
+
+Container recommendations:
+
+- mount `/var/lib/triton` or at least `/var/lib/triton/triton-data` if you want persistent results and generated self-signed cert material
+- provide explicit `server.cert` and `server.key` for shared or remote deployments
+- do not expose `4433/udp` unless you intentionally want the lab-only transport surface
+- keep dashboard exposure loopback-only or pair remote bind with auth and network controls
+
 ## Supported vs Lab Change Control
 
 If you enable any of the following, treat the runtime as a lab or mixed-stability deployment:

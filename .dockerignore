@@ -6,3 +6,8 @@ dist
 triton-data
 triton.exe
 *.log
+coverage
+coverage_review
+coverage.out
+smoke-server.out.log
+smoke-server.err.log
