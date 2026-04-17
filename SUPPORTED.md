@@ -4,6 +4,8 @@ This document is the canonical description of what Triton supports today.
 
 If another document describes a larger future architecture, backlog, or research goal, prefer this file for current-state truth.
 
+For the lab-only transport boundary in one place, see [EXPERIMENTAL.md](/d:/Codebox/TritonProbe/EXPERIMENTAL.md).
+
 Use this file as the first answer to questions such as:
 
 - what is supported today
@@ -31,6 +33,8 @@ Use this file as the first answer to questions such as:
 - `triton lab`
 - `triton://...` targets
 - Experimental in-repo transport and HTTP/3 layers under `internal/quic/*` and `internal/h3/*`
+
+These surfaces are documented in more detail in [EXPERIMENTAL.md](/d:/Codebox/TritonProbe/EXPERIMENTAL.md).
 
 The supported HTTP/3 implementation path is `quic-go` via `internal/realh3`.
 

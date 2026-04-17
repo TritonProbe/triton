@@ -14,6 +14,8 @@ Triton currently runs three transport planes in one binary:
 
 The supported production-like path is the real HTTP server + real HTTP/3 via `quic-go`.
 The in-repo `internal/quic` and `internal/h3` stacks are intentionally experimental.
+
+For the explicit lab-only boundary and usage guidance, see [EXPERIMENTAL.md](/d:/Codebox/TritonProbe/EXPERIMENTAL.md).
 Product positioning and conditional custom-engine milestones are tracked in [.project/ENGINE_STRATEGY.md](./.project/ENGINE_STRATEGY.md).
 
 If this file and [SUPPORTED.md](/d:/Codebox/TritonProbe/SUPPORTED.md) ever appear to disagree, treat `SUPPORTED.md` as authoritative for current-state truth.

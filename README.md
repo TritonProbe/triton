@@ -17,6 +17,8 @@ Current product positioning is pragmatic: real HTTP diagnostics and real HTTP/3 
 
 Canonical reference: [SUPPORTED.md](/d:/Codebox/TritonProbe/SUPPORTED.md)
 
+Lab-only transport reference: [EXPERIMENTAL.md](/d:/Codebox/TritonProbe/EXPERIMENTAL.md)
+
 If any section below conflicts with current running behavior, prefer [SUPPORTED.md](/d:/Codebox/TritonProbe/SUPPORTED.md) first, then [ARCHITECTURE.md](/d:/Codebox/TritonProbe/ARCHITECTURE.md), then the code.
 
 Treat the following as the implementation truth for this repository today:
@@ -71,6 +73,7 @@ Running real HTTP/3 (`--listen-h3`) and experimental UDP H3 (`--listen`) togethe
 Remote dashboard binding is blocked by default; use `--allow-remote-dashboard` only when you intentionally want non-loopback access, and pair it with dashboard auth.
 
 If you want to work with the experimental Triton UDP H3 stack directly, prefer `triton lab` instead of mixing it into the normal `server` command.
+For the explicit research-only boundary around that surface, see [EXPERIMENTAL.md](/d:/Codebox/TritonProbe/EXPERIMENTAL.md).
 
 Examples:
 

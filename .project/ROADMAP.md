@@ -116,7 +116,9 @@ What is working well:
 ### Documentation and contributor clarity
 
 - [x] Publish an authoritative "Supported Features" document
-- [ ] Publish an "Experimental Lab Surface" document for `internal/quic/*` and `triton lab`
+- [x] Publish an "Experimental Lab Surface" document for `internal/quic/*` and `triton lab`
+  - Completed in: `EXPERIMENTAL.md`, `README.md`, `SUPPORTED.md`, `ARCHITECTURE.md`
+  - Notes: the lab-only transport boundary now has a dedicated document that separates research usage from supported-path claims
 - [ ] Add a concise onboarding path for contributors
 - [x] Add a config reference with examples for server, probe, bench, traces, and dashboard auth
   - Completed in: `CONFIG.md`
