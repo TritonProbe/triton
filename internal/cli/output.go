@@ -168,6 +168,9 @@ func renderProbeAnalysisTable(b *strings.Builder, analysis map[string]any) {
 		return
 	}
 	b.WriteString("\nAnalysis\n")
+	if legend := probeFidelityLegend(analysis); legend != "" {
+		fmt.Fprintf(b, "  %-10s %s\n", "fidelity", legend)
+	}
 	if note := probeHeuristicNote(analysis); note != "" {
 		fmt.Fprintf(b, "  %-10s %s\n", "notice", note)
 	}
@@ -200,23 +203,26 @@ func renderProbeAnalysisTable(b *strings.Builder, analysis map[string]any) {
 		fmt.Fprintf(b, "  %-10s present=%v values=%v\n", "alt-svc", altSvc["present"], altSvc["values"])
 	}
 	if qpack, ok := anyToQPACKAnalysis(analysis["qpack"]); ok {
-		fmt.Fprintf(b, "  %-10s [estimated] headers=%v raw=%v block=%v ratio=%v\n",
+		fmt.Fprintf(b, "  %-10s [%s] headers=%v raw=%v block=%v ratio=%v\n",
 			"qpack",
+			probeFieldFidelity(analysis, "qpack"),
 			qpack.HeaderCount,
 			qpack.RawBytes,
 			qpack.EstimatedBlock,
 			qpack.EstimatedRatio)
 	}
 	if loss, ok := anyToLossAnalysis(analysis["loss"]); ok {
-		fmt.Fprintf(b, "  %-10s [heuristic] signal=%v errors=%v success=%v\n",
+		fmt.Fprintf(b, "  %-10s [%s] signal=%v errors=%v success=%v\n",
 			"loss",
+			probeFieldFidelity(analysis, "loss"),
 			loss.Signal,
 			loss.StreamErrors,
 			loss.SuccessRate)
 	}
 	if congestion, ok := anyToCongestionAnalysis(analysis["congestion"]); ok {
-		fmt.Fprintf(b, "  %-10s [heuristic] signal=%v p50=%v p95=%v ratio=%v\n",
+		fmt.Fprintf(b, "  %-10s [%s] signal=%v p50=%v p95=%v ratio=%v\n",
 			"congestion",
+			probeFieldFidelity(analysis, "congestion"),
 			congestion.Signal,
 			congestion.P50MS,
 			congestion.P95MS,
@@ -244,8 +250,9 @@ func renderProbeAnalysisTable(b *strings.Builder, analysis map[string]any) {
 			ecn.PacketMarks)
 	}
 	if spin, ok := anyToSpinBitAnalysis(analysis["spin-bit"]); ok {
-		fmt.Fprintf(b, "  %-10s [estimated] observed=%v rtt=%vms stability=%v\n",
+		fmt.Fprintf(b, "  %-10s [%s] observed=%v rtt=%vms stability=%v\n",
 			"spin-bit",
+			probeFieldFidelity(analysis, "spin-bit"),
 			spin.SpinObserved,
 			spin.RTTEstimateMS,
 			spin.Stability)
@@ -293,12 +300,15 @@ func renderProbeAnalysisTable(b *strings.Builder, analysis map[string]any) {
 		}
 	}
 	if summary, ok := anyToSupportSummary(analysis["support_summary"]); ok {
-		fmt.Fprintf(b, "  %-10s requested=%v available=%v not-run=%v unavailable=%v ratio=%v\n",
+		fmt.Fprintf(b, "  %-10s requested=%v available=%v not-run=%v unavailable=%v full=%v observed=%v partial=%v ratio=%v\n",
 			"coverage",
 			summary.RequestedTests,
 			summary.Available,
 			summary.NotRun,
 			summary.Unavailable,
+			summary.Full,
+			summary.Observed,
+			summary.Partial,
 			summary.CoverageRatio)
 	}
 	for _, key := range sortedAnyKeys(analysis) {
@@ -314,6 +324,9 @@ func renderProbeAnalysisMarkdown(b *strings.Builder, analysis map[string]any) {
 		return
 	}
 	b.WriteString("## Analysis\n\n")
+	if legend := probeFidelityLegend(analysis); legend != "" {
+		fmt.Fprintf(b, "- Fidelity Legend: %s\n", legend)
+	}
 	if note := probeHeuristicNote(analysis); note != "" {
 		fmt.Fprintf(b, "- Notice: %s\n", note)
 	}
@@ -333,15 +346,18 @@ func renderProbeAnalysisMarkdown(b *strings.Builder, analysis map[string]any) {
 		fmt.Fprintf(b, "- Alt-Svc: present `%v`, values `%v`\n", altSvc["present"], altSvc["values"])
 	}
 	if qpack, ok := anyToQPACKAnalysis(analysis["qpack"]); ok {
-		fmt.Fprintf(b, "- QPACK (estimated): headers `%v`, raw `%v`, block `%v`, ratio `%v`\n",
+		fmt.Fprintf(b, "- QPACK (%s): headers `%v`, raw `%v`, block `%v`, ratio `%v`\n",
+			probeFieldFidelity(analysis, "qpack"),
 			qpack.HeaderCount, qpack.RawBytes, qpack.EstimatedBlock, qpack.EstimatedRatio)
 	}
 	if loss, ok := anyToLossAnalysis(analysis["loss"]); ok {
-		fmt.Fprintf(b, "- Loss (heuristic): signal `%v`, stream errors `%v`, success `%v`\n",
+		fmt.Fprintf(b, "- Loss (%s): signal `%v`, stream errors `%v`, success `%v`\n",
+			probeFieldFidelity(analysis, "loss"),
 			loss.Signal, loss.StreamErrors, loss.SuccessRate)
 	}
 	if congestion, ok := anyToCongestionAnalysis(analysis["congestion"]); ok {
-		fmt.Fprintf(b, "- Congestion (heuristic): signal `%v`, p50 `%v`, p95 `%v`, spread `%v`\n",
+		fmt.Fprintf(b, "- Congestion (%s): signal `%v`, p50 `%v`, p95 `%v`, spread `%v`\n",
+			probeFieldFidelity(analysis, "congestion"),
 			congestion.Signal, congestion.P50MS, congestion.P95MS, congestion.SpreadRatio)
 	}
 	if version, ok := anyToVersionAnalysis(analysis["version"]); ok {
@@ -357,7 +373,8 @@ func renderProbeAnalysisMarkdown(b *strings.Builder, analysis map[string]any) {
 			ecn.ECNVisible, ecn.ObservedProto, ecn.PacketMarks)
 	}
 	if spin, ok := anyToSpinBitAnalysis(analysis["spin-bit"]); ok {
-		fmt.Fprintf(b, "- Spin Bit (estimated): observed `%v`, rtt `%vms`, stability `%v`\n",
+		fmt.Fprintf(b, "- Spin Bit (%s): observed `%v`, rtt `%vms`, stability `%v`\n",
+			probeFieldFidelity(analysis, "spin-bit"),
 			spin.SpinObserved, spin.RTTEstimateMS, spin.Stability)
 	}
 	if zeroRTT, ok := anyToZeroRTTAnalysis(analysis["0rtt"]); ok {
@@ -397,11 +414,14 @@ func renderProbeAnalysisMarkdown(b *strings.Builder, analysis map[string]any) {
 		}
 	}
 	if summary, ok := anyToSupportSummary(analysis["support_summary"]); ok {
-		fmt.Fprintf(b, "- Coverage Summary: requested `%v`, available `%v`, not-run `%v`, unavailable `%v`, ratio `%v`\n",
+		fmt.Fprintf(b, "- Coverage Summary: requested `%v`, available `%v`, not-run `%v`, unavailable `%v`, full `%v`, observed `%v`, partial `%v`, ratio `%v`\n",
 			summary.RequestedTests,
 			summary.Available,
 			summary.NotRun,
 			summary.Unavailable,
+			summary.Full,
+			summary.Observed,
+			summary.Partial,
 			summary.CoverageRatio)
 	}
 	for _, key := range sortedAnyKeys(analysis) {
@@ -909,6 +929,7 @@ func anyToSupportSummary(value any) (probe.SupportSummary, bool) {
 			NotRun:         intValue(typed["not_run"]),
 			Unavailable:    intValue(typed["unavailable"]),
 			Full:           intValue(typed["full"]),
+			Observed:       intValue(typed["observed"]),
 			Partial:        intValue(typed["partial"]),
 			CoverageRatio:  floatValue(typed["coverage_ratio"]),
 		}, true
@@ -922,11 +943,26 @@ func anyToFidelitySummary(value any) (probe.FidelitySummary, bool) {
 	case probe.FidelitySummary:
 		return typed, true
 	case map[string]any:
+		definitions := map[string]probe.FidelityDefinition{}
+		if rawDefinitions, ok := typed["definitions"].(map[string]any); ok {
+			for key, item := range rawDefinitions {
+				switch entry := item.(type) {
+				case probe.FidelityDefinition:
+					definitions[key] = entry
+				case map[string]any:
+					definitions[key] = probe.FidelityDefinition{
+						Label:       stringValue(entry["label"]),
+						Description: stringValue(entry["description"]),
+					}
+				}
+			}
+		}
 		return probe.FidelitySummary{
 			Full:        anyToStringSlice(typed["full"]),
 			Partial:     anyToStringSlice(typed["partial"]),
 			Observed:    anyToStringSlice(typed["observed"]),
 			Unavailable: anyToStringSlice(typed["unavailable"]),
+			Definitions: definitions,
 			PacketLevel: boolValue(typed["packet_level"]),
 			Notice:      stringValue(typed["notice"]),
 		}, true
@@ -936,6 +972,9 @@ func anyToFidelitySummary(value any) (probe.FidelitySummary, bool) {
 }
 
 func probeHeuristicNote(analysis map[string]any) string {
+	if fidelity, ok := anyToFidelitySummary(analysis["fidelity_summary"]); ok && fidelity.Notice != "" {
+		return fidelity.Notice
+	}
 	support := anyToSupportEntries(analysis["support"])
 	if len(support) == 0 {
 		return ""
@@ -951,6 +990,56 @@ func probeHeuristicNote(analysis map[string]any) string {
 		return ""
 	}
 	return fmt.Sprintf("advanced probe fields are not all packet-level telemetry; partial coverage applies to %s", strings.Join(partial, ", "))
+}
+
+func probeFidelityLegend(analysis map[string]any) string {
+	fidelity, ok := anyToFidelitySummary(analysis["fidelity_summary"])
+	if !ok || len(fidelity.Definitions) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, 3)
+	for _, key := range []string{"full", "observed", "partial"} {
+		definition, ok := fidelity.Definitions[key]
+		if !ok || definition.Description == "" {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s=%s", key, definition.Description))
+	}
+	return strings.Join(parts, "; ")
+}
+
+func probeFieldFidelity(analysis map[string]any, name string) string {
+	fidelity, ok := anyToFidelitySummary(analysis["fidelity_summary"])
+	if ok {
+		for _, candidate := range fidelity.Full {
+			if candidate == name {
+				return "full"
+			}
+		}
+		for _, candidate := range fidelity.Observed {
+			if candidate == name {
+				return "observed"
+			}
+		}
+		for _, candidate := range fidelity.Partial {
+			if candidate == name {
+				return "partial"
+			}
+		}
+		for _, candidate := range fidelity.Unavailable {
+			if candidate == name {
+				return "unavailable"
+			}
+		}
+	}
+	switch name {
+	case "version", "retry", "ecn":
+		return "observed"
+	case "qpack", "loss", "congestion", "spin-bit", "0rtt", "migration":
+		return "partial"
+	default:
+		return "full"
+	}
 }
 
 func sortedSupportKeys(input map[string]probe.SupportEntry) []string {

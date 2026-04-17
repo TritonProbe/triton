@@ -197,8 +197,8 @@ func TestDashboardProbeAndBenchListsReturnSummaries(t *testing.T) {
 		Duration: 150 * time.Millisecond,
 		Analysis: map[string]any{
 			"latency":          map[string]any{"p95": 12.5},
-			"support_summary":  probe.SupportSummary{RequestedTests: 3, Available: 1, NotRun: 1, Unavailable: 1, CoverageRatio: 0.33},
-			"fidelity_summary": probe.FidelitySummary{Partial: []string{"qpack"}, Observed: []string{"version"}, PacketLevel: false, Notice: "advanced probe fields are not all packet-level telemetry"},
+			"support_summary":  probe.SupportSummary{RequestedTests: 3, Available: 1, NotRun: 1, Unavailable: 1, Observed: 1, CoverageRatio: 0.33},
+			"fidelity_summary": probe.FidelitySummary{Partial: []string{"qpack"}, Observed: []string{"version"}, Definitions: map[string]probe.FidelityDefinition{"full": {Label: "full", Description: "direct current-path diagnostics"}, "observed": {Label: "observed", Description: "visible protocol/client-layer observation"}, "partial": {Label: "partial", Description: "heuristic, estimate, or capability-check output"}}, PacketLevel: false, Notice: "advanced probe fields are not all packet-level telemetry"},
 		},
 	}); err != nil {
 		t.Fatal(err)
@@ -576,6 +576,9 @@ func TestDashboardAssetsAndHead(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "0rtt") || !strings.Contains(rec.Body.String(), "migration") || !strings.Contains(rec.Body.String(), "qpack") || !strings.Contains(rec.Body.String(), "loss") || !strings.Contains(rec.Body.String(), "congestion") || !strings.Contains(rec.Body.String(), "version") || !strings.Contains(rec.Body.String(), "retry") || !strings.Contains(rec.Body.String(), "ecn") || !strings.Contains(rec.Body.String(), "spin") || !strings.Contains(rec.Body.String(), "Coverage") || !strings.Contains(rec.Body.String(), "Support summary") {
 		t.Fatalf("expected advanced probe renderer hints in app.js, got %q", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Fidelity legend") || !strings.Contains(rec.Body.String(), "visible protocol/client-layer observation") || !strings.Contains(rec.Body.String(), "heuristic, estimate, or capability-check output") {
+		t.Fatalf("expected fidelity legend renderer hints in app.js, got %q", rec.Body.String())
 	}
 	if !strings.Contains(rec.Body.String(), "supportPills") || !strings.Contains(rec.Body.String(), ".coverage") {
 		t.Fatalf("expected support coverage renderer hints in app.js, got %q", rec.Body.String())

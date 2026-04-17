@@ -6,6 +6,34 @@ import (
 	"strings"
 )
 
+func fidelityDefinitions() map[string]FidelityDefinition {
+	return map[string]FidelityDefinition{
+		"full": {
+			Label:       "full",
+			Description: "direct current-path diagnostics",
+		},
+		"observed": {
+			Label:       "observed",
+			Description: "visible protocol/client-layer observation",
+		},
+		"partial": {
+			Label:       "partial",
+			Description: "heuristic, estimate, or capability-check output",
+		},
+		"unavailable": {
+			Label:       "unavailable",
+			Description: "requested but not available on the current path",
+		},
+	}
+}
+
+func fidelityDefinitionNotice(definitions map[string]FidelityDefinition) string {
+	full := definitions["full"].Description
+	observed := definitions["observed"].Description
+	partial := definitions["partial"].Description
+	return fmt.Sprintf("fidelity legend: full=%s; observed=%s; partial=%s", full, observed, partial)
+}
+
 func newTestPlan(requested []string) testPlan {
 	normalized := make([]string, 0, len(requested))
 	seen := map[string]struct{}{}
@@ -160,6 +188,8 @@ func buildSupportRollup(support map[string]SupportEntry) SupportSummary {
 		switch entry.Coverage {
 		case "full":
 			summary.Full++
+		case "observed":
+			summary.Observed++
 		case "partial":
 			summary.Partial++
 		}
@@ -179,7 +209,11 @@ func buildSupportRollup(support map[string]SupportEntry) SupportSummary {
 }
 
 func buildFidelitySummary(support map[string]SupportEntry) FidelitySummary {
-	summary := FidelitySummary{PacketLevel: true}
+	definitions := fidelityDefinitions()
+	summary := FidelitySummary{
+		Definitions: definitions,
+		PacketLevel: true,
+	}
 	if len(support) == 0 {
 		return summary
 	}
@@ -210,7 +244,7 @@ func buildFidelitySummary(support map[string]SupportEntry) FidelitySummary {
 		if len(summary.Observed) > 0 {
 			parts = append(parts, fmt.Sprintf("observed=%s", strings.Join(summary.Observed, ",")))
 		}
-		summary.Notice = "advanced probe fields are not all packet-level telemetry; " + strings.Join(parts, "; ")
+		summary.Notice = "advanced probe fields are not all packet-level telemetry; " + strings.Join(parts, "; ") + "; " + fidelityDefinitionNotice(definitions)
 	}
 	return summary
 }

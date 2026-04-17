@@ -47,14 +47,14 @@ func TestRenderProbeMarkdown(t *testing.T) {
 		Proto:    "HTTP/2.0",
 		Duration: 150 * time.Millisecond,
 		Analysis: map[string]any{
-			"response": map[string]any{"body_bytes": 5, "status_class": 2, "throughput_bytes_sec": 99},
-			"qpack":    map[string]any{"header_count": 4, "raw_bytes": 120, "estimated_block": 84, "estimated_ratio": 0.7},
-			"loss":     map[string]any{"signal": "elevated", "stream_errors": 1, "success_rate": 0.75},
+			"response":   map[string]any{"body_bytes": 5, "status_class": 2, "throughput_bytes_sec": 99},
+			"qpack":      map[string]any{"header_count": 4, "raw_bytes": 120, "estimated_block": 84, "estimated_ratio": 0.7},
+			"loss":       map[string]any{"signal": "elevated", "stream_errors": 1, "success_rate": 0.75},
 			"congestion": map[string]any{"signal": "moderate", "p50_ms": 12, "p95_ms": 24, "spread_ratio": 1.0},
-			"version": map[string]any{"observed_proto": "HTTP/3.0", "alpn": "h3", "quic_version": "not_exposed"},
-			"retry":   map[string]any{"retry_observed": false, "connect_ms": 5, "tls_ms": 8},
-			"ecn":     map[string]any{"ecn_visible": false, "observed_proto": "HTTP/3.0", "packet_marks": "not_exposed"},
-			"spin-bit": map[string]any{"spin_observed": false, "rtt_estimate_ms": 11, "stability": "steady"},
+			"version":    map[string]any{"observed_proto": "HTTP/3.0", "alpn": "h3", "quic_version": "not_exposed"},
+			"retry":      map[string]any{"retry_observed": false, "connect_ms": 5, "tls_ms": 8},
+			"ecn":        map[string]any{"ecn_visible": false, "observed_proto": "HTTP/3.0", "packet_marks": "not_exposed"},
+			"spin-bit":   map[string]any{"spin_observed": false, "rtt_estimate_ms": 11, "stability": "steady"},
 			"test_plan": probe.TestPlan{
 				Requested: []string{"latency", "migration", "qpack"},
 				Executed:  []string{"latency"},
@@ -67,16 +67,22 @@ func TestRenderProbeMarkdown(t *testing.T) {
 				"migration": map[string]any{"coverage": "partial", "state": "unavailable", "summary": "endpoint contract only"},
 				"qpack":     map[string]any{"coverage": "unavailable", "state": "unavailable", "summary": "QPACK inspection is not implemented yet"},
 			},
-			"support_summary": map[string]any{"requested_tests": 2, "available": 0, "not_run": 0, "unavailable": 2, "coverage_ratio": 0.0},
+			"support_summary": map[string]any{"requested_tests": 2, "available": 0, "not_run": 0, "unavailable": 2, "observed": 3, "coverage_ratio": 0.0},
 			"fidelity_summary": map[string]any{
-				"partial":      []string{"qpack", "0rtt", "migration"},
-				"observed":     []string{"version", "retry", "ecn"},
+				"partial":  []string{"qpack", "0rtt", "migration"},
+				"observed": []string{"version", "retry", "ecn"},
+				"definitions": map[string]any{
+					"full":        map[string]any{"label": "full", "description": "direct current-path diagnostics"},
+					"observed":    map[string]any{"label": "observed", "description": "visible protocol/client-layer observation"},
+					"partial":     map[string]any{"label": "partial", "description": "heuristic, estimate, or capability-check output"},
+					"unavailable": map[string]any{"label": "unavailable", "description": "requested but not available on the current path"},
+				},
 				"packet_level": false,
-				"notice":       "advanced probe fields are not all packet-level telemetry; partial=qpack, 0rtt, migration; observed=version, retry, ecn",
+				"notice":       "advanced probe fields are not all packet-level telemetry; partial=qpack,0rtt,migration; observed=version,retry,ecn; fidelity legend: full=direct current-path diagnostics; observed=visible protocol/client-layer observation; partial=heuristic, estimate, or capability-check output",
 			},
 		},
 	})
-	if !strings.Contains(out, "## Analysis") || !strings.Contains(out, "Test Plan") || !strings.Contains(out, "migration") || !strings.Contains(out, "Support `migration`") || !strings.Contains(out, "Support `qpack`") || !strings.Contains(out, "QPACK") || !strings.Contains(out, "Loss") || !strings.Contains(out, "Congestion") || !strings.Contains(out, "Version") || !strings.Contains(out, "Retry") || !strings.Contains(out, "ECN") || !strings.Contains(out, "Spin Bit") || !strings.Contains(out, "Coverage Summary") || !strings.Contains(out, "Fidelity Summary") || !strings.Contains(out, "packet-level") {
+	if !strings.Contains(out, "## Analysis") || !strings.Contains(out, "Fidelity Legend") || !strings.Contains(out, "Test Plan") || !strings.Contains(out, "migration") || !strings.Contains(out, "Support `migration`") || !strings.Contains(out, "Support `qpack`") || !strings.Contains(out, "QPACK (partial)") || !strings.Contains(out, "Loss (partial)") || !strings.Contains(out, "Congestion (partial)") || !strings.Contains(out, "Version (observed)") || !strings.Contains(out, "Retry (observed)") || !strings.Contains(out, "ECN (observed)") || !strings.Contains(out, "Spin Bit (partial)") || !strings.Contains(out, "Coverage Summary") || !strings.Contains(out, "observed `3`") || !strings.Contains(out, "Fidelity Summary") || !strings.Contains(out, "packet-level") {
 		t.Fatalf("unexpected markdown output: %q", out)
 	}
 }

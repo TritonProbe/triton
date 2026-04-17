@@ -226,6 +226,40 @@ function joinNonEmpty(parts) {
   return parts.filter(Boolean).join("");
 }
 
+function fidelityDefinitions(summary) {
+  const definitions = summary && typeof summary === "object" ? summary.definitions : null;
+  if (definitions && typeof definitions === "object" && Object.keys(definitions).length) {
+    return definitions;
+  }
+  return {
+    full: { label: "full", description: "direct current-path diagnostics" },
+    observed: { label: "observed", description: "visible protocol/client-layer observation" },
+    partial: { label: "partial", description: "heuristic, estimate, or capability-check output" },
+    unavailable: { label: "unavailable", description: "requested but not available on the current path" },
+  };
+}
+
+function fidelityLegend(summary) {
+  const definitions = fidelityDefinitions(summary);
+  return [
+    `full=${definitions.full.description}`,
+    `observed=${definitions.observed.description}`,
+    `partial=${definitions.partial.description}`,
+  ].join("; ");
+}
+
+function fidelityState(summary) {
+  if (!summary || typeof summary !== "object") {
+    return "n/a";
+  }
+  const partial = Array.isArray(summary.partial) ? summary.partial.length : 0;
+  const observed = Array.isArray(summary.observed) ? summary.observed.length : 0;
+  if (partial > 0 || observed > 0 || summary.packet_level === false) {
+    return "mixed";
+  }
+  return "full";
+}
+
 function buildPlanPills(requested, executed, skipped) {
   return joinNonEmpty([
     requested.length ? pillMuted(`requested ${requested.join(",")}`) : "",
@@ -245,6 +279,7 @@ function buildSupportPills(zeroRTTSupport, migrationSupport) {
 
 function buildAdvancedPills(context) {
   const {
+    fidelitySummary,
     zeroRTT,
     migration,
     qpack,
@@ -256,6 +291,8 @@ function buildAdvancedPills(context) {
     spin,
   } = context;
   return joinNonEmpty([
+    Array.isArray(fidelitySummary.partial) && fidelitySummary.partial.length ? pillHeuristic(`partial ${fidelitySummary.partial.join(",")}`) : "",
+    Array.isArray(fidelitySummary.observed) && fidelitySummary.observed.length ? pillMuted(`observed ${fidelitySummary.observed.join(",")}`) : "",
     zeroRTT.mode ? pillHeuristic(`0rtt ${zeroRTT.resumed ? "resumed" : "checked"}`) : "",
     typeof zeroRTT.time_saved_ms === "number" ? pill(`resume saved ${Number(zeroRTT.time_saved_ms).toFixed(2)}ms`) : "",
     migration.mode ? pillHeuristic(`migration ${migration.supported ? "reachable" : "checked"}`) : "",
@@ -274,6 +311,7 @@ function buildAdvancedPills(context) {
 function buildProbeNotes(context) {
   const {
     skipped,
+    fidelitySummary,
     support,
     otherSupport,
     supportSummary,
@@ -289,16 +327,11 @@ function buildProbeNotes(context) {
     zeroRTTSupport,
     migrationSupport,
   } = context;
-  const heuristicNames = [];
-  for (const [name, entry] of Object.entries(support || {})) {
-    if (entry && entry.coverage === "partial") {
-      heuristicNames.push(name);
-    }
-  }
   return [
-    heuristicNames.length ? `<p class="mini">Notice: advanced probe fields are not all packet-level telemetry. Partial coverage: ${escapeHTML(heuristicNames.join(", "))}</p>` : "",
+    fidelitySummary.notice ? `<p class="mini">Notice: ${escapeHTML(String(fidelitySummary.notice))}</p>` : "",
+    fidelitySummary && Object.keys(fidelityDefinitions(fidelitySummary)).length ? `<p class="mini">Fidelity legend: ${escapeHTML(fidelityLegend(fidelitySummary))}</p>` : "",
     otherSupport.length ? `<p class="mini">Advanced support: ${escapeHTML(otherSupport.join(" | "))}</p>` : "",
-    supportSummary.requested_tests ? `<p class="mini">Support summary: requested ${supportSummary.requested_tests}, available ${supportSummary.available || 0}, not-run ${supportSummary.not_run || 0}, unavailable ${supportSummary.unavailable || 0}</p>` : "",
+    supportSummary.requested_tests ? `<p class="mini">Support summary: requested ${supportSummary.requested_tests}, available ${supportSummary.available || 0}, not-run ${supportSummary.not_run || 0}, unavailable ${supportSummary.unavailable || 0}, full ${supportSummary.full || 0}, observed ${supportSummary.observed || 0}, partial ${supportSummary.partial || 0}</p>` : "",
     skipped.length ? `<p class="mini">Skipped: ${escapeHTML(skipped.map((entry) => `${entry.name}: ${entry.reason}`).join(" | "))}</p>` : "",
     zeroRTT.note ? `<p class="mini">0-RTT: ${escapeHTML(String(zeroRTT.note))}</p>` : "",
     migration.note ? `<p class="mini">Migration: ${escapeHTML(String(migration.note))}</p>` : "",
@@ -321,7 +354,9 @@ function probeMetricValues(latency, streams, response, zeroRTT, migration, suppo
   const zeroRTTState = zeroRTT.mode ? (zeroRTT.resumed ? "resumed" : "checked") : "n/a";
   const migrationState = migration.mode ? (migration.supported ? "reachable" : "checked") : "n/a";
   const coverage = typeof supportSummary.coverage_ratio === "number" ? `${Math.round(supportSummary.coverage_ratio * 100)}%` : "n/a";
-  const advancedLabel = (zeroRTT.mode || migration.mode) ? "partial" : "n/a";
+  const observedCount = Number(supportSummary.observed || 0);
+  const partialCount = Number(supportSummary.partial || 0);
+  const advancedLabel = partialCount > 0 || observedCount > 0 || zeroRTT.mode || migration.mode ? "mixed" : "full";
   return {
     p95,
     streams: streams.attempted || 0,
@@ -373,6 +408,7 @@ function renderProbes(target, items) {
     const spin = objectField(analysis, "spin-bit");
     const support = objectField(analysis, "support");
     const supportSummary = objectField(analysis, "support_summary");
+    const fidelitySummary = objectField(analysis, "fidelity_summary");
     const zeroRTTSupport = objectField(support, "0rtt");
     const migrationSupport = objectField(support, "migration");
     const otherSupport = Object.entries(support)
@@ -383,10 +419,11 @@ function renderProbes(target, items) {
     const executed = arrayField(plan, "executed");
     const skipped = arrayField(plan, "skipped");
     const planPills = buildPlanPills(requested, executed, skipped);
-    const advancedPills = buildAdvancedPills({ zeroRTT, migration, qpack, loss, congestion, version, retry, ecn, spin });
+    const advancedPills = buildAdvancedPills({ fidelitySummary, zeroRTT, migration, qpack, loss, congestion, version, retry, ecn, spin });
     const supportPills = buildSupportPills(zeroRTTSupport, migrationSupport);
     const notes = buildProbeNotes({
       skipped,
+      fidelitySummary,
       support,
       otherSupport,
       supportSummary,
@@ -417,7 +454,7 @@ function renderProbes(target, items) {
           ${metric("Bytes", metrics.bytes)}
           ${metric("0-RTT", metrics.zeroRTTState)}
           ${metric("Migration", metrics.migrationState)}
-          ${metric("Advanced", metrics.advancedLabel)}
+          ${metric("Fidelity", fidelityState(fidelitySummary))}
           ${metric("Coverage", metrics.coverage)}
         </div>
         <div class="pill-row">
@@ -425,7 +462,7 @@ function renderProbes(target, items) {
           ${pill(`latency samples ${metrics.latencySamples}`)}
           ${pill(`stream success ${metrics.streamSuccess}`)}
           ${pill(`throughput ${metrics.throughput}`)}
-          ${metrics.advancedLabel === "partial" ? pillHeuristic("advanced metrics are heuristic/partial") : ""}
+          ${metrics.advancedLabel === "mixed" ? pillHeuristic("advanced metrics include observed/partial results") : pillMuted("advanced metrics are full")}
         </div>
         <div class="pill-row">${supportPills}</div>
         <div class="pill-row">${advancedPills}</div>

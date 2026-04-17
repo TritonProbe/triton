@@ -328,6 +328,9 @@ func TestRunStandardH3Probe(t *testing.T) {
 	if supportSummary.RequestedTests < 1 || supportSummary.Available < 1 {
 		t.Fatalf("expected support rollup counts, got %#v", supportSummary)
 	}
+	if supportSummary.Observed < 3 {
+		t.Fatalf("expected observed support rollup count, got %#v", supportSummary)
+	}
 	if fidelitySummary.PacketLevel {
 		t.Fatalf("expected mixed-fidelity advanced probe summary, got %#v", fidelitySummary)
 	}
@@ -339,6 +342,9 @@ func TestRunStandardH3Probe(t *testing.T) {
 	}
 	if fidelitySummary.Notice == "" {
 		t.Fatalf("expected fidelity notice, got %#v", fidelitySummary)
+	}
+	if fidelitySummary.Definitions["partial"].Description == "" || fidelitySummary.Definitions["observed"].Description == "" {
+		t.Fatalf("expected fidelity definitions, got %#v", fidelitySummary)
 	}
 	zeroRTTSupport, ok := support["0rtt"]
 	if !ok || zeroRTTSupport.Coverage != "partial" {
@@ -373,24 +379,24 @@ func TestRunStandardH3Probe(t *testing.T) {
 		t.Fatalf("expected version analysis, got %#v", result.Analysis)
 	}
 	versionSupport, ok := support["version"]
-	if !ok || versionSupport.Coverage != "partial" || versionSupport.State != "available" {
-		t.Fatalf("expected partial available version support summary, got %#v", support)
+	if !ok || versionSupport.Coverage != "observed" || versionSupport.State != "available" {
+		t.Fatalf("expected observed available version support summary, got %#v", support)
 	}
 	retry := retryAnalysisFromResult(t, result)
 	if retry.Mode != "handshake-observation" {
 		t.Fatalf("expected retry analysis, got %#v", result.Analysis)
 	}
 	retrySupport, ok := support["retry"]
-	if !ok || retrySupport.Coverage != "partial" || retrySupport.State != "available" {
-		t.Fatalf("expected partial available retry support summary, got %#v", support)
+	if !ok || retrySupport.Coverage != "observed" || retrySupport.State != "available" {
+		t.Fatalf("expected observed available retry support summary, got %#v", support)
 	}
 	ecn := ecnAnalysisFromResult(t, result)
 	if ecn.Mode != "metadata-observation" {
 		t.Fatalf("expected ecn analysis, got %#v", result.Analysis)
 	}
 	ecnSupport, ok := support["ecn"]
-	if !ok || ecnSupport.Coverage != "partial" || ecnSupport.State != "available" {
-		t.Fatalf("expected partial available ecn support summary, got %#v", support)
+	if !ok || ecnSupport.Coverage != "observed" || ecnSupport.State != "available" {
+		t.Fatalf("expected observed available ecn support summary, got %#v", support)
 	}
 	spin := spinBitAnalysisFromResult(t, result)
 	if spin.Mode != "rtt-sampling-estimate" {
@@ -514,9 +520,13 @@ func TestRunProbeSupportMatrixReportsUnavailableAdvancedTests(t *testing.T) {
 			if entry.Coverage != "partial" || entry.State != "not_run" {
 				t.Fatalf("expected partial not_run qpack support entry, got %#v", entry)
 			}
-		case "retry", "version", "spin-bit", "ecn":
+		case "spin-bit":
 			if entry.Coverage != "partial" || entry.State != "not_run" {
 				t.Fatalf("expected partial not_run support entry for %s, got %#v", name, entry)
+			}
+		case "retry", "version", "ecn":
+			if entry.Coverage != "observed" || entry.State != "not_run" {
+				t.Fatalf("expected observed not_run support entry for %s, got %#v", name, entry)
 			}
 		case "loss", "congestion":
 			if entry.Coverage != "partial" || entry.State != "available" {

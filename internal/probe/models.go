@@ -33,17 +33,24 @@ type SupportSummary struct {
 	NotRun         int     `json:"not_run" yaml:"not_run"`
 	Unavailable    int     `json:"unavailable" yaml:"unavailable"`
 	Full           int     `json:"full" yaml:"full"`
+	Observed       int     `json:"observed" yaml:"observed"`
 	Partial        int     `json:"partial" yaml:"partial"`
 	CoverageRatio  float64 `json:"coverage_ratio" yaml:"coverage_ratio"`
 }
 
+type FidelityDefinition struct {
+	Label       string `json:"label" yaml:"label"`
+	Description string `json:"description" yaml:"description"`
+}
+
 type FidelitySummary struct {
-	Full        []string `json:"full,omitempty" yaml:"full,omitempty"`
-	Partial     []string `json:"partial,omitempty" yaml:"partial,omitempty"`
-	Observed    []string `json:"observed,omitempty" yaml:"observed,omitempty"`
-	Unavailable []string `json:"unavailable,omitempty" yaml:"unavailable,omitempty"`
-	PacketLevel bool     `json:"packet_level" yaml:"packet_level"`
-	Notice      string   `json:"notice,omitempty" yaml:"notice,omitempty"`
+	Full        []string                      `json:"full,omitempty" yaml:"full,omitempty"`
+	Partial     []string                      `json:"partial,omitempty" yaml:"partial,omitempty"`
+	Observed    []string                      `json:"observed,omitempty" yaml:"observed,omitempty"`
+	Unavailable []string                      `json:"unavailable,omitempty" yaml:"unavailable,omitempty"`
+	Definitions map[string]FidelityDefinition `json:"definitions,omitempty" yaml:"definitions,omitempty"`
+	PacketLevel bool                          `json:"packet_level" yaml:"packet_level"`
+	Notice      string                        `json:"notice,omitempty" yaml:"notice,omitempty"`
 }
 
 type SkippedTest struct {
@@ -268,9 +275,9 @@ var probeTestDefinitions = map[string]testDefinition{
 	"alt-svc":    {Coverage: "full", Summary: "Alt-Svc header observation is implemented"},
 	"0rtt":       {Coverage: "partial", Summary: "measured via HTTP/3 session resumption checks rather than true early data", Reason: "true 0-RTT early-data probing is not implemented yet"},
 	"migration":  {Coverage: "partial", Summary: "measured via endpoint capability checks rather than live path rebinding", Reason: "live connection migration probing is not implemented yet"},
-	"ecn":        {Coverage: "partial", Summary: "approximated from observable response and protocol metadata rather than packet markings", Reason: "ECN observation currently requires an HTTP/3 probe target"},
-	"retry":      {Coverage: "partial", Summary: "approximated from handshake outcome because Retry packets are not exposed at this client layer", Reason: "retry observation currently requires an HTTP/3 probe target"},
-	"version":    {Coverage: "partial", Summary: "approximated from observed protocol and ALPN rather than packet-level QUIC version negotiation", Reason: "version observation currently requires an HTTP/3 probe target"},
+	"ecn":        {Coverage: "observed", Summary: "derived from observable response and protocol metadata rather than packet markings", Reason: "ECN observation currently requires an HTTP/3 probe target"},
+	"retry":      {Coverage: "observed", Summary: "derived from handshake outcome because Retry packets are not exposed at this client layer", Reason: "retry observation currently requires an HTTP/3 probe target"},
+	"version":    {Coverage: "observed", Summary: "derived from observed protocol and ALPN rather than packet-level QUIC version negotiation", Reason: "version observation currently requires an HTTP/3 probe target"},
 	"qpack":      {Coverage: "partial", Summary: "approximated via header-block size estimates rather than real QPACK dynamic-table inspection", Reason: "QPACK approximation requires an HTTP/3 probe target"},
 	"congestion": {Coverage: "partial", Summary: "approximated from latency spread and concurrent request pressure", Reason: "congestion profiling currently relies on latency and concurrency signals"},
 	"loss":       {Coverage: "partial", Summary: "approximated from repeated request failures and timeout/error pressure", Reason: "loss probing currently relies on repeated request error signals"},
