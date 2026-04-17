@@ -79,7 +79,7 @@ func TestWaitForConnectionsDoesNotConsumeAcceptQueue(t *testing.T) {
 	}
 	defer session.Close()
 
-	conns, err := listener.WaitForConnections(1, time.Second)
+	conns, err := waitForConnections(listener, 1, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestWaitForConnectionsPreservesAcceptOrderForMultipleConnections(t *testing
 		}
 	}
 
-	observed, err := listener.WaitForConnections(total, 2*time.Second)
+	observed, err := waitForConnections(listener, total, 2*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func TestListenerCloseUnblocksWaitForConnections(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		conns, err := listener.WaitForConnections(1, 5*time.Second)
+		conns, err := waitForConnections(listener, 1, 5*time.Second)
 		done <- result{conns: conns, err: err}
 	}()
 
@@ -254,7 +254,7 @@ func TestListenerIgnoresMalformedPacketsWithoutCreatingConnections(t *testing.T)
 
 	time.Sleep(100 * time.Millisecond)
 
-	conns, err := listener.WaitForConnections(1, 100*time.Millisecond)
+	conns, err := waitForConnections(listener, 1, 100*time.Millisecond)
 	if err == nil {
 		t.Fatal("expected timeout while waiting for a connection from malformed packets")
 	}
@@ -284,3 +284,36 @@ func acceptStreamWithTimeout(m *stream.Manager, timeout time.Duration) (*stream.
 type connectionTimeoutError struct{}
 
 func (connectionTimeoutError) Error() string { return "timeout waiting for stream" }
+
+func waitForConnections(listener *Listener, n int, timeout time.Duration) ([]*connection.Connection, error) {
+	deadline := time.After(timeout)
+	for {
+		listener.mu.Lock()
+		if len(listener.accepted) >= n {
+			result := append([]*connection.Connection(nil), listener.accepted[:n]...)
+			listener.mu.Unlock()
+			return result, nil
+		}
+		listener.mu.Unlock()
+
+		select {
+		case <-listener.connReady:
+		case <-deadline:
+			listener.mu.Lock()
+			result := append([]*connection.Connection(nil), listener.accepted...)
+			listener.mu.Unlock()
+			return result, connectionTimeoutError{}
+		case <-listener.closed:
+			listener.mu.Lock()
+			result := append([]*connection.Connection(nil), listener.accepted...)
+			listener.mu.Unlock()
+			return result, errListenerClosed
+		}
+	}
+}
+
+var errListenerClosed = connectionClosedError{}
+
+type connectionClosedError struct{}
+
+func (connectionClosedError) Error() string { return "listener closed" }

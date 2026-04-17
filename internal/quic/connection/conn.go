@@ -31,9 +31,6 @@ const (
 type Connection struct {
 	mu             sync.Mutex
 	state          State
-	role           Role
-	version        uint32
-	localCIDs      *CIDManager
 	remoteCIDs     *CIDManager
 	originalDCID   []byte
 	streamManager  *stream.Manager
@@ -48,16 +45,13 @@ type Connection struct {
 	pathChallenges map[[8]byte]time.Time
 }
 
-func New(role Role, version uint32, originalDCID []byte) *Connection {
+func New(role Role, originalDCID []byte) *Connection {
 	streamRole := stream.RoleClient
 	if role == RoleServer {
 		streamRole = stream.RoleServer
 	}
 	return &Connection{
 		state:          StateIdle,
-		role:           role,
-		version:        version,
-		localCIDs:      NewCIDManager(),
 		remoteCIDs:     NewCIDManager(),
 		originalDCID:   append([]byte(nil), originalDCID...),
 		streamManager:  NewStreamManager(streamRole),
@@ -79,8 +73,6 @@ func (c *Connection) State() State {
 	defer c.mu.Unlock()
 	return c.state
 }
-
-func (c *Connection) Version() uint32 { return c.version }
 
 func (c *Connection) Streams() *stream.Manager { return c.streamManager }
 

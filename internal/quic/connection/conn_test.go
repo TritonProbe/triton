@@ -6,7 +6,7 @@ import (
 )
 
 func TestConnectionTransitions(t *testing.T) {
-	c := New(RoleClient, 1, []byte{0xaa, 0xbb})
+	c := New(RoleClient, []byte{0xaa, 0xbb})
 	if err := c.Transition(StateInitialSent); err != nil {
 		t.Fatal(err)
 	}
@@ -22,7 +22,7 @@ func TestConnectionTransitions(t *testing.T) {
 }
 
 func TestConnectionFlowControlAndIdle(t *testing.T) {
-	c := New(RoleServer, 1, []byte{0x01})
+	c := New(RoleServer, []byte{0x01})
 	if err := c.RecordReceive(128); err != nil {
 		t.Fatal(err)
 	}

@@ -137,10 +137,8 @@ func Run(target string, cfg config.ProbeConfig) (*Result, error) {
 		})
 	}
 	if plan.shouldRun("migration") {
-		if migration, ok := measureHTTPMigration(parsed.String(), cfg); ok {
-			plan.executed = append(plan.executed, "migration")
-			result.Analysis["migration"] = migration
-		}
+		plan.executed = append(plan.executed, "migration")
+		result.Analysis["migration"] = measureHTTPMigration(parsed.String(), cfg)
 	}
 	finalizeTestPlan(result, plan)
 	return result, nil
@@ -267,16 +265,12 @@ func runStandardH3Probe(parsed *url.URL, cfg config.ProbeConfig) (*Result, error
 		result.Analysis["qpack"] = estimateQPACKAnalysis(resp.Header, resp.StatusCode)
 	}
 	if plan.shouldRun("0rtt") {
-		if zeroRTT, ok := measureH3Resumption(target.String(), cfg); ok {
-			plan.executed = append(plan.executed, "0rtt")
-			result.Analysis["0rtt"] = zeroRTT
-		}
+		plan.executed = append(plan.executed, "0rtt")
+		result.Analysis["0rtt"] = measureH3Resumption(target.String(), cfg)
 	}
 	if plan.shouldRun("migration") {
-		if migration, ok := measureHTTPMigration(target.String(), cfg); ok {
-			plan.executed = append(plan.executed, "migration")
-			result.Analysis["migration"] = migration
-		}
+		plan.executed = append(plan.executed, "migration")
+		result.Analysis["migration"] = measureHTTPMigration(target.String(), cfg)
 	}
 	finalizeTestPlan(result, plan)
 	return result, nil
@@ -359,7 +353,7 @@ func runLoopbackProbe(parsed *url.URL, cfg config.ProbeConfig) (*Result, error) 
 	if plan.shouldRun("latency") {
 		plan.executed = append(plan.executed, "latency")
 		enrichLatencyAnalysis(result, cfg, func() (int, int64, error) {
-			repeatResp, err := runSingleProbeH3Request("loopback", path, cfg.Timeout, true)
+			repeatResp, err := runSingleProbeH3Request(path, cfg.Timeout)
 			if err != nil {
 				return 0, 0, err
 			}
@@ -369,7 +363,7 @@ func runLoopbackProbe(parsed *url.URL, cfg config.ProbeConfig) (*Result, error) 
 	if plan.shouldRun("streams") {
 		plan.executed = append(plan.executed, "streams")
 		enrichStreamAnalysis(result, cfg, func() (int, int64, error) {
-			repeatResp, err := runSingleProbeH3Request("loopback", path, cfg.Timeout, true)
+			repeatResp, err := runSingleProbeH3Request(path, cfg.Timeout)
 			if err != nil {
 				return 0, 0, err
 			}
@@ -379,7 +373,7 @@ func runLoopbackProbe(parsed *url.URL, cfg config.ProbeConfig) (*Result, error) 
 	if plan.shouldRun("loss") {
 		plan.executed = append(plan.executed, "loss")
 		result.Analysis["loss"] = estimateLossAnalysis(cfg, func() (int, int64, error) {
-			repeatResp, err := runSingleProbeH3Request("loopback", path, cfg.Timeout, true)
+			repeatResp, err := runSingleProbeH3Request(path, cfg.Timeout)
 			if err != nil {
 				return 0, 0, err
 			}
@@ -389,7 +383,7 @@ func runLoopbackProbe(parsed *url.URL, cfg config.ProbeConfig) (*Result, error) 
 	if plan.shouldRun("congestion") {
 		plan.executed = append(plan.executed, "congestion")
 		result.Analysis["congestion"] = estimateCongestionAnalysis(cfg, func() (int, int64, error) {
-			repeatResp, err := runSingleProbeH3Request("loopback", path, cfg.Timeout, true)
+			repeatResp, err := runSingleProbeH3Request(path, cfg.Timeout)
 			if err != nil {
 				return 0, 0, err
 			}
@@ -403,7 +397,7 @@ func runLoopbackProbe(parsed *url.URL, cfg config.ProbeConfig) (*Result, error) 
 	if plan.shouldRun("spin-bit") {
 		plan.executed = append(plan.executed, "spin-bit")
 		result.Analysis["spin-bit"] = estimateSpinBitAnalysis(cfg, func() (int, int64, error) {
-			repeatResp, err := runSingleProbeH3Request("loopback", path, cfg.Timeout, true)
+			repeatResp, err := runSingleProbeH3Request(path, cfg.Timeout)
 			if err != nil {
 				return 0, 0, err
 			}
@@ -423,10 +417,8 @@ func runLoopbackProbe(parsed *url.URL, cfg config.ProbeConfig) (*Result, error) 
 		result.Analysis["qpack"] = estimateQPACKAnalysis(headers, resp.StatusCode)
 	}
 	if plan.shouldRun("migration") {
-		if migration, ok := measureLoopbackMigration(cfg); ok {
-			plan.executed = append(plan.executed, "migration")
-			result.Analysis["migration"] = migration
-		}
+		plan.executed = append(plan.executed, "migration")
+		result.Analysis["migration"] = measureLoopbackMigration(cfg)
 	}
 	finalizeTestPlan(result, plan)
 	return result, nil
@@ -543,20 +535,14 @@ func runRemoteTritonProbe(parsed *url.URL, cfg config.ProbeConfig, plan testPlan
 		result.Analysis["qpack"] = estimateQPACKAnalysis(headers, resp.StatusCode)
 	}
 	if plan.shouldRun("migration") {
-		if migration, ok := measureRemoteTritonMigration(parsed.Host, cfg); ok {
-			plan.executed = append(plan.executed, "migration")
-			result.Analysis["migration"] = migration
-		}
+		plan.executed = append(plan.executed, "migration")
+		result.Analysis["migration"] = measureRemoteTritonMigration(parsed.Host, cfg)
 	}
 	finalizeTestPlan(result, plan)
 	return result, nil
 }
 
-func runSingleProbeH3Request(address, path string, timeout time.Duration, loopbackOnly bool) (*h3.Response, error) {
-	if !loopbackOnly {
-		return h3.RoundTripAddress(address, http.MethodGet, path, nil, timeout)
-	}
-
+func runSingleProbeH3Request(path string, timeout time.Duration) (*h3.Response, error) {
 	listener, err := transport.ListenQUIC("127.0.0.1:0")
 	if err != nil {
 		return nil, err
@@ -603,7 +589,7 @@ func doStandardRequestBody(client *http.Client, target string) (int, []byte, err
 	return resp.StatusCode, body, nil
 }
 
-func measureH3Resumption(target string, cfg config.ProbeConfig) (ZeroRTTAnalysis, bool) {
+func measureH3Resumption(target string, cfg config.ProbeConfig) ZeroRTTAnalysis {
 	cache := tls.NewLRUClientSessionCache(8)
 
 	firstClient, firstTransport := realh3.NewClientWithSessionCache(cfg.Timeout, cfg.Insecure, "", cache)
@@ -616,7 +602,7 @@ func measureH3Resumption(target string, cfg config.ProbeConfig) (ZeroRTTAnalysis
 			Error:         err.Error(),
 			Mode:          "tls-resumption-check",
 			Requested0RTT: true,
-		}, true
+		}
 	}
 	_, _ = io.Copy(io.Discard, firstResp.Body)
 	if err := firstResp.Body.Close(); err != nil {
@@ -625,7 +611,7 @@ func measureH3Resumption(target string, cfg config.ProbeConfig) (ZeroRTTAnalysis
 			Error:         err.Error(),
 			Mode:          "tls-resumption-check",
 			Requested0RTT: true,
-		}, true
+		}
 	}
 	firstDuration := time.Since(firstStart)
 	firstResumed := firstResp.TLS != nil && firstResp.TLS.DidResume
@@ -642,7 +628,7 @@ func measureH3Resumption(target string, cfg config.ProbeConfig) (ZeroRTTAnalysis
 			Error:          err.Error(),
 			Mode:           "tls-resumption-check",
 			Requested0RTT:  true,
-		}, true
+		}
 	}
 	_, _ = io.Copy(io.Discard, secondResp.Body)
 	if err := secondResp.Body.Close(); err != nil {
@@ -653,7 +639,7 @@ func measureH3Resumption(target string, cfg config.ProbeConfig) (ZeroRTTAnalysis
 			Error:          err.Error(),
 			Mode:           "tls-resumption-check",
 			Requested0RTT:  true,
-		}, true
+		}
 	}
 	secondDuration := time.Since(secondStart)
 	secondResumed := secondResp.TLS != nil && secondResp.TLS.DidResume
@@ -669,10 +655,10 @@ func measureH3Resumption(target string, cfg config.ProbeConfig) (ZeroRTTAnalysis
 		TimeSavedMS:    float64(saved) / float64(time.Millisecond),
 		Requested0RTT:  true,
 		Note:           "measures HTTP/3 connection resumption; true early data is not exposed at this layer",
-	}, true
+	}
 }
 
-func measureHTTPMigration(target string, cfg config.ProbeConfig) (MigrationAnalysis, bool) {
+func measureHTTPMigration(target string, cfg config.ProbeConfig) MigrationAnalysis {
 	parsed, err := url.Parse(target)
 	if err != nil {
 		return MigrationAnalysis{
@@ -680,7 +666,7 @@ func measureHTTPMigration(target string, cfg config.ProbeConfig) (MigrationAnaly
 			Error:          err.Error(),
 			Mode:           "endpoint-capability-check",
 			RequestedCheck: true,
-		}, true
+		}
 	}
 	parsed.Path = "/migration-test"
 	parsed.RawQuery = ""
@@ -708,15 +694,15 @@ func measureHTTPMigration(target string, cfg config.ProbeConfig) (MigrationAnaly
 	if err != nil {
 		result.Supported = false
 		result.Error = err.Error()
-		return result, true
+		return result
 	}
 	mergeMigrationContract(&result, body, status/100 == 2)
-	return result, true
+	return result
 }
 
-func measureLoopbackMigration(cfg config.ProbeConfig) (MigrationAnalysis, bool) {
+func measureLoopbackMigration(cfg config.ProbeConfig) MigrationAnalysis {
 	start := time.Now()
-	resp, err := runSingleProbeH3Request("loopback", "/migration-test", cfg.Timeout, true)
+	resp, err := runSingleProbeH3Request("/migration-test", cfg.Timeout)
 	result := MigrationAnalysis{
 		Mode:           "endpoint-capability-check",
 		Target:         "triton://loopback/migration-test",
@@ -726,16 +712,16 @@ func measureLoopbackMigration(cfg config.ProbeConfig) (MigrationAnalysis, bool) 
 	if err != nil {
 		result.Supported = false
 		result.Error = err.Error()
-		return result, true
+		return result
 	}
 	result.StatusClass = resp.StatusCode / 100
 	result.BodyBytes = len(resp.Body)
 	result.DurationMS = float64(time.Since(start)) / float64(time.Millisecond)
 	mergeMigrationContract(&result, resp.Body, resp.StatusCode/100 == 2)
-	return result, true
+	return result
 }
 
-func measureRemoteTritonMigration(address string, cfg config.ProbeConfig) (MigrationAnalysis, bool) {
+func measureRemoteTritonMigration(address string, cfg config.ProbeConfig) MigrationAnalysis {
 	start := time.Now()
 	resp, err := h3.RoundTripAddress(address, http.MethodGet, "/migration-test", nil, cfg.Timeout)
 	result := MigrationAnalysis{
@@ -747,13 +733,13 @@ func measureRemoteTritonMigration(address string, cfg config.ProbeConfig) (Migra
 	if err != nil {
 		result.Supported = false
 		result.Error = err.Error()
-		return result, true
+		return result
 	}
 	result.StatusClass = resp.StatusCode / 100
 	result.BodyBytes = len(resp.Body)
 	result.DurationMS = float64(time.Since(start)) / float64(time.Millisecond)
 	mergeMigrationContract(&result, resp.Body, resp.StatusCode/100 == 2)
-	return result, true
+	return result
 }
 
 func mergeMigrationContract(result *MigrationAnalysis, body []byte, fallbackSupported bool) {

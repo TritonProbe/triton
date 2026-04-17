@@ -7,7 +7,7 @@ import (
 )
 
 func TestHandleFramesUpdatesStateAndStreams(t *testing.T) {
-	c := New(RoleClient, 1, []byte{0x01, 0x02})
+	c := New(RoleClient, []byte{0x01, 0x02})
 	if err := c.Transition(StateInitialSent); err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestHandleFramesUpdatesStateAndStreams(t *testing.T) {
 }
 
 func TestHandleResetStream(t *testing.T) {
-	c := New(RoleServer, 1, []byte{0x01})
+	c := New(RoleServer, []byte{0x01})
 	s, err := c.Streams().OpenStream(true)
 	if err != nil {
 		t.Fatal(err)

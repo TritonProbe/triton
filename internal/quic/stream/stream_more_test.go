@@ -78,8 +78,8 @@ func TestRecvBufferMergeAndAdvance(t *testing.T) {
 	if err := r.Insert(0, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := r.Readable(0); got != 5 {
-		t.Fatalf("unexpected readable bytes: %d", got)
+	if len(r.chunks) != 1 || r.chunks[0].offset != 0 || string(r.chunks[0].data) != "abcde" {
+		t.Fatalf("unexpected merged chunks: %+v", r.chunks)
 	}
 
 	buf := make([]byte, 2)
@@ -87,7 +87,7 @@ func TestRecvBufferMergeAndAdvance(t *testing.T) {
 	if err != nil || n != 2 || string(buf[:n]) != "ab" {
 		t.Fatalf("unexpected read at offset: n=%d err=%v data=%q", n, err, buf[:n])
 	}
-	if got := r.Readable(2); got != 3 {
-		t.Fatalf("unexpected readable after partial read: %d", got)
+	if len(r.chunks) != 1 || r.chunks[0].offset != 2 || string(r.chunks[0].data) != "cde" {
+		t.Fatalf("unexpected buffer after partial read: %+v", r.chunks)
 	}
 }

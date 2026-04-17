@@ -60,7 +60,7 @@ func (d *Dialer) DialSession(address string) (*Session, error) {
 		_ = udp.Close()
 		return nil, err
 	}
-	conn := connection.New(connection.RoleClient, 1, dcid)
+	conn := connection.New(connection.RoleClient, dcid)
 	_ = conn.Transition(connection.StateInitialSent)
 	_ = conn.Transition(connection.StateHandshake)
 

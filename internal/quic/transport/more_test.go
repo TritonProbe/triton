@@ -37,7 +37,7 @@ func TestUDPTransportClosedAndBatchPaths(t *testing.T) {
 	if tp.LocalAddr() != nil {
 		t.Fatal("expected nil local addr for closed transport")
 	}
-	if got := tp.MTU(); got != 0 {
+	if got := tp.mtu; got != 0 {
 		t.Fatalf("expected zero mtu on zero-value transport, got %d", got)
 	}
 	if err := tp.Close(); err != nil {
@@ -83,11 +83,11 @@ func TestListenerHelpersAndErrorPaths(t *testing.T) {
 	if listener.AutoEcho() {
 		t.Fatal("expected auto echo to be disabled")
 	}
-	if _, err := listener.WaitForConnections(1, 20*time.Millisecond); err == nil {
+	if _, err := waitForConnections(listener, 1, 20*time.Millisecond); err == nil {
 		t.Fatal("expected timeout waiting for connections")
 	}
 
-	conn := connection.New(connection.RoleServer, 1, []byte{0x01})
+	conn := connection.New(connection.RoleServer, []byte{0x01})
 	if err := listener.SendFrames(conn, []frame.Frame{frame.PingFrame{}}); err == nil {
 		t.Fatal("expected missing remote cid error")
 	}
@@ -105,7 +105,7 @@ func TestListenerHelpersAndErrorPaths(t *testing.T) {
 	if _, err := listener.Accept(); err == nil {
 		t.Fatal("expected accept on closed listener to fail")
 	}
-	if _, err := listener.WaitForConnections(1, time.Second); err == nil {
+	if _, err := waitForConnections(listener, 1, time.Second); err == nil {
 		t.Fatal("expected wait on closed listener to fail")
 	}
 }

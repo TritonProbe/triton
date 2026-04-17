@@ -292,19 +292,3 @@ func (r *recvBuffer) ReadAtOffset(offset uint64, p []byte) (int, error) {
 	}
 	return n, nil
 }
-
-func (r *recvBuffer) Readable(offset uint64) int {
-	if len(r.chunks) == 0 {
-		return 0
-	}
-	first := r.chunks[0]
-	if first.offset > offset {
-		return 0
-	}
-	readableOffset := offset - first.offset
-	if readableOffset > uint64(len(first.data)) {
-		return 0
-	}
-	// #nosec G115 -- readableOffset is bounded by len(first.data) immediately above.
-	return len(first.data) - int(readableOffset)
-}

@@ -35,8 +35,8 @@ func TestRecvBufferOutOfOrder(t *testing.T) {
 	if err := r.Insert(0, []byte("hello")); err != nil {
 		t.Fatal(err)
 	}
-	if got := r.Readable(0); got != 10 {
-		t.Fatalf("unexpected readable bytes: %d", got)
+	if len(r.chunks) != 1 || r.chunks[0].offset != 0 || string(r.chunks[0].data) != "helloworld" {
+		t.Fatalf("unexpected buffer state: %+v", r.chunks)
 	}
 }
 

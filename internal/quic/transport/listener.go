@@ -103,7 +103,7 @@ func (l *Listener) serve() {
 		l.addrs[key] = addr
 		conn, ok := l.conns[key]
 		if !ok && h.IsLongHeader() && h.PacketType() == packet.PacketTypeInitial {
-			conn = connection.New(connection.RoleServer, h.Version(), h.DestConnectionID())
+			conn = connection.New(connection.RoleServer, h.DestConnectionID())
 			conn.StoreRemoteCID(h.SrcConnectionID())
 			if err := conn.Transition(connection.StateInitialReceived); err != nil {
 				l.mu.Unlock()
@@ -195,33 +195,6 @@ func (l *Listener) nextPacketNumber(key string) uint64 {
 	}
 	l.nextPN[key] = pn + 1
 	return pn
-}
-
-func (l *Listener) WaitForConnections(n int, timeout time.Duration) ([]*connection.Connection, error) {
-	deadline := time.After(timeout)
-	for {
-		l.mu.Lock()
-		if len(l.accepted) >= n {
-			result := append([]*connection.Connection(nil), l.accepted[:n]...)
-			l.mu.Unlock()
-			return result, nil
-		}
-		l.mu.Unlock()
-
-		select {
-		case <-l.connReady:
-		case <-deadline:
-			l.mu.Lock()
-			result := append([]*connection.Connection(nil), l.accepted...)
-			l.mu.Unlock()
-			return result, errors.New("timeout waiting for connections")
-		case <-l.closed:
-			l.mu.Lock()
-			result := append([]*connection.Connection(nil), l.accepted...)
-			l.mu.Unlock()
-			return result, errors.New("listener closed")
-		}
-	}
 }
 
 func (l *Listener) SetAutoEcho(v bool) {

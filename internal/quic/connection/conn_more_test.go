@@ -9,7 +9,7 @@ import (
 )
 
 func TestConnectionConcurrentCloseWithErrorAndTransitionEndsClosed(t *testing.T) {
-	c := New(RoleClient, 1, []byte{0xaa})
+	c := New(RoleClient, []byte{0xaa})
 
 	if err := c.Transition(StateInitialSent); err != nil {
 		t.Fatal(err)
@@ -44,7 +44,7 @@ func TestConnectionConcurrentCloseWithErrorAndTransitionEndsClosed(t *testing.T)
 }
 
 func TestHandshakeDoneFrameTransitionsToConnectedOnce(t *testing.T) {
-	c := New(RoleClient, 1, []byte{0xaa})
+	c := New(RoleClient, []byte{0xaa})
 
 	if err := c.Transition(StateInitialSent); err != nil {
 		t.Fatal(err)

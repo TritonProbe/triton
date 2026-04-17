@@ -134,9 +134,3 @@ func (t *UDPTransport) LocalAddr() *net.UDPAddr {
 	addr, _ := conn.LocalAddr().(*net.UDPAddr)
 	return addr
 }
-
-func (t *UDPTransport) MTU() int {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return t.mtu
-}
