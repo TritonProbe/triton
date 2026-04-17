@@ -559,7 +559,7 @@ func TestDashboardAssetsAndHead(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `id="compare"`) {
 		t.Fatalf("expected compare card in dashboard html, got %q", rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), `id="probe-detail"`) || !strings.Contains(rec.Body.String(), `id="bench-detail"`) {
+	if !strings.Contains(rec.Body.String(), `id="probe-detail"`) || !strings.Contains(rec.Body.String(), `id="bench-detail"`) || !strings.Contains(rec.Body.String(), `id="trace-detail"`) {
 		t.Fatalf("expected detail panels in dashboard html, got %q", rec.Body.String())
 	}
 	if !strings.Contains(rec.Body.String(), `class="stack"`) {
@@ -572,7 +572,7 @@ func TestDashboardAssetsAndHead(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 for app.js, got %d", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "renderProbes") || !strings.Contains(rec.Body.String(), "renderBenches") || !strings.Contains(rec.Body.String(), "renderProbeDetail") || !strings.Contains(rec.Body.String(), "renderBenchDetail") || !strings.Contains(rec.Body.String(), "renderOverview") || !strings.Contains(rec.Body.String(), "renderCompare") {
+	if !strings.Contains(rec.Body.String(), "renderProbes") || !strings.Contains(rec.Body.String(), "renderBenches") || !strings.Contains(rec.Body.String(), "renderTraces") || !strings.Contains(rec.Body.String(), "renderProbeDetail") || !strings.Contains(rec.Body.String(), "renderBenchDetail") || !strings.Contains(rec.Body.String(), "renderTraceDetail") || !strings.Contains(rec.Body.String(), "renderOverview") || !strings.Contains(rec.Body.String(), "renderCompare") {
 		t.Fatalf("expected typed dashboard renderers in app.js, got %q", rec.Body.String())
 	}
 	if !strings.Contains(rec.Body.String(), "Real HTTP/3 (quic-go)") || !strings.Contains(rec.Body.String(), "Experimental UDP H3 (lab)") {
@@ -593,7 +593,7 @@ func TestDashboardAssetsAndHead(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "supportPills") || !strings.Contains(rec.Body.String(), ".coverage") {
 		t.Fatalf("expected support coverage renderer hints in app.js, got %q", rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "record-action") || !strings.Contains(rec.Body.String(), "loadDetail") || !strings.Contains(rec.Body.String(), "ensureDetailSelection") {
+	if !strings.Contains(rec.Body.String(), "record-action") || !strings.Contains(rec.Body.String(), "loadDetail") || !strings.Contains(rec.Body.String(), "ensureDetailSelection") || !strings.Contains(rec.Body.String(), "trace-detail") || !strings.Contains(rec.Body.String(), "Open raw trace") {
 		t.Fatalf("expected detail panel renderer hints in app.js, got %q", rec.Body.String())
 	}
 	if !strings.Contains(rec.Body.String(), "loadCollection") || !strings.Contains(rec.Body.String(), "X-Total-Count") || !strings.Contains(rec.Body.String(), "pager") {

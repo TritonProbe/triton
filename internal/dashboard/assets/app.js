@@ -393,7 +393,7 @@ function detailRow(label, value) {
 
 function selectionStore() {
   if (!window.__tritonSelection) {
-    window.__tritonSelection = { probe: "", bench: "" };
+    window.__tritonSelection = { probe: "", bench: "", trace: "" };
   }
   return window.__tritonSelection;
 }
@@ -443,6 +443,21 @@ function benchRiskSummary(result) {
     return { label: "degraded run", state: "warn", summary: "the run completed, but some protocols look degraded" };
   }
   return { label: "healthy", state: "ok", summary: "bench protocols completed without flagged degradation" };
+}
+
+function traceRiskSummary(item) {
+  const modified = Date.parse(item && item.modified_at ? item.modified_at : "");
+  if (!Number.isFinite(modified)) {
+    return { label: "unknown recency", state: "warn", summary: "trace recency could not be determined from metadata" };
+  }
+  const ageHours = (Date.now() - modified) / (1000 * 60 * 60);
+  if (ageHours <= 1) {
+    return { label: "fresh trace", state: "ok", summary: "trace file was updated within the last hour" };
+  }
+  if (ageHours <= 24) {
+    return { label: "recent trace", state: "muted", summary: "trace file was updated within the last day" };
+  }
+  return { label: "stale trace", state: "warn", summary: "trace file is older and may not reflect the latest run" };
 }
 
 function renderProbeDetail(target, result) {
@@ -567,15 +582,63 @@ function renderBenchDetail(target, result) {
   `;
 }
 
+function renderTraceDetail(target, item) {
+  const risk = traceRiskSummary(item);
+  const preview = item && item.preview ? item.preview : "(empty trace)";
+  target.innerHTML = `
+    <div class="detail-summary">
+      <div class="detail-spotlight">
+        <div class="detail-head">
+          <div class="detail-title">
+            <strong>${escapeHTML(item.name || "trace")}</strong>
+            <span class="detail-meta">Updated ${escapeHTML(item.modified_at || "n/a")} | size ${escapeHTML(String(item.size_bytes || 0))} bytes</span>
+          </div>
+          ${pillState(risk.label, risk.state)}
+        </div>
+        <div class="metric-grid">
+          ${metric("Size", `${item.size_bytes || 0} bytes`)}
+          ${metric("Updated", item.modified_at || "n/a")}
+          ${metric("Preview", `${String(preview).length} chars`)}
+        </div>
+        <p class="mini">${escapeHTML(risk.summary)}</p>
+      </div>
+      <div class="detail-columns">
+        <section class="detail-section">
+          <h3>Trace Metadata</h3>
+          <div class="detail-list">
+            ${detailRow("name", item.name || "n/a")}
+            ${detailRow("modified", item.modified_at || "n/a")}
+            ${detailRow("size_bytes", item.size_bytes || 0)}
+            ${detailRow("meta_url", item.meta_url || "n/a")}
+            ${detailRow("download_url", item.download_url || "n/a")}
+          </div>
+        </section>
+        <section class="detail-section">
+          <h3>Actions</h3>
+          <div class="detail-actions">
+            ${item.meta_url ? `<a class="detail-link" href="${escapeHTML(item.meta_url)}" target="_blank" rel="noopener noreferrer">Open metadata</a>` : ""}
+            ${item.download_url ? `<a class="detail-link" href="${escapeHTML(item.download_url)}" target="_blank" rel="noopener noreferrer">Open raw trace</a>` : ""}
+          </div>
+          <p class="mini">Trace detail uses the stored metadata endpoint and keeps raw `.sqlog` access one click away.</p>
+        </section>
+      </div>
+      <section class="detail-section">
+        <h3>Preview</h3>
+        <pre class="detail-preview">${escapeHTML(preview)}</pre>
+      </section>
+    </div>
+  `;
+}
+
 async function loadDetail(kind, id) {
   if (!id) {
     return;
   }
-  const target = document.getElementById(kind === "probe" ? "probe-detail" : "bench-detail");
+  const target = document.getElementById(kind === "probe" ? "probe-detail" : (kind === "bench" ? "bench-detail" : "trace-detail"));
   if (!target) {
     return;
   }
-  const path = kind === "probe" ? `/api/v1/probes/${encodePath(id)}` : `/api/v1/benches/${encodePath(id)}`;
+  const path = kind === "probe" ? `/api/v1/probes/${encodePath(id)}` : (kind === "bench" ? `/api/v1/benches/${encodePath(id)}` : `/api/v1/traces/meta/${encodePath(id)}`);
   target.innerHTML = `<p class="mini">Loading ${escapeHTML(kind)} detail...</p>`;
   try {
     const response = await fetch(path);
@@ -583,8 +646,10 @@ async function loadDetail(kind, id) {
     setSelectedId(kind, id);
     if (kind === "probe") {
       renderProbeDetail(target, data);
-    } else {
+    } else if (kind === "bench") {
       renderBenchDetail(target, data);
+    } else {
+      renderTraceDetail(target, data);
     }
   } catch (error) {
     target.textContent = String(error);
@@ -760,9 +825,17 @@ function renderTraces(target, items) {
     target.innerHTML = `<p class="empty">${q && q.value.trim() ? "No traces match current filters." : "No trace files found."}</p>`;
     return;
   }
-  target.innerHTML = `<div class="record-list">${items.map((item) => `
+  target.innerHTML = `<div class="record-list">${items.map((item) => {
+    const selected = item.name && item.name === selectedId("trace");
+    return `
     <article class="record">
-      <h3>${escapeHTML(item.name || "trace")}</h3>
+      <div class="record-head">
+        <div class="record-title">
+          <h3>${escapeHTML(item.name || "trace")}</h3>
+          <span class="record-meta">Updated ${escapeHTML(item.modified_at || "n/a")} | size ${escapeHTML(String(item.size_bytes || 0))} bytes</span>
+        </div>
+        <button class="record-action ${selected ? "is-selected" : ""}" data-trace-id="${escapeHTML(item.name || "")}">${selected ? "Selected" : "Inspect"}</button>
+      </div>
       <div class="pill-row">${traceRecencyPill(item.modified_at)}</div>
       <div class="metric-grid">
         ${metric("Size", `${item.size_bytes || 0} bytes`)}
@@ -770,7 +843,10 @@ function renderTraces(target, items) {
       </div>
       <p class="mini">${escapeHTML(item.preview || "")}</p>
     </article>
-  `).join("")}</div>`;
+  `;
+  }).join("")}</div>`;
+  bindDetailButtons(target, "trace");
+  ensureDetailSelection("trace", items.map((item) => ({ id: item.name })));
 }
 
 function collectionState(prefix) {

@@ -41,9 +41,9 @@ What is working well:
 - [x] Improve probe and bench result detail views in dashboard
   - Completed in: `internal/dashboard/assets/index.html`, `internal/dashboard/assets/app.css`, `internal/dashboard/assets/app.js`
   - Notes: the embedded dashboard now exposes selected probe/bench detail cards with summary, fidelity, risk, and richer protocol health context
-- [ ] Deepen trace browsing in dashboard
-  - Current gap: result detail views are stronger, but trace browsing is still mostly list-and-open
-  - Effort: 8-12h
+- [x] Deepen trace browsing in dashboard
+  - Completed in: `internal/dashboard/assets/index.html`, `internal/dashboard/assets/app.css`, `internal/dashboard/assets/app.js`
+  - Notes: trace files now support selected-detail inspection with recency, metadata, preview content, and direct raw/meta links from the dashboard
 - [x] Split `internal/probe/probe.go` into maintainable modules
   - Completed in: `internal/probe/probe.go`, `internal/probe/models.go`, `internal/probe/support.go`, `internal/probe/analytics.go`
   - Notes: probe orchestration remains in `probe.go`; models, support/fidelity logic, and analytics helpers are now separated
