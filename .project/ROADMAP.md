@@ -22,9 +22,10 @@ What is working well:
 
 ### Must-fix items blocking production trust
 
-- [ ] Reconcile architecture docs with the real supported boundary
+- [x] Reconcile architecture docs with the real supported boundary
   - Affected files: `.project/SPECIFICATION.md`, `.project/IMPLEMENTATION.md`, `.project/TASKS.md`, `README.md`, `ARCHITECTURE.md`, `SUPPORTED.md`
-  - Effort: 8h
+  - Completed in: `README.md`, `ARCHITECTURE.md`, `SUPPORTED.md`, `.project/ROADMAP.md`
+  - Notes: `SUPPORTED.md` is now treated as current-state authority and surrounding docs defer to it for shipped behavior
 - [x] Make heuristic probe features much harder to misread as packet-level truth
   - Completed in: `internal/probe/probe.go`, `internal/cli/output.go`, `internal/dashboard/assets/app.js`
   - Notes: CLI/dashboard labels and `fidelity_summary` now distinguish `full`, `partial`, and `observed` fidelity, but packet-level implementations are still future work
@@ -37,9 +38,12 @@ What is working well:
   - Spec reference: dashboard/API portions of Spec §9
   - Completed in: `API.md`
   - Notes: current route set, error shape, list query semantics, typed summary fields, and fidelity semantics are now documented
-- [ ] Improve trace browsing and result detail views in dashboard
-  - Current gap: overview is useful but still shallow
-  - Effort: 12-18h
+- [x] Improve probe and bench result detail views in dashboard
+  - Completed in: `internal/dashboard/assets/index.html`, `internal/dashboard/assets/app.css`, `internal/dashboard/assets/app.js`
+  - Notes: the embedded dashboard now exposes selected probe/bench detail cards with summary, fidelity, risk, and richer protocol health context
+- [ ] Deepen trace browsing in dashboard
+  - Current gap: result detail views are stronger, but trace browsing is still mostly list-and-open
+  - Effort: 8-12h
 - [x] Split `internal/probe/probe.go` into maintainable modules
   - Completed in: `internal/probe/probe.go`, `internal/probe/models.go`, `internal/probe/support.go`, `internal/probe/analytics.go`
   - Notes: probe orchestration remains in `probe.go`; models, support/fidelity logic, and analytics helpers are now separated
@@ -55,7 +59,9 @@ What is working well:
 - [x] Push the same fidelity language into CLI, dashboard, and machine-readable result summaries
   - Completed in: `internal/probe/models.go`, `internal/probe/support.go`, `internal/cli/output.go`, `internal/dashboard/assets/app.js`
   - Notes: `full`, `observed`, and `partial` now share one canonical legend, and `version`/`retry`/`ecn` are consistently surfaced as `observed`
-- [ ] Review dashboard auth and remote-bind defaults again under a deployment checklist
+- [x] Review dashboard auth and remote-bind defaults again under a deployment checklist
+  - Completed in: `OPERATIONS.md`, `CONFIG.md`, `TROUBLESHOOTING.md`
+  - Notes: deployment guidance now spells out remote dashboard auth requirements, TLS choices, retention, and release-prep checks
 - [ ] Add a startup/runtime banner when experimental transport is enabled outside loopback
 - [x] Add documented retention, log, and trace disk-usage guidance
   - Completed in: `OPERATIONS.md`
@@ -121,9 +127,13 @@ What is working well:
 
 ### Final production preparation for the supported product path
 
-- [ ] Ensure release artifacts and `.goreleaser.yml` are still aligned with actual product positioning
+- [x] Ensure release artifacts and `.goreleaser.yml` are still aligned with actual product positioning
+  - Completed in: `.goreleaser.yml`, `OPERATIONS.md`, `README.md`, `scripts/ci-smoke.sh`, `scripts/ci-smoke.ps1`
+  - Notes: release prep now includes smoke verification and the documented release checklist matches current product positioning
 - [ ] Add version/build metadata to all user-visible surfaces
-- [ ] Add deployment checklist for self-signed vs custom cert operation
+- [x] Add deployment checklist for self-signed vs custom cert operation
+  - Completed in: `OPERATIONS.md`, `CONFIG.md`
+  - Notes: docs now distinguish local runtime certificate use from shared or remote deployments that should provide custom cert/key material
 - [x] Add operational monitoring guidance around `/healthz`, `/readyz`, `/metrics`, access logs, and traces
   - Completed in: `OPERATIONS.md`
 - [ ] Verify container image hardening and runtime assumptions
