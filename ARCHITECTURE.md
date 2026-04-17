@@ -2,6 +2,8 @@
 
 This document describes Triton's current architecture boundary as implemented in the repository.
 
+For current support and deployment decisions, prefer [SUPPORTED.md](/d:/Codebox/TritonProbe/SUPPORTED.md). This file is the architecture-oriented explanation of that supported boundary.
+
 ## Product Boundary
 
 Triton currently runs three transport planes in one binary:
@@ -13,6 +15,8 @@ Triton currently runs three transport planes in one binary:
 The supported production-like path is the real HTTP server + real HTTP/3 via `quic-go`.
 The in-repo `internal/quic` and `internal/h3` stacks are intentionally experimental.
 Product positioning and conditional custom-engine milestones are tracked in [.project/ENGINE_STRATEGY.md](./.project/ENGINE_STRATEGY.md).
+
+If this file and [SUPPORTED.md](/d:/Codebox/TritonProbe/SUPPORTED.md) ever appear to disagree, treat `SUPPORTED.md` as authoritative for current-state truth.
 
 ## Probe Fidelity Boundary
 

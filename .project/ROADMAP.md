@@ -7,6 +7,8 @@
 
 TritonProbe is already a functional operator tool. The supported path is: HTTPS/TCP test server, real HTTP/3 via `quic-go`, probe/bench result persistence, and an embedded read-only dashboard for status, stored probes, stored benches, and traces. Build, tests, and vet all pass locally.
 
+For current-state scope questions, treat [SUPPORTED.md](/d:/Codebox/TritonProbe/SUPPORTED.md) as the source of truth and read this roadmap as planning guidance layered on top of that boundary.
+
 The main blockers are not "nothing works." The blockers are truth and scope: target-state docs still promise far more than the code delivers, several advanced probe features are heuristic estimates rather than packet-level implementations, and the experimental transport stack still needs to be clearly treated as research rather than a deployable engine.
 
 What is working well:
@@ -41,16 +43,18 @@ What is working well:
 - [x] Split `internal/probe/probe.go` into maintainable modules
   - Completed in: `internal/probe/probe.go`, `internal/probe/models.go`, `internal/probe/support.go`, `internal/probe/analytics.go`
   - Notes: probe orchestration remains in `probe.go`; models, support/fidelity logic, and analytics helpers are now separated
-- [ ] Add stronger CLI affordances around supported vs experimental modes
-  - Current gap: `lab` exists, but the distinction can still be clearer in help/output
-  - Effort: 4-6h
+- [x] Add stronger CLI affordances around supported vs experimental modes
+  - Completed in: `internal/cli/app.go`, `internal/cli/options.go`, `internal/server/server.go`
+  - Notes: command help and startup warnings now describe the supported path separately from the lab-only transport surface
 
 ## Phase 3: Hardening (Week 7-8)
 
 ### Security, error handling, and operator safety
 
-- [x] Add explicit "estimated/heuristic" tags to 0-RTT, migration, QPACK, loss, congestion, retry, ECN, and spin-bit results
-- [ ] Push the same fidelity language into any remaining API/docs examples and future export formats
+- [x] Add explicit mixed-fidelity labeling to 0-RTT, migration, QPACK, loss, congestion, retry, ECN, and spin-bit results
+- [x] Push the same fidelity language into CLI, dashboard, and machine-readable result summaries
+  - Completed in: `internal/probe/models.go`, `internal/probe/support.go`, `internal/cli/output.go`, `internal/dashboard/assets/app.js`
+  - Notes: `full`, `observed`, and `partial` now share one canonical legend, and `version`/`retry`/`ecn` are consistently surfaced as `observed`
 - [ ] Review dashboard auth and remote-bind defaults again under a deployment checklist
 - [ ] Add a startup/runtime banner when experimental transport is enabled outside loopback
 - [x] Add documented retention, log, and trace disk-usage guidance

@@ -4,6 +4,13 @@ This document is the canonical description of what Triton supports today.
 
 If another document describes a larger future architecture, backlog, or research goal, prefer this file for current-state truth.
 
+Use this file as the first answer to questions such as:
+
+- what is supported today
+- what is lab-only
+- what is safe to describe as production-like
+- how to interpret advanced probe fidelity
+
 ## Supported Runtime
 
 ### Supported server path

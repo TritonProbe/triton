@@ -17,6 +17,8 @@ Current product positioning is pragmatic: real HTTP diagnostics and real HTTP/3 
 
 Canonical reference: [SUPPORTED.md](/d:/Codebox/TritonProbe/SUPPORTED.md)
 
+If any section below conflicts with current running behavior, prefer [SUPPORTED.md](/d:/Codebox/TritonProbe/SUPPORTED.md) first, then [ARCHITECTURE.md](/d:/Codebox/TritonProbe/ARCHITECTURE.md), then the code.
+
 Treat the following as the implementation truth for this repository today:
 
 - Supported server path:
@@ -39,6 +41,8 @@ Important caveat for probe output:
 - If you need packet-level QUIC validation, do not treat those advanced fields as RFC-grade transport telemetry yet.
 
 ## Vision
+
+This section is intentionally future-looking. It describes target-state goals rather than a promise that every item below already exists in the shipped product surface.
 
 Triton is intended to become a documentation-first, comparison-driven QUIC and HTTP/3 laboratory with:
 
@@ -161,7 +165,9 @@ Current implementation note:
 
 ## Architecture
 
-When there is a conflict between the long-term architecture vision below and the running code, prefer [SUPPORTED.md](/d:/Codebox/TritonProbe/SUPPORTED.md), this "Supported Today" section, [ARCHITECTURE.md](/d:/Codebox/TritonProbe/ARCHITECTURE.md), and the generated audit docs under `.project/`.
+When there is a conflict between the long-term architecture vision below and the running code, prefer [SUPPORTED.md](/d:/Codebox/TritonProbe/SUPPORTED.md), then [ARCHITECTURE.md](/d:/Codebox/TritonProbe/ARCHITECTURE.md), then the generated audit docs under `.project/`.
+
+The list immediately below is target-state architecture context from the specification, not a claim that all layers are complete in the current supported runtime.
 
 The specification organizes Triton into these major layers:
 
@@ -615,7 +621,9 @@ Project planning and product definition live under `.project/`:
 
 ## Status Note
 
-This repository is already more than a static scaffold, but it is still pre-v1 and mid-implementation relative to the full specification. This README intentionally reflects both:
+For current-state truth, start with [SUPPORTED.md](/d:/Codebox/TritonProbe/SUPPORTED.md).
 
-- the intended final product described by the specification
-- the concrete code that exists in this workspace today
+This repository is already more than a static scaffold, but it is still pre-v1 and mid-implementation relative to the full specification. The docs intentionally separate:
+
+- the supported product path that exists today
+- the future-looking target state described in the specification
