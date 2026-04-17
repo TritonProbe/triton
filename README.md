@@ -612,6 +612,7 @@ High-value next steps from the specification and the current code trajectory:
 
 Project planning and product definition live under `.project/`:
 
+- [CONTRIBUTING.md](/d:/Codebox/TritonProbe/CONTRIBUTING.md)
 - [API.md](/d:/Codebox/TritonProbe/API.md)
 - [CONFIG.md](/d:/Codebox/TritonProbe/CONFIG.md)
 - [OPERATIONS.md](/d:/Codebox/TritonProbe/OPERATIONS.md)

@@ -119,7 +119,9 @@ What is working well:
 - [x] Publish an "Experimental Lab Surface" document for `internal/quic/*` and `triton lab`
   - Completed in: `EXPERIMENTAL.md`, `README.md`, `SUPPORTED.md`, `ARCHITECTURE.md`
   - Notes: the lab-only transport boundary now has a dedicated document that separates research usage from supported-path claims
-- [ ] Add a concise onboarding path for contributors
+- [x] Add a concise onboarding path for contributors
+  - Completed in: `CONTRIBUTING.md`, `README.md`
+  - Notes: new contributors now have a current-state-first guide for setup, repo boundaries, common work areas, and verification flow
 - [x] Add a config reference with examples for server, probe, bench, traces, and dashboard auth
   - Completed in: `CONFIG.md`
 - [x] Document CI expectations, including race/staticcheck behavior
