@@ -226,7 +226,12 @@ func sampleLatencyProfile(cfg config.ProbeConfig, request func() (int, int64, er
 }
 
 func runConcurrentSamples(concurrency int, request func() (int, int64, error)) concurrentSummary {
-	type sample struct{ status int; bytes int64; latency float64; err error }
+	type sample struct {
+		status  int
+		bytes   int64
+		latency float64
+		err     error
+	}
 	results := make(chan sample, concurrency)
 	var wg sync.WaitGroup
 	for i := 0; i < concurrency; i++ {

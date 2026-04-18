@@ -226,14 +226,14 @@ func (s *Server) handleTrace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := path.Base(rawPath)
-	_, err := s.traceMetadata(name)
+	file, info, err := openTraceFile(s.trace, name)
 	if err != nil {
 		writeAPIError(w, http.StatusNotFound, "trace not found", err)
 		return
 	}
-	fullPath := filepath.Join(s.trace, name)
+	defer file.Close()
 	w.Header().Set("Content-Type", "application/qlog+json-seq")
-	http.ServeFile(w, r, fullPath)
+	http.ServeContent(w, r, name, info.ModTime(), file)
 }
 
 func (s *Server) handleAPINotFound(w http.ResponseWriter, _ *http.Request) {
@@ -270,21 +270,12 @@ func (s *Server) listTraces() ([]TraceMetadata, error) {
 }
 
 func (s *Server) traceMetadata(name string) (TraceMetadata, error) {
-	if name == "." || name == "" || strings.Contains(name, "/") || filepath.Ext(name) != ".sqlog" {
-		return TraceMetadata{}, os.ErrNotExist
-	}
-	if s.trace == "" {
-		return TraceMetadata{}, os.ErrNotExist
-	}
-	fullPath := filepath.Join(s.trace, name)
-	info, err := os.Stat(fullPath)
-	if err != nil || info.IsDir() {
-		if err == nil {
-			err = os.ErrNotExist
-		}
+	file, info, err := openTraceFile(s.trace, name)
+	if err != nil {
 		return TraceMetadata{}, err
 	}
-	preview, err := readTracePreview(fullPath)
+	defer file.Close()
+	preview, err := readTracePreview(file)
 	if err != nil {
 		return TraceMetadata{}, err
 	}

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,13 +22,10 @@ func writeJSON(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func readTracePreview(fullPath string) (string, error) {
-	file, err := os.Open(fullPath)
-	if err != nil {
+func readTracePreview(file *os.File) (string, error) {
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return "", err
 	}
-	defer file.Close()
-
 	data, err := io.ReadAll(io.LimitReader(file, 512))
 	if err != nil {
 		return "", err
@@ -37,6 +35,36 @@ func readTracePreview(fullPath string) (string, error) {
 		return "(empty trace)", nil
 	}
 	return preview, nil
+}
+
+func validTraceName(name string) bool {
+	if name == "" || name == "." || filepath.Ext(name) != ".sqlog" {
+		return false
+	}
+	if filepath.Base(name) != name || strings.ContainsAny(name, `/\`) {
+		return false
+	}
+	return true
+}
+
+func openTraceFile(traceDir, name string) (*os.File, os.FileInfo, error) {
+	if traceDir == "" || !validTraceName(name) {
+		return nil, nil, os.ErrNotExist
+	}
+	fullPath := filepath.Join(traceDir, name)
+	info, err := os.Lstat(fullPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	if info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, nil, os.ErrNotExist
+	}
+	// #nosec G304 -- traceDir is explicit operator configuration and name is a validated .sqlog basename.
+	file, err := os.Open(fullPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	return file, info, nil
 }
 
 func cloneMap(in map[string]any) map[string]any {

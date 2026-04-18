@@ -594,6 +594,8 @@ Developer verification helpers:
 - `make perf-check`
 - `make lint`
 - `make security`
+- `pwsh -File ./scripts/ci-local.ps1` for local CI-style verification on Windows/PowerShell
+- `pwsh -File ./scripts/ci-local.ps1 -Race` to include race tests when a CGO toolchain is available
 - `bash ./scripts/ci-smoke.sh` on bash-capable environments
 - `pwsh -File ./scripts/ci-smoke.ps1` on Windows/PowerShell
 

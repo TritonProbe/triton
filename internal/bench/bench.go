@@ -213,11 +213,29 @@ func runProtocol(target, protocol string, duration time.Duration, concurrency in
 }
 
 func runHTTP3Protocol(target string, duration time.Duration, concurrency int, insecure bool, traceDir string) (Stats, error) {
-	collector := newBenchmarkCollector()
+	resolvedTarget, err := normalizeHTTP3BenchmarkTarget(target)
+	if err != nil {
+		return Stats{}, err
+	}
 
 	client, transport := realh3.NewClient(duration+5*time.Second, insecure, traceDir)
 	defer transport.Close()
 
+	stats := runHTTP3BenchmarkOnce(client, resolvedTarget, duration, concurrency)
+	if stats.Requests == 0 && stats.Errors > 0 {
+		fallbackTarget, err := discoverAltSvcH3Target(resolvedTarget, insecure)
+		if err == nil && fallbackTarget != "" && fallbackTarget != resolvedTarget {
+			stats = runHTTP3BenchmarkOnce(client, fallbackTarget, duration, concurrency)
+		}
+	}
+	if stats.Requests == 0 && stats.Errors > 0 {
+		return stats, errors.New("benchmark failed: all requests errored")
+	}
+	return stats, nil
+}
+
+func runHTTP3BenchmarkOnce(client *http.Client, target string, duration time.Duration, concurrency int) Stats {
+	collector := newBenchmarkCollector()
 	stop := time.Now().Add(duration)
 	var wg sync.WaitGroup
 	for i := 0; i < concurrency; i++ {
@@ -235,12 +253,91 @@ func runHTTP3Protocol(target string, duration time.Duration, concurrency int, in
 		}()
 	}
 	wg.Wait()
+	return collector.finalize(duration)
+}
 
-	stats := collector.finalize(duration)
-	if stats.Requests == 0 && stats.Errors > 0 {
-		return stats, errors.New("benchmark failed: all requests errored")
+func normalizeHTTP3BenchmarkTarget(target string) (string, error) {
+	parsed, err := url.Parse(target)
+	if err != nil {
+		return "", err
 	}
-	return stats, nil
+
+	switch parsed.Scheme {
+	case "h3":
+		parsed.Scheme = "https"
+		return parsed.String(), nil
+	case "https":
+		return parsed.String(), nil
+	default:
+		return "", errors.New("h3 benchmark requires https:// or h3:// target")
+	}
+}
+
+func discoverAltSvcH3Target(target string, insecure bool) (string, error) {
+	parsed, err := url.Parse(target)
+	if err != nil {
+		return "", err
+	}
+	if parsed.Scheme != "https" {
+		return "", nil
+	}
+
+	transport := &http.Transport{
+		ForceAttemptHTTP2: true,
+		// #nosec G402 -- insecure TLS is gated by explicit allow_insecure_tls validation for lab use.
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: insecure, NextProtos: []string{"h2", "http/1.1"}},
+	}
+	client := &http.Client{
+		Timeout:   5 * time.Second,
+		Transport: transport,
+	}
+	defer transport.CloseIdleConnections()
+
+	resp, err := client.Get(parsed.String())
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	authority := extractH3Authority(resp.Header.Values("Alt-Svc"))
+	if authority == "" {
+		return "", nil
+	}
+
+	resolved := *parsed
+	if strings.HasPrefix(authority, ":") {
+		resolved.Host = parsed.Hostname() + authority
+		return resolved.String(), nil
+	}
+	if strings.Contains(authority, ":") {
+		resolved.Host = authority
+		return resolved.String(), nil
+	}
+	return "", nil
+}
+
+func extractH3Authority(values []string) string {
+	for _, value := range values {
+		for _, part := range strings.Split(value, ",") {
+			part = strings.TrimSpace(part)
+			for _, prefix := range []string{"h3=", "h3-29=", "h3-32="} {
+				if !strings.HasPrefix(part, prefix) {
+					continue
+				}
+				start := strings.Index(part, "\"")
+				if start < 0 {
+					continue
+				}
+				quoted := part[start+1:]
+				end := strings.Index(quoted, "\"")
+				if end < 0 {
+					continue
+				}
+				return quoted[:end]
+			}
+		}
+	}
+	return ""
 }
 
 func runLoopbackH3Protocol(target string, duration time.Duration, concurrency int) (Stats, error) {

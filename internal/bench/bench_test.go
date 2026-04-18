@@ -1,6 +1,7 @@
 package bench
 
 import (
+	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -82,6 +83,46 @@ func TestRunProtocolHTTPSH3(t *testing.T) {
 	}
 	if !ok {
 		t.Fatal("expected client qlog file")
+	}
+}
+
+func TestRunProtocolH3SchemeTarget(t *testing.T) {
+	addr, shutdown := testutil.StartHTTP3Server(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer shutdown()
+	traceDir := t.TempDir()
+
+	stats, err := runProtocol("h3://"+addr, "h3", 200*time.Millisecond, 1, true, traceDir)
+	if err != nil {
+		t.Fatalf("expected h3 scheme benchmark to succeed: %v", err)
+	}
+	if stats.Requests == 0 {
+		t.Fatal("expected at least one real h3 request")
+	}
+}
+
+func TestRunProtocolHTTPSH3ViaAltSvc(t *testing.T) {
+	h3Addr, shutdownH3 := testutil.StartHTTP3Server(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer shutdownH3()
+
+	tcpSrv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Alt-Svc", `h3="`+h3Addr+`"; ma=2592000`)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	tcpSrv.TLS = &tls.Config{NextProtos: []string{"h2", "http/1.1"}}
+	tcpSrv.StartTLS()
+	defer tcpSrv.Close()
+
+	traceDir := t.TempDir()
+	stats, err := runProtocol(tcpSrv.URL, "h3", 200*time.Millisecond, 1, true, traceDir)
+	if err != nil {
+		t.Fatalf("expected https h3 benchmark via Alt-Svc to succeed: %v", err)
+	}
+	if stats.Requests == 0 {
+		t.Fatal("expected at least one real h3 request")
 	}
 }
 
@@ -186,5 +227,22 @@ func TestBuildSummaryClassifiesProtocols(t *testing.T) {
 	}
 	if summary.BestProtocol != "h1" || summary.RiskiestProtocol != "h3" {
 		t.Fatalf("unexpected bench summary ranking: %#v", summary)
+	}
+}
+
+func TestExtractH3Authority(t *testing.T) {
+	got := extractH3Authority([]string{`h2=":443"; ma=2592000, h3=":15443"; ma=2592000`})
+	if got != ":15443" {
+		t.Fatalf("unexpected authority: %q", got)
+	}
+}
+
+func TestNormalizeHTTP3BenchmarkTarget(t *testing.T) {
+	got, err := normalizeHTTP3BenchmarkTarget("h3://example.com/ping")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "https://example.com/ping" {
+		t.Fatalf("unexpected normalized target: %q", got)
 	}
 }

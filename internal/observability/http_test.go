@@ -12,9 +12,9 @@ import (
 
 type failingWriter struct{}
 
-func (failingWriter) Header() http.Header         { return make(http.Header) }
-func (failingWriter) WriteHeader(statusCode int)  {}
-func (failingWriter) Write([]byte) (int, error)   { return 0, context.Canceled }
+func (failingWriter) Header() http.Header        { return make(http.Header) }
+func (failingWriter) WriteHeader(statusCode int) {}
+func (failingWriter) Write([]byte) (int, error)  { return 0, context.Canceled }
 
 func TestWithRequestIDGeneratesAndExposesHeader(t *testing.T) {
 	var seen string

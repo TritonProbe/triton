@@ -663,6 +663,38 @@ func TestDashboardTraceErrorsAndNotFound(t *testing.T) {
 	}
 }
 
+func TestDashboardRejectsTraceTraversalWithBackslashes(t *testing.T) {
+	store, err := storage.NewFileStore(t.TempDir(), 10, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	traceDir := filepath.Join(root, "traces")
+	if err := os.Mkdir(traceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "escape.sqlog"), []byte("escaped"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := New("127.0.0.1:0", store, Options{TraceDir: traceDir})
+
+	for _, path := range []string{
+		"/api/v1/traces/..\\escape.sqlog",
+		"/api/v1/traces/meta/..\\escape.sqlog",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		srv.http.Handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404 for traversal path %q, got %d", path, rec.Code)
+		}
+		if strings.Contains(rec.Body.String(), "escaped") {
+			t.Fatalf("expected traversal path %q to stay blocked, got %q", path, rec.Body.String())
+		}
+	}
+}
+
 func TestDashboardProbeAndBenchDetailsNotFound(t *testing.T) {
 	store, err := storage.NewFileStore(t.TempDir(), 10, time.Hour)
 	if err != nil {
