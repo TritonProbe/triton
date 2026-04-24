@@ -103,6 +103,8 @@ func New(cfg config.ServerConfig, dataDir string, store *storage.FileStore) (*Se
 			CertFile: cfg.CertFile,
 			KeyFile:  cfg.KeyFile,
 			UseTLS:   cfg.AllowRemoteDashboard,
+			Bench:    config.Default().Bench,
+			Probe:    config.Default().Probe,
 		})
 	}
 

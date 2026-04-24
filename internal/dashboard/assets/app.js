@@ -30,20 +30,26 @@ function escapeHTML(value) {
     .replaceAll(">", "&gt;");
 }
 
+function escapeBreakableHTML(value) {
+  const breakAfter = "/:?&=._-#";
+  let out = "";
+  for (const char of String(value)) {
+    out += escapeHTML(char);
+    if (breakAfter.includes(char)) {
+      out += "<wbr>";
+    }
+  }
+  return out;
+}
+
 function renderStatus(target, data) {
   const dashboard = data.dashboard || {};
   const storage = data.storage || {};
   target.innerHTML = `
-    <div class="metric-grid">
-      ${metric("Status", data.status || "unknown")}
-      ${metric("Version", dashboard.version || "dev")}
-      ${metric("Uptime", `${dashboard.uptime_seconds || 0}s`)}
-      ${metric("Trace", dashboard.trace_enabled ? "enabled" : "disabled")}
-      ${metric("Probes", storage.probes || 0)}
-      ${metric("Benches", storage.benches || 0)}
-      ${metric("Traces", storage.traces || 0)}
-    </div>
-    <p class="mini">Started at ${escapeHTML(dashboard.started_at || "n/a")} | build ${escapeHTML(dashboard.build_time || "unknown")}</p>
+    ${metric("Service", data.status || "unknown")}
+    ${metric("Uptime", `${dashboard.uptime_seconds || 0}s`)}
+    ${metric("Probes", storage.probes || 0)}
+    ${metric("Benches", storage.benches || 0)}
   `;
 }
 
@@ -97,17 +103,14 @@ function renderOverview(target, probes, benches) {
   const benchSummary = latestBench ? latestBench.summary || {} : {};
   target.innerHTML = `
     <div class="metric-grid">
-      ${metric("Latest Probe", latestProbe ? (latestProbe.proto || latestProbe.target || "available") : "none")}
-      ${metric("Probe Coverage", typeof probeSummary.coverage_ratio === "number" ? `${Math.round(probeSummary.coverage_ratio * 100)}%` : "n/a")}
-      ${metric("Bench Best", benchSummary.best_protocol || "n/a")}
-      ${metric("Bench Healthy", benchSummary.healthy_protocols || 0)}
-      ${metric("Bench Risk", benchSummary.riskiest_protocol || "n/a")}
+      ${metric("Latest Status", latestProbe ? (latestProbe.status || "n/a") : "none")}
+      ${metric("Latest Proto", latestProbe ? (latestProbe.proto || "n/a") : "none")}
+      ${metric("Coverage", typeof probeSummary.coverage_ratio === "number" ? `${Math.round(probeSummary.coverage_ratio * 100)}%` : "n/a")}
+      ${metric("Best Bench", benchSummary.best_protocol || "n/a")}
     </div>
     <p class="mini">
-      ${latestProbe ? `Probe requested ${probeSummary.requested_tests || 0}, available ${probeSummary.available || 0}, not-run ${probeSummary.not_run || 0}, unavailable ${probeSummary.unavailable || 0}.` : "No probe coverage summary yet."}
-    </p>
-    <p class="mini">
-      ${latestBench ? `Bench healthy ${benchSummary.healthy_protocols || 0}, degraded ${benchSummary.degraded_protocols || 0}, failed ${benchSummary.failed_protocols || 0}.` : "No benchmark summary yet."}
+      ${latestProbe ? `Last probe: ${escapeHTML(latestProbe.target || latestProbe.id || "n/a")}.` : "No probe result yet."}
+      ${latestBench ? ` Last bench: healthy ${benchSummary.healthy_protocols || 0}, degraded ${benchSummary.degraded_protocols || 0}, failed ${benchSummary.failed_protocols || 0}.` : " No benchmark result yet."}
     </p>
   `;
 }
@@ -165,20 +168,14 @@ function renderCompare(target, probes, benches) {
   target.innerHTML = `
     <div class="metric-grid">
       ${metric("Probe Coverage", Number.isFinite(probeCoverageCurrent) ? `${probeCoverageCurrent.toFixed(1)}%` : "n/a")}
-      ${metric("Coverage Δ", numericDelta(probeCoverageCurrent, probeCoveragePrevious))}
+      ${metric("Coverage Change", numericDelta(probeCoverageCurrent, probeCoveragePrevious))}
       ${metric("Bench Healthy", benchHealthCurrent)}
-      ${metric("Healthy Δ", numericDelta(benchHealthCurrent, benchHealthPrevious))}
+      ${metric("Healthy Change", numericDelta(benchHealthCurrent, benchHealthPrevious))}
       ${metric("Best Protocol", bestProtocol || "n/a")}
-      ${metric("Best P95 Δ", numericDelta(p95Current, p95Previous))}
-    </div>
-    <div class="pill-row">
-      ${latestProbe ? pillMuted(`probe latest ${latestProbe.id || latestProbe.target || "n/a"}`) : ""}
-      ${prevProbe ? pillMuted(`probe prev ${prevProbe.id || prevProbe.target || "n/a"}`) : ""}
-      ${latestBench ? pillMuted(`bench latest ${latestBench.id || latestBench.target || "n/a"}`) : ""}
-      ${prevBench ? pillMuted(`bench prev ${prevBench.id || prevBench.target || "n/a"}`) : ""}
+      ${metric("P95 Change", numericDelta(p95Current, p95Previous))}
     </div>
     <p class="mini">
-      ${bestProtocol ? `Best protocol trend is based on ${escapeHTML(bestProtocol)} p95 latency from stats_view.` : "Best protocol trend becomes available once bench summary includes best protocol."}
+      ${bestProtocol ? `Trend uses the latest ${escapeHTML(bestProtocol)} p95 latency.` : "Trend appears after at least one benchmark summary."}
     </p>
   `;
 }
@@ -390,7 +387,7 @@ function buildBenchPills(protocols) {
 }
 
 function detailRow(label, value) {
-  return `<div class="detail-row"><span class="detail-key">${escapeHTML(String(label))}</span><span class="detail-value">${escapeHTML(String(value))}</span></div>`;
+  return `<div class="detail-row"><span class="detail-key">${escapeHTML(String(label))}</span><span class="detail-value">${escapeBreakableHTML(String(value))}</span></div>`;
 }
 
 function selectionStore() {
@@ -483,7 +480,7 @@ function renderProbeDetail(target, result) {
       <div class="detail-spotlight">
         <div class="detail-head">
           <div class="detail-title">
-            <strong>${escapeHTML(result.target || result.id || "probe")}</strong>
+            <strong>${escapeBreakableHTML(result.target || result.id || "probe")}</strong>
             <span class="detail-meta">ID ${escapeHTML(result.id || "n/a")} | proto ${escapeHTML(result.proto || "n/a")} | duration ${escapeHTML(displayDuration(result.duration))}</span>
           </div>
           ${pillState(risk.label, risk.state)}
@@ -547,7 +544,7 @@ function renderBenchDetail(target, result) {
       <div class="detail-spotlight">
         <div class="detail-head">
           <div class="detail-title">
-            <strong>${escapeHTML(result.target || result.id || "bench")}</strong>
+            <strong>${escapeBreakableHTML(result.target || result.id || "bench")}</strong>
             <span class="detail-meta">ID ${escapeHTML(result.id || "n/a")} | duration ${escapeHTML(displayDuration(result.duration))} | concurrency ${escapeHTML(String(result.concurrency || 0))}</span>
           </div>
           ${pillState(risk.label, risk.state)}
@@ -592,7 +589,7 @@ function renderTraceDetail(target, item) {
       <div class="detail-spotlight">
         <div class="detail-head">
           <div class="detail-title">
-            <strong>${escapeHTML(item.name || "trace")}</strong>
+            <strong>${escapeBreakableHTML(item.name || "trace")}</strong>
             <span class="detail-meta">Updated ${escapeHTML(item.modified_at || "n/a")} | size ${escapeHTML(String(item.size_bytes || 0))} bytes</span>
           </div>
           ${pillState(risk.label, risk.state)}
@@ -693,86 +690,32 @@ function renderProbes(target, items) {
   target.innerHTML = `<div class="record-list">${items.map((item) => {
     const analysis = probeAnalysisForItem(item);
     const latency = objectField(analysis, "latency");
-    const streams = objectField(analysis, "streams");
-    const response = objectField(analysis, "response");
-    const zeroRTT = objectField(analysis, "0rtt");
-    const migration = objectField(analysis, "migration");
-    const qpack = objectField(analysis, "qpack");
-    const loss = objectField(analysis, "loss");
-    const congestion = objectField(analysis, "congestion");
-    const version = objectField(analysis, "version");
-    const retry = objectField(analysis, "retry");
-    const ecn = objectField(analysis, "ecn");
-    const spin = objectField(analysis, "spin-bit");
-    const support = objectField(analysis, "support");
     const supportSummary = objectField(analysis, "support_summary");
     const fidelitySummary = objectField(analysis, "fidelity_summary");
-    const zeroRTTSupport = objectField(support, "0rtt");
-    const migrationSupport = objectField(support, "migration");
-    const otherSupport = Object.entries(support)
-      .filter(([name]) => name !== "0rtt" && name !== "migration")
-      .map(([name, entry]) => `${name}:${entry.coverage || "unknown"}`);
-    const plan = objectField(analysis, "test_plan");
-    const requested = arrayField(plan, "requested");
-    const executed = arrayField(plan, "executed");
-    const skipped = arrayField(plan, "skipped");
-    const planPills = buildPlanPills(requested, executed, skipped);
-    const advancedPills = buildAdvancedPills({ fidelitySummary, zeroRTT, migration, qpack, loss, congestion, version, retry, ecn, spin });
-    const supportPills = buildSupportPills(zeroRTTSupport, migrationSupport);
-    const notes = buildProbeNotes({
-      skipped,
-      fidelitySummary,
-      support,
-      otherSupport,
-      supportSummary,
-      zeroRTT,
-      migration,
-      qpack,
-      loss,
-      congestion,
-      version,
-      retry,
-      ecn,
-      spin,
-      zeroRTTSupport,
-      migrationSupport,
-    });
-    const metrics = probeMetricValues(latency, streams, response, zeroRTT, migration, supportSummary);
     const statusValue = Number(item.status || 0);
     const statusState = statusValue >= 200 && statusValue < 400 ? "ok" : (statusValue >= 400 ? "error" : "muted");
+    const coverage = typeof supportSummary.coverage_ratio === "number" ? `${Math.round(supportSummary.coverage_ratio * 100)}%` : "n/a";
+    const p95 = latency.p95 ? `${Number(latency.p95).toFixed(2)}ms` : "n/a";
     const selected = item.id && item.id === selectedId("probe");
     return `
       <article class="record">
         <div class="record-head">
           <div class="record-title">
-            <h3>${escapeHTML(item.target || item.id || "probe")}</h3>
-            <span class="record-meta">ID ${escapeHTML(item.id || "n/a")} | proto ${escapeHTML(item.proto || "n/a")} | duration ${escapeHTML(displayDuration(item.duration))}</span>
+            <h3>${escapeBreakableHTML(item.target || item.id || "probe")}</h3>
+            <span class="record-meta">${escapeHTML(item.proto || "n/a")} | ${escapeHTML(displayDuration(item.duration))} | ${escapeHTML(item.timestamp || "")}</span>
           </div>
-          <button class="record-action ${selected ? "is-selected" : ""}" data-probe-id="${escapeHTML(item.id || "")}">${selected ? "Selected" : "Inspect"}</button>
+          <button class="record-action ${selected ? "is-selected" : ""}" data-probe-id="${escapeHTML(item.id || "")}">${selected ? "Selected" : "Details"}</button>
         </div>
         <div class="metric-grid">
           ${metric("Status", item.status || "n/a")}
           ${metric("Proto", item.proto || "n/a")}
-          ${metric("Total", displayDuration(item.duration))}
-          ${metric("P95", metrics.p95)}
-          ${metric("Streams", metrics.streams)}
-          ${metric("Bytes", metrics.bytes)}
-          ${metric("0-RTT", metrics.zeroRTTState)}
-          ${metric("Migration", metrics.migrationState)}
-          ${metric("Fidelity", fidelityState(fidelitySummary))}
-          ${metric("Coverage", metrics.coverage)}
+          ${metric("P95", p95)}
+          ${metric("Coverage", coverage)}
         </div>
         <div class="pill-row">
           ${pillState(`status ${item.status || "n/a"}`, statusState)}
-          ${pill(`latency samples ${metrics.latencySamples}`)}
-          ${pill(`stream success ${metrics.streamSuccess}`)}
-          ${pill(`throughput ${metrics.throughput}`)}
-          ${metrics.advancedLabel === "mixed" ? pillHeuristic("advanced metrics include observed/partial results") : pillMuted("advanced metrics are full")}
+          ${pillMuted(`fidelity ${fidelityState(fidelitySummary)}`)}
         </div>
-        <div class="pill-row">${supportPills}</div>
-        <div class="pill-row">${advancedPills}</div>
-        <div class="pill-row">${planPills}</div>
-        ${notes}
       </article>
     `;
   }).join("")}</div>`;
@@ -789,7 +732,6 @@ function renderBenches(target, items) {
   target.innerHTML = `<div class="record-list">${items.map((item) => {
     const protocols = benchProtocolsForItem(item);
     const summary = item.summary || {};
-    const pills = buildBenchPills(protocols);
     const top = benchTopStats(protocols);
     const healthState = (summary.failed_protocols || 0) > 0 ? "error" : ((summary.degraded_protocols || 0) > 0 ? "warn" : "ok");
     const selected = item.id && item.id === selectedId("bench");
@@ -797,23 +739,21 @@ function renderBenches(target, items) {
       <article class="record">
         <div class="record-head">
           <div class="record-title">
-            <h3>${escapeHTML(item.target || item.id || "bench")}</h3>
-            <span class="record-meta">ID ${escapeHTML(item.id || "n/a")} | duration ${escapeHTML(displayDuration(item.duration))} | concurrency ${escapeHTML(String(item.concurrency || 0))}</span>
+            <h3>${escapeBreakableHTML(item.target || item.id || "bench")}</h3>
+            <span class="record-meta">${escapeHTML(displayDuration(item.duration))} | concurrency ${escapeHTML(String(item.concurrency || 0))} | ${escapeHTML(item.timestamp || "")}</span>
           </div>
-          <button class="record-action ${selected ? "is-selected" : ""}" data-bench-id="${escapeHTML(item.id || "")}">${selected ? "Selected" : "Inspect"}</button>
+          <button class="record-action ${selected ? "is-selected" : ""}" data-bench-id="${escapeHTML(item.id || "")}">${selected ? "Selected" : "Details"}</button>
         </div>
         <div class="metric-grid">
-          ${metric("Duration", displayDuration(item.duration))}
-          ${metric("Concurrency", item.concurrency || 0)}
-          ${metric("Protocols", protocols.length)}
-          ${metric("Top Req/s", top.reqPerSec)}
-          ${metric("Top Error", top.errorRate)}
-          ${metric("Samples", top.samples)}
-          ${metric("Healthy", summary.healthy_protocols || 0)}
           ${metric("Best", summary.best_protocol || "n/a")}
+          ${metric("Req/s", top.reqPerSec)}
+          ${metric("Errors", top.errorRate)}
+          ${metric("Healthy", summary.healthy_protocols || 0)}
         </div>
-        <div class="pill-row">${pillState(`health ${summary.healthy_protocols || 0}/${summary.protocols || protocols.length || 0}`, healthState)}${pills}</div>
-        ${summary.protocols ? `<p class="mini">Bench summary: healthy ${summary.healthy_protocols || 0}, degraded ${summary.degraded_protocols || 0}, failed ${summary.failed_protocols || 0}, riskiest ${escapeHTML(String(summary.riskiest_protocol || "n/a"))}</p>` : ""}
+        <div class="pill-row">
+          ${pillState(`health ${summary.healthy_protocols || 0}/${summary.protocols || protocols.length || 0}`, healthState)}
+          ${pillMuted(`protocols ${protocols.map(([name]) => name).join(",") || "n/a"}`)}
+        </div>
       </article>
     `;
   }).join("")}</div>`;
@@ -833,7 +773,7 @@ function renderTraces(target, items) {
     <article class="record">
       <div class="record-head">
         <div class="record-title">
-          <h3>${escapeHTML(item.name || "trace")}</h3>
+          <h3>${escapeBreakableHTML(item.name || "trace")}</h3>
           <span class="record-meta">Updated ${escapeHTML(item.modified_at || "n/a")} | size ${escapeHTML(String(item.size_bytes || 0))} bytes</span>
         </div>
         <button class="record-action ${selected ? "is-selected" : ""}" data-trace-id="${escapeHTML(item.name || "")}">${selected ? "Selected" : "Inspect"}</button>
@@ -1010,6 +950,398 @@ async function loadCompare() {
   }
 }
 
+function setBenchActionStatus(message, state) {
+  setActionStatus("bench-action-status", message, state);
+}
+
+function setProbeActionStatus(message, state) {
+  setActionStatus("probe-action-status", message, state);
+}
+
+function setClearActionStatus(message, state) {
+  setActionStatus("clear-action-status", message, state);
+}
+
+function setLastResult(title, message, state) {
+  const target = document.getElementById("last-result");
+  if (!target) {
+    return;
+  }
+  target.classList.remove("is-ok", "is-error");
+  if (state) {
+    target.classList.add(`is-${state}`);
+  }
+  target.innerHTML = `<strong>${escapeHTML(title)}</strong>${escapeBreakableHTML(message)}`;
+}
+
+function setActionStatus(id, message, state) {
+  const target = document.getElementById(id);
+  if (!target) {
+    return;
+  }
+  target.classList.remove("is-ok", "is-error");
+  if (state) {
+    target.classList.add(`is-${state}`);
+  }
+  target.textContent = message;
+}
+
+function dashboardTargetInput() {
+  return document.getElementById("dashboard-target") || document.getElementById("probe-target") || document.getElementById("bench-target");
+}
+
+function normalizeTargetValue(value) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) {
+    return "";
+  }
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  return `https://${trimmed}`;
+}
+
+function dashboardTargetValue() {
+  const target = dashboardTargetInput();
+  if (!target) {
+    return "";
+  }
+  const normalized = normalizeTargetValue(target.value);
+  if (normalized && target.value !== normalized) {
+    target.value = normalized;
+  }
+  updateTargetHelpers(normalized);
+  return normalized;
+}
+
+function selectedProbeTests() {
+  const suite = document.getElementById("probe-suite");
+  const value = suite ? suite.value : "default";
+  switch (value) {
+    case "full":
+      return ["handshake", "tls", "latency", "throughput", "streams", "alt-svc", "0rtt", "migration", "ecn", "retry", "version", "qpack", "congestion", "loss", "spin-bit"];
+    case "latency":
+      return ["handshake", "tls", "latency"];
+    default:
+      return ["handshake", "tls", "latency", "throughput", "streams", "alt-svc"];
+  }
+}
+
+function selectedBenchProtocols() {
+  return Array.from(document.querySelectorAll('input[name="bench-protocol"]:checked'))
+    .map((input) => input.value)
+    .filter(Boolean);
+}
+
+function clearScopeLabel(scope) {
+  switch (scope) {
+    case "probes":
+      return "probe results";
+    case "benches":
+      return "benchmark results";
+    case "traces":
+      return "trace files";
+    default:
+      return "all dashboard results";
+  }
+}
+
+function clearMessage(data) {
+  const removed = data && data.removed ? data.removed : {};
+  const parts = ["probes", "benches", "traces"]
+    .filter((key) => Object.prototype.hasOwnProperty.call(removed, key))
+    .map((key) => `${removed[key]} ${key}`);
+  return parts.length ? `Cleared ${parts.join(", ")}.` : "Nothing to clear.";
+}
+
+function updateTargetHelpers(value) {
+  const targetValue = normalizeTargetValue(value || (dashboardTargetInput() ? dashboardTargetInput().value : ""));
+  const openTarget = document.getElementById("open-target");
+  if (openTarget) {
+    openTarget.href = targetValue || "https://example.com";
+    openTarget.setAttribute("aria-disabled", targetValue ? "false" : "true");
+  }
+}
+
+function applyTargetPreset(button) {
+  const target = dashboardTargetInput();
+  if (!target) {
+    return;
+  }
+  const value = button.dataset.targetPreset || "";
+  target.value = value;
+  updateTargetHelpers(value);
+  if (button.dataset.targetInsecure === "true") {
+    const probeInsecure = document.getElementById("probe-insecure");
+    const benchInsecure = document.getElementById("bench-insecure");
+    if (probeInsecure) {
+      probeInsecure.checked = true;
+    }
+    if (benchInsecure) {
+      benchInsecure.checked = true;
+    }
+  }
+  target.focus();
+}
+
+function probeResultMessage(result) {
+  const analysis = probeAnalysisForItem(result);
+  const supportSummary = objectField(analysis, "support_summary");
+  const timings = result && result.timings_ms ? result.timings_ms : {};
+  const tls = result && result.tls ? result.tls : {};
+  const total = typeof timings.total === "number" ? `${Number(timings.total).toFixed(2)}ms` : displayDuration(result.duration);
+  const coverage = typeof supportSummary.coverage_ratio === "number" ? `${Math.round(supportSummary.coverage_ratio * 100)}% coverage` : "coverage n/a";
+  const tlsLabel = tls.version ? `TLS ${tls.version}` : "TLS n/a";
+  return `Probe complete: HTTP ${result.status || "n/a"} over ${result.proto || "n/a"} in ${total}.
+${tlsLabel}, ${coverage}.`;
+}
+
+function benchResultMessage(result) {
+  const summary = result && result.summary ? result.summary : {};
+  const protocols = benchProtocolsForItem(result);
+  const bestName = summary.best_protocol || (protocols[0] ? protocols[0][0] : "n/a");
+  const best = protocols.find(([name]) => String(name).toLowerCase() === String(bestName).toLowerCase());
+  const stats = best ? best[1] || {} : {};
+  const latency = stats.latency_ms || {};
+  const reqPerSec = typeof stats.req_per_sec === "number" ? Number(stats.req_per_sec).toFixed(2) : "n/a";
+  const p95 = typeof latency.p95 === "number" ? `${Number(latency.p95).toFixed(2)}ms` : "n/a";
+  const errors = typeof stats.error_rate === "number" ? `${Math.round(stats.error_rate * 100)}% errors` : "errors n/a";
+  return `Bench complete: best ${bestName}, ${reqPerSec} req/s, p95 ${p95}.
+Healthy ${summary.healthy_protocols || 0}/${summary.protocols || protocols.length || 0}, ${errors}.`;
+}
+
+async function runProbeFromDashboard(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const submit = document.getElementById("probe-submit");
+  const timeout = document.getElementById("probe-timeout");
+  const streams = document.getElementById("probe-streams");
+  const insecure = document.getElementById("probe-insecure");
+  const target = dashboardTargetInput();
+  const targetValue = dashboardTargetValue();
+
+  if (!targetValue) {
+    setProbeActionStatus("Enter a target URL first.", "error");
+    if (target) {
+      target.focus();
+    }
+    return;
+  }
+
+  const payload = {
+    target: targetValue,
+    tests: selectedProbeTests(),
+    timeout: timeout ? timeout.value : "10s",
+    streams: streams ? Number(streams.value || 5) : 5,
+    insecure_tls: Boolean(insecure && insecure.checked),
+  };
+
+  if (submit) {
+    submit.disabled = true;
+    submit.textContent = "Running...";
+  }
+  setProbeActionStatus(`Probing ${payload.target}`, "");
+
+  try {
+    const response = await fetch("/api/v1/actions/probe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      const message = data && data.error && data.error.message ? data.error.message : `probe failed with HTTP ${response.status}`;
+      throw new Error(message);
+    }
+    const result = data.result || {};
+    setProbeActionStatus(probeResultMessage(result), "ok");
+    setLastResult("Probe", probeResultMessage(result), "ok");
+    if (result.id) {
+      setSelectedId("probe", result.id);
+      const detail = document.getElementById("probe-detail");
+      if (detail) {
+        renderProbeDetail(detail, result);
+      }
+    }
+    reloadProbes();
+    loadOverview();
+    loadCompare();
+    load("status", "/api/v1/status", renderStatus);
+    form.reset();
+    if (target) {
+      target.value = payload.target;
+    }
+  } catch (error) {
+    setProbeActionStatus(String(error.message || error), "error");
+    setLastResult("Probe failed", String(error.message || error), "error");
+  } finally {
+    if (submit) {
+      submit.disabled = false;
+      submit.textContent = "Run Probe";
+    }
+  }
+}
+
+async function runBenchFromDashboard(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const submit = document.getElementById("bench-submit");
+  const duration = document.getElementById("bench-duration");
+  const concurrency = document.getElementById("bench-concurrency");
+  const insecure = document.getElementById("bench-insecure");
+  const target = dashboardTargetInput();
+  const targetValue = dashboardTargetValue();
+  const protocols = selectedBenchProtocols();
+
+  if (!targetValue) {
+    setBenchActionStatus("Enter a target URL first.", "error");
+    if (target) {
+      target.focus();
+    }
+    return;
+  }
+  if (protocols.length === 0) {
+    setBenchActionStatus("Select at least one protocol.", "error");
+    return;
+  }
+
+  const payload = {
+    target: targetValue,
+    protocols,
+    duration: duration ? duration.value : "3s",
+    concurrency: concurrency ? Number(concurrency.value || 4) : 4,
+    insecure_tls: Boolean(insecure && insecure.checked),
+  };
+
+  if (submit) {
+    submit.disabled = true;
+    submit.textContent = "Running...";
+  }
+  setBenchActionStatus(`Running ${payload.protocols.join(",")} against ${payload.target}`, "");
+
+  try {
+    const response = await fetch("/api/v1/actions/bench", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      const message = data && data.error && data.error.message ? data.error.message : `bench failed with HTTP ${response.status}`;
+      throw new Error(message);
+    }
+    const result = data.result || {};
+    setBenchActionStatus(benchResultMessage(result), "ok");
+    setLastResult("Benchmark", benchResultMessage(result), "ok");
+    if (result.id) {
+      setSelectedId("bench", result.id);
+      const detail = document.getElementById("bench-detail");
+      if (detail) {
+        renderBenchDetail(detail, result);
+      }
+    }
+    reloadBenches();
+    loadOverview();
+    loadCompare();
+    load("status", "/api/v1/status", renderStatus);
+    form.reset();
+    if (target) {
+      target.value = payload.target;
+    }
+  } catch (error) {
+    setBenchActionStatus(String(error.message || error), "error");
+    setLastResult("Benchmark failed", String(error.message || error), "error");
+  } finally {
+    if (submit) {
+      submit.disabled = false;
+      submit.textContent = "Run Bench";
+    }
+  }
+}
+
+async function runProbeAndBench() {
+  const button = document.getElementById("run-both-submit");
+  const probeForm = document.getElementById("probe-runner");
+  const benchForm = document.getElementById("bench-runner");
+  if (!probeForm || !benchForm) {
+    return;
+  }
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Running...";
+  }
+  setLastResult("Running", "Probe first, benchmark next.", "");
+  try {
+    await runProbeFromDashboard({ preventDefault() {}, currentTarget: probeForm });
+    await runBenchFromDashboard({ preventDefault() {}, currentTarget: benchForm });
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "Run Probe + Bench";
+    }
+  }
+}
+
+async function clearResults(scope) {
+  const label = clearScopeLabel(scope);
+  if (!window.confirm(`Clear ${label}? This removes stored dashboard history for this workspace.`)) {
+    return;
+  }
+  const buttons = Array.from(document.querySelectorAll("[data-clear-scope]"));
+  buttons.forEach((button) => {
+    button.disabled = true;
+  });
+  setClearActionStatus(`Clearing ${label}...`, "");
+  try {
+    const response = await fetch("/api/v1/actions/clear", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      const message = data && data.error && data.error.message ? data.error.message : `clear failed with HTTP ${response.status}`;
+      throw new Error(message);
+    }
+    setClearActionStatus(clearMessage(data), "ok");
+    setLastResult("Cleared", clearMessage(data), "ok");
+    if (scope === "all" || scope === "probes") {
+      setSelectedId("probe", "");
+      const detail = document.getElementById("probe-detail");
+      if (detail) {
+        detail.textContent = "Select a probe row to inspect it.";
+      }
+      reloadProbes();
+    }
+    if (scope === "all" || scope === "benches") {
+      setSelectedId("bench", "");
+      const detail = document.getElementById("bench-detail");
+      if (detail) {
+        detail.textContent = "Select a bench row to inspect it.";
+      }
+      reloadBenches();
+    }
+    if (scope === "all" || scope === "traces") {
+      setSelectedId("trace", "");
+      const detail = document.getElementById("trace-detail");
+      if (detail) {
+        detail.textContent = "Select a trace row to inspect it.";
+      }
+      reloadTraces();
+    }
+    loadOverview();
+    loadCompare();
+    load("status", "/api/v1/status", renderStatus);
+  } catch (error) {
+    setClearActionStatus(String(error.message || error), "error");
+    setLastResult("Clear failed", String(error.message || error), "error");
+  } finally {
+    buttons.forEach((button) => {
+      button.disabled = false;
+    });
+  }
+}
+
 load("status", "/api/v1/status", renderStatus);
 load("config", "/api/v1/config", renderConfig);
 const reloadProbes = () => {
@@ -1029,6 +1361,35 @@ const reloadTraces = () => {
 bindCollectionFilters("probes", reloadProbes);
 bindCollectionFilters("benches", reloadBenches);
 bindCollectionFilters("traces", reloadTraces);
+const benchRunner = document.getElementById("bench-runner");
+if (benchRunner) {
+  benchRunner.addEventListener("submit", runBenchFromDashboard);
+}
+const probeRunner = document.getElementById("probe-runner");
+if (probeRunner) {
+  probeRunner.addEventListener("submit", runProbeFromDashboard);
+}
+const runBothSubmit = document.getElementById("run-both-submit");
+if (runBothSubmit) {
+  runBothSubmit.addEventListener("click", runProbeAndBench);
+}
+const dashboardTarget = dashboardTargetInput();
+if (dashboardTarget) {
+  dashboardTarget.addEventListener("input", () => updateTargetHelpers(dashboardTarget.value));
+  dashboardTarget.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      runProbeAndBench();
+    }
+  });
+  updateTargetHelpers(dashboardTarget.value);
+}
+document.querySelectorAll("[data-target-preset]").forEach((button) => {
+  button.addEventListener("click", () => applyTargetPreset(button));
+});
+document.querySelectorAll("[data-clear-scope]").forEach((button) => {
+  button.addEventListener("click", () => clearResults(button.dataset.clearScope || "all"));
+});
 reloadProbes();
 reloadBenches();
 reloadTraces();

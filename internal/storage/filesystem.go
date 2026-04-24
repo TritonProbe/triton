@@ -192,6 +192,28 @@ func (s *FileStore) LoadBenchSummary(id string, target any) error {
 	return s.loadSummary("benches", id, target)
 }
 
+func (s *FileStore) Clear(category string) (int, error) {
+	if err := validateStoreCategory(category); err != nil {
+		return 0, err
+	}
+	items, err := s.List(category)
+	if err != nil {
+		return 0, err
+	}
+	removed := 0
+	for _, item := range items {
+		if err := os.Remove(item.Path); err != nil && !os.IsNotExist(err) {
+			return removed, fmt.Errorf("clear %s: %w", item.Path, err)
+		}
+		if err := s.removeSummary(category, item.ID); err != nil {
+			return removed, err
+		}
+		removed++
+	}
+	s.invalidateListCache(category)
+	return removed, nil
+}
+
 func (s *FileStore) cleanup(category string) error {
 	if err := validateStoreCategory(category); err != nil {
 		return err

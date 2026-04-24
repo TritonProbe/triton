@@ -3,108 +3,261 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Triton Dashboard</title>
+  <title>TritonProbe Dashboard</title>
   <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
-  <main class="shell">
-    <section class="hero">
-      <p class="eyebrow">TritonProbe</p>
-      <h1>Live server, probe, and benchmark overview.</h1>
-      <p class="lede">This scaffold ships a lightweight dashboard that lists stored probe and benchmark runs while the transport layer grows underneath it.</p>
+  <main class="app-shell">
+    <header class="hero">
+      <div class="brand-row">
+        <span class="brand-mark">T</span>
+        <div class="brand-copy">
+          <p class="eyebrow">TritonProbe</p>
+          <h1>URL Probe and Benchmark</h1>
+        </div>
+      </div>
+      <div id="status" class="status-strip">loading...</div>
+    </header>
+
+    <section class="runner-panel" aria-labelledby="run-title">
+      <div class="runner-intro">
+        <p class="eyebrow">Run</p>
+        <h2 id="run-title">Check a target URL</h2>
+      </div>
+
+      <label class="field target-field">
+        <span>Target URL</span>
+        <input id="dashboard-target" type="url" placeholder="example.com or https://example.com" autocomplete="url" required>
+      </label>
+      <div class="target-toolbar">
+        <button class="chip-action" type="button" data-target-preset="https://127.0.0.1:8443/ping" data-target-insecure="true">Local HTTPS</button>
+        <button class="chip-action" type="button" data-target-preset="https://example.com">Example</button>
+        <a id="open-target" class="chip-link" href="https://example.com" target="_blank" rel="noopener noreferrer">Open target</a>
+      </div>
+
+      <div class="quick-run-bar">
+        <button id="run-both-submit" class="primary-action primary-action-strong" type="button">Run Probe + Bench</button>
+        <div id="last-result" class="result-focus">No run yet. Enter a URL, then run a probe, benchmark, or both.</div>
+      </div>
+
+      <div class="run-grid">
+        <article class="run-card">
+          <div class="run-card-head">
+            <h3>Probe</h3>
+            <p class="mini">TLS, protocol, response timing, and HTTP/3 hints.</p>
+          </div>
+          <form id="probe-runner" class="option-form">
+            <button id="probe-submit" class="primary-action" type="submit">Run Probe</button>
+            <details class="options-details">
+              <summary>Options</summary>
+              <div class="option-grid">
+                <label class="field">
+                  <span>Depth</span>
+                  <select id="probe-suite">
+                    <option value="default" selected>Standard</option>
+                    <option value="full">Deep</option>
+                    <option value="latency">Latency</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Timeout</span>
+                  <select id="probe-timeout">
+                    <option value="5s">5s</option>
+                    <option value="10s" selected>10s</option>
+                    <option value="20s">20s</option>
+                    <option value="30s">30s</option>
+                  </select>
+                </label>
+                <label class="field compact-field">
+                  <span>Streams</span>
+                  <input id="probe-streams" type="number" min="1" max="64" step="1" value="5">
+                </label>
+                <label class="check-field">
+                  <input id="probe-insecure" type="checkbox">
+                  <span>Allow self-signed TLS</span>
+                </label>
+              </div>
+            </details>
+          </form>
+          <div id="probe-action-status" class="action-status">Ready.</div>
+        </article>
+
+        <article class="run-card">
+          <div class="run-card-head">
+            <h3>Benchmark</h3>
+            <p class="mini">Short H1/H2/H3 throughput and latency comparison.</p>
+          </div>
+          <form id="bench-runner" class="option-form">
+            <button id="bench-submit" class="primary-action" type="submit">Run Bench</button>
+            <details class="options-details">
+              <summary>Options</summary>
+              <div class="option-grid">
+                <fieldset class="protocol-field">
+                  <legend>Protocols</legend>
+                  <label><input type="checkbox" name="bench-protocol" value="h1" checked> H1</label>
+                  <label><input type="checkbox" name="bench-protocol" value="h2" checked> H2</label>
+                  <label><input type="checkbox" name="bench-protocol" value="h3"> H3</label>
+                </fieldset>
+                <label class="field">
+                  <span>Duration</span>
+                  <select id="bench-duration">
+                    <option value="1s">1s</option>
+                    <option value="3s" selected>3s</option>
+                    <option value="5s">5s</option>
+                    <option value="10s">10s</option>
+                  </select>
+                </label>
+                <label class="field compact-field">
+                  <span>Concurrency</span>
+                  <input id="bench-concurrency" type="number" min="1" max="128" step="1" value="4">
+                </label>
+                <label class="check-field">
+                  <input id="bench-insecure" type="checkbox">
+                  <span>Allow self-signed TLS</span>
+                </label>
+              </div>
+            </details>
+          </form>
+          <div id="bench-action-status" class="action-status">Ready.</div>
+        </article>
+      </div>
     </section>
-    <section class="overview card">
-      <h2>Overview</h2>
-      <div id="overview" class="stack">loading...</div>
-    </section>
-    <section class="overview card">
-      <h2>Compare & Trends</h2>
-      <div id="compare" class="stack">loading...</div>
-    </section>
-    <section class="grid">
-      <article class="card">
-        <h2>Status</h2>
-        <div id="status" class="stack">loading...</div>
+
+    <section class="summary-grid">
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Latest</p>
+            <h2>Summary</h2>
+          </div>
+        </div>
+        <div id="overview" class="stack">loading...</div>
       </article>
-      <article class="card">
-        <h2>Config</h2>
-        <div id="config" class="stack">loading...</div>
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Change</p>
+            <h2>Recent Comparison</h2>
+          </div>
+        </div>
+        <div id="compare" class="stack">loading...</div>
       </article>
-      <article class="card">
-        <h2>Recent Probes</h2>
+    </section>
+
+    <section class="clear-panel" aria-labelledby="clear-title">
+      <div>
+        <p class="eyebrow">Clean Up</p>
+        <h2 id="clear-title">Clear old results</h2>
+        <p class="mini">Remove stored dashboard results when you want a fresh run history.</p>
+      </div>
+      <div class="clear-actions">
+        <button class="secondary-action" type="button" data-clear-scope="probes">Clear Probes</button>
+        <button class="secondary-action" type="button" data-clear-scope="benches">Clear Benches</button>
+        <button class="secondary-action" type="button" data-clear-scope="traces">Clear Traces</button>
+        <button class="danger-action" type="button" data-clear-scope="all">Clear All</button>
+      </div>
+      <div id="clear-action-status" class="action-status">Nothing cleared yet.</div>
+    </section>
+
+    <section class="results-grid">
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Probe Results</p>
+            <h2>Recent Probes</h2>
+          </div>
+        </div>
         <div class="controls">
-          <input id="probes-query" type="search" placeholder="Search target/proto/id">
-          <select id="probes-sort">
-            <option value="newest">Newest</option>
-            <option value="oldest">Oldest</option>
-            <option value="target_asc">Target A-Z</option>
-            <option value="target_desc">Target Z-A</option>
-            <option value="status_desc">Status High-Low</option>
-            <option value="status_asc">Status Low-High</option>
-          </select>
+          <input id="probes-query" type="search" placeholder="Search URL or id">
           <select id="probes-limit">
-            <option value="5">Top 5</option>
-            <option value="10">Top 10</option>
-            <option value="25">Top 25</option>
+            <option value="5">5 rows</option>
+            <option value="10">10 rows</option>
+            <option value="25">25 rows</option>
           </select>
         </div>
         <div id="probes" class="stack">loading...</div>
       </article>
-      <article class="card">
-        <h2>Recent Benches</h2>
+
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Benchmark Results</p>
+            <h2>Recent Benches</h2>
+          </div>
+        </div>
         <div class="controls">
-          <input id="benches-query" type="search" placeholder="Search target/protocol/id">
-          <select id="benches-sort">
-            <option value="newest">Newest</option>
-            <option value="oldest">Oldest</option>
-            <option value="target_asc">Target A-Z</option>
-            <option value="target_desc">Target Z-A</option>
-            <option value="concurrency_desc">Concurrency High-Low</option>
-            <option value="concurrency_asc">Concurrency Low-High</option>
-          </select>
+          <input id="benches-query" type="search" placeholder="Search URL or id">
           <select id="benches-limit">
-            <option value="5">Top 5</option>
-            <option value="10">Top 10</option>
-            <option value="25">Top 25</option>
+            <option value="5">5 rows</option>
+            <option value="10">10 rows</option>
+            <option value="25">25 rows</option>
           </select>
         </div>
         <div id="benches" class="stack">loading...</div>
       </article>
-      <article class="card">
-        <h2>Trace Files</h2>
-        <div class="controls">
-          <input id="traces-query" type="search" placeholder="Search trace name/preview">
-          <select id="traces-sort">
-            <option value="name_asc">Name A-Z</option>
-            <option value="name_desc">Name Z-A</option>
-            <option value="newest">Newest</option>
-            <option value="oldest">Oldest</option>
-            <option value="size_desc">Size High-Low</option>
-            <option value="size_asc">Size Low-High</option>
-          </select>
-          <select id="traces-limit">
-            <option value="5">Top 5</option>
-            <option value="10">Top 10</option>
-            <option value="25">Top 25</option>
-          </select>
+    </section>
+
+    <section id="details-section" class="detail-grid">
+      <article class="panel detail-panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Selected</p>
+            <h2>Probe Details</h2>
+          </div>
         </div>
-        <div id="traces" class="stack">loading...</div>
+        <div id="probe-detail" class="stack">Select a probe row to inspect it.</div>
+      </article>
+      <article class="panel detail-panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Selected</p>
+            <h2>Bench Details</h2>
+          </div>
+        </div>
+        <div id="bench-detail" class="stack">Select a bench row to inspect it.</div>
       </article>
     </section>
-    <section class="detail-grid">
-      <article class="card detail-card">
-        <h2>Selected Probe</h2>
-        <div id="probe-detail" class="stack">Select a probe to inspect summary, fidelity, and risk.</div>
-      </article>
-      <article class="card detail-card">
-        <h2>Selected Bench</h2>
-        <div id="bench-detail" class="stack">Select a bench to inspect protocol health, latency, and risk.</div>
-      </article>
-      <article class="card detail-card">
-        <h2>Selected Trace</h2>
-        <div id="trace-detail" class="stack">Select a trace to inspect metadata, recency, and preview content.</div>
-      </article>
-    </section>
+
+    <details class="advanced-block">
+      <summary>Advanced runtime data</summary>
+      <section class="advanced-grid">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Startup</p>
+              <h2>Config</h2>
+            </div>
+          </div>
+          <div id="config" class="stack">loading...</div>
+        </article>
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">qlog</p>
+              <h2>Trace Files</h2>
+            </div>
+          </div>
+          <div class="controls">
+            <input id="traces-query" type="search" placeholder="Search trace name">
+            <select id="traces-limit">
+              <option value="5">5 rows</option>
+              <option value="10">10 rows</option>
+              <option value="25">25 rows</option>
+            </select>
+          </div>
+          <div id="traces" class="stack">loading...</div>
+        </article>
+        <article class="panel detail-panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Selected</p>
+              <h2>Trace Details</h2>
+            </div>
+          </div>
+          <div id="trace-detail" class="stack">Select a trace row to inspect it.</div>
+        </article>
+      </section>
+    </details>
   </main>
   <script src="/assets/app.js"></script>
 </body>

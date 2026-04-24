@@ -115,6 +115,16 @@ func getOnly(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+func postOnly(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeAPIError(w, http.StatusMethodNotAllowed, "method not allowed", nil)
+			return
+		}
+		next(w, r)
+	}
+}
+
 func parseListQuery(r *http.Request) listQuery {
 	if r == nil {
 		return listQuery{}

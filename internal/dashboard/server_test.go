@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"bytes"
 	"crypto/tls"
 	"encoding/json"
 	"net/http"
@@ -437,6 +438,139 @@ func TestDashboardListQueryOffsetPagination(t *testing.T) {
 	}
 }
 
+func TestDashboardBenchActionRunsAndPersists(t *testing.T) {
+	store, err := storage.NewFileStore(t.TempDir(), 10, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer target.Close()
+
+	srv := New("127.0.0.1:0", store, Options{})
+	body := bytes.NewBufferString(`{"target":` + strconvQuote(target.URL) + `,"protocols":["h1"],"duration":"100ms","concurrency":1,"insecure_tls":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/actions/bench", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from bench action, got %d body=%q", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"status":"ok"`) || !strings.Contains(rec.Body.String(), `"protocols":["h1"]`) {
+		t.Fatalf("expected bench action result payload, got %q", rec.Body.String())
+	}
+	items, err := store.List("benches")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected one persisted bench result, got %d", len(items))
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/actions/bench", nil)
+	rec = httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 for bench action GET, got %d", rec.Code)
+	}
+}
+
+func TestDashboardProbeActionRunsAndPersists(t *testing.T) {
+	store, err := storage.NewFileStore(t.TempDir(), 10, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer target.Close()
+
+	srv := New("127.0.0.1:0", store, Options{})
+	body := bytes.NewBufferString(`{"target":` + strconvQuote(target.URL) + `,"tests":["handshake","tls","latency"],"timeout":"5s","streams":2,"insecure_tls":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/actions/probe", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from probe action, got %d body=%q", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"status":"ok"`) || !strings.Contains(rec.Body.String(), `"status":200`) {
+		t.Fatalf("expected probe action result payload, got %q", rec.Body.String())
+	}
+	items, err := store.List("probes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected one persisted probe result, got %d", len(items))
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/actions/probe", nil)
+	rec = httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 for probe action GET, got %d", rec.Code)
+	}
+}
+
+func TestDashboardClearActionRemovesResults(t *testing.T) {
+	store, err := storage.NewFileStore(t.TempDir(), 10, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	traceDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(traceDir, "run.sqlog"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveProbe("probe-clear", probe.Result{ID: "probe-clear", Target: "https://clear.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveProbeSummary("probe-clear", map[string]any{"id": "probe-clear"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveBench("bench-clear", bench.Result{ID: "bench-clear", Target: "https://clear.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveBenchSummary("bench-clear", map[string]any{"id": "bench-clear"}); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := New("127.0.0.1:0", store, Options{TraceDir: traceDir})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/actions/clear", bytes.NewBufferString(`{"scope":"all"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from clear action, got %d body=%q", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"probes":1`) || !strings.Contains(rec.Body.String(), `"benches":1`) || !strings.Contains(rec.Body.String(), `"traces":1`) {
+		t.Fatalf("expected clear counts, got %q", rec.Body.String())
+	}
+	probes, err := store.List("probes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	benches, err := store.List("benches")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(probes) != 0 || len(benches) != 0 {
+		t.Fatalf("expected probes/benches cleared, probes=%+v benches=%+v", probes, benches)
+	}
+	if _, err := os.Stat(filepath.Join(traceDir, "run.sqlog")); !os.IsNotExist(err) {
+		t.Fatalf("expected trace to be removed, got %v", err)
+	}
+	if err := store.LoadProbeSummary("probe-clear", &map[string]any{}); !os.IsNotExist(err) {
+		t.Fatalf("expected probe summary cleared, got %v", err)
+	}
+}
+
+func strconvQuote(value string) string {
+	data, _ := json.Marshal(value)
+	return string(data)
+}
+
 func TestDashboardListUsesCachedProbeSummary(t *testing.T) {
 	store, err := storage.NewFileStore(t.TempDir(), 10, time.Hour)
 	if err != nil {
@@ -606,6 +740,12 @@ func TestDashboardAssetsAndHead(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `class="stack"`) {
 		t.Fatalf("expected stack containers in dashboard html, got %q", rec.Body.String())
 	}
+	if !strings.Contains(rec.Body.String(), `data-clear-scope="probes"`) || !strings.Contains(rec.Body.String(), `data-clear-scope="all"`) || !strings.Contains(rec.Body.String(), `id="clear-action-status"`) {
+		t.Fatalf("expected clear result controls in dashboard html, got %q", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `id="run-both-submit"`) || !strings.Contains(rec.Body.String(), `id="last-result"`) || !strings.Contains(rec.Body.String(), `data-target-preset="https://127.0.0.1:8443/ping"`) {
+		t.Fatalf("expected quick run controls in dashboard html, got %q", rec.Body.String())
+	}
 
 	req = httptest.NewRequest(http.MethodGet, "/assets/app.js", nil)
 	rec = httptest.NewRecorder()
@@ -619,11 +759,11 @@ func TestDashboardAssetsAndHead(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "Real HTTP/3 (quic-go)") || !strings.Contains(rec.Body.String(), "Experimental UDP H3 (lab)") {
 		t.Fatalf("expected explicit transport-plane labels in app.js, got %q", rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "skipped") || !strings.Contains(rec.Body.String(), "Top Error") {
-		t.Fatalf("expected richer probe/bench renderer hints in app.js, got %q", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), "dashboardTargetValue") || !strings.Contains(rec.Body.String(), "Enter a target URL first.") || !strings.Contains(rec.Body.String(), "Details") {
+		t.Fatalf("expected simplified dashboard interaction hints in app.js, got %q", rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "Bench summary") || !strings.Contains(rec.Body.String(), "Healthy") || !strings.Contains(rec.Body.String(), "loadOverview") || !strings.Contains(rec.Body.String(), "loadCompare") {
-		t.Fatalf("expected bench summary renderer hints in app.js, got %q", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), "Req/s") || !strings.Contains(rec.Body.String(), "Healthy") || !strings.Contains(rec.Body.String(), "loadOverview") || !strings.Contains(rec.Body.String(), "loadCompare") {
+		t.Fatalf("expected simplified bench summary renderer hints in app.js, got %q", rec.Body.String())
 	}
 	if !strings.Contains(rec.Body.String(), "0rtt") || !strings.Contains(rec.Body.String(), "migration") || !strings.Contains(rec.Body.String(), "qpack") || !strings.Contains(rec.Body.String(), "loss") || !strings.Contains(rec.Body.String(), "congestion") || !strings.Contains(rec.Body.String(), "version") || !strings.Contains(rec.Body.String(), "retry") || !strings.Contains(rec.Body.String(), "ecn") || !strings.Contains(rec.Body.String(), "spin") || !strings.Contains(rec.Body.String(), "Coverage") || !strings.Contains(rec.Body.String(), "Support summary") {
 		t.Fatalf("expected advanced probe renderer hints in app.js, got %q", rec.Body.String())
@@ -631,7 +771,7 @@ func TestDashboardAssetsAndHead(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "Fidelity legend") || !strings.Contains(rec.Body.String(), "visible protocol/client-layer observation") || !strings.Contains(rec.Body.String(), "heuristic, estimate, or capability-check output") {
 		t.Fatalf("expected fidelity legend renderer hints in app.js, got %q", rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "supportPills") || !strings.Contains(rec.Body.String(), ".coverage") {
+	if !strings.Contains(rec.Body.String(), "buildSupportPills") || !strings.Contains(rec.Body.String(), ".coverage") {
 		t.Fatalf("expected support coverage renderer hints in app.js, got %q", rec.Body.String())
 	}
 	if !strings.Contains(rec.Body.String(), "record-action") || !strings.Contains(rec.Body.String(), "loadDetail") || !strings.Contains(rec.Body.String(), "ensureDetailSelection") || !strings.Contains(rec.Body.String(), "trace-detail") || !strings.Contains(rec.Body.String(), "Open raw trace") {
@@ -639,6 +779,12 @@ func TestDashboardAssetsAndHead(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "loadCollection") || !strings.Contains(rec.Body.String(), "X-Total-Count") || !strings.Contains(rec.Body.String(), "pager") {
 		t.Fatalf("expected pagination renderer hints in app.js, got %q", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "clearResults") || !strings.Contains(rec.Body.String(), "/api/v1/actions/clear") || !strings.Contains(rec.Body.String(), "Cleared") {
+		t.Fatalf("expected clear result renderer hints in app.js, got %q", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "runProbeAndBench") || !strings.Contains(rec.Body.String(), "normalizeTargetValue") || !strings.Contains(rec.Body.String(), "setLastResult") || !strings.Contains(rec.Body.String(), "applyTargetPreset") {
+		t.Fatalf("expected quick run renderer hints in app.js, got %q", rec.Body.String())
 	}
 }
 

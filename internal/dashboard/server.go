@@ -48,6 +48,8 @@ func New(addr string, store *storage.FileStore, opts Options) *Server {
 		certFile:       opts.CertFile,
 		keyFile:        opts.KeyFile,
 		useTLS:         opts.UseTLS,
+		benchDefaults:  opts.Bench,
+		probeDefaults:  opts.Probe,
 		probeCache:     map[string]cachedProbeSummary{},
 		benchCache:     map[string]cachedBenchSummary{},
 		probeListCache: map[string]cachedProbeList{},
@@ -79,6 +81,9 @@ func New(addr string, store *storage.FileStore, opts Options) *Server {
 	mux.HandleFunc("/api/v1/", s.handleAPINotFound)
 	mux.HandleFunc("/api/v1/status", getOnly(s.handleStatus))
 	mux.HandleFunc("/api/v1/config", getOnly(s.handleConfig))
+	mux.HandleFunc("/api/v1/actions/bench", postOnly(s.handleBenchAction))
+	mux.HandleFunc("/api/v1/actions/probe", postOnly(s.handleProbeAction))
+	mux.HandleFunc("/api/v1/actions/clear", postOnly(s.handleClearAction))
 	mux.HandleFunc("/api/v1/probes", getOnly(s.handleProbes))
 	mux.HandleFunc("/api/v1/benches", getOnly(s.handleBenches))
 	mux.HandleFunc("/api/v1/probes/", getOnly(s.handleProbe))

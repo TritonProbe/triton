@@ -242,6 +242,47 @@ func TestDuplicateResultSaveDoesNotOverwriteExistingData(t *testing.T) {
 	}
 }
 
+func TestClearRemovesResultsAndSummaries(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewFileStore(dir, 10, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveProbe("probe-1", map[string]any{"id": "probe-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveProbeSummary("probe-1", map[string]any{"id": "probe-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveBench("bench-1", map[string]any{"id": "bench-1"}); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := store.Clear("probes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed != 1 {
+		t.Fatalf("expected one removed probe, got %d", removed)
+	}
+	items, err := store.List("probes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("expected probes to be cleared, got %+v", items)
+	}
+	if err := store.LoadProbeSummary("probe-1", &map[string]any{}); !os.IsNotExist(err) {
+		t.Fatalf("expected probe summary to be cleared, got %v", err)
+	}
+	benches, err := store.List("benches")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(benches) != 1 {
+		t.Fatalf("expected benches to remain, got %+v", benches)
+	}
+}
+
 func TestConcurrentSummaryWritesPreserveAllIndexEntries(t *testing.T) {
 	dir := t.TempDir()
 	store, err := NewFileStore(dir, 100, time.Hour)

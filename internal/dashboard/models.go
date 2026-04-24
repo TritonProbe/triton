@@ -7,6 +7,7 @@ import (
 
 	"github.com/tritonprobe/triton/internal/bench"
 	"github.com/tritonprobe/triton/internal/buildinfo"
+	"github.com/tritonprobe/triton/internal/config"
 	"github.com/tritonprobe/triton/internal/observability"
 	"github.com/tritonprobe/triton/internal/probe"
 	"github.com/tritonprobe/triton/internal/storage"
@@ -23,6 +24,8 @@ type Server struct {
 	certFile       string
 	keyFile        string
 	useTLS         bool
+	benchDefaults  config.BenchConfig
+	probeDefaults  config.ProbeConfig
 	cacheMu        sync.RWMutex
 	probeCache     map[string]cachedProbeSummary
 	benchCache     map[string]cachedBenchSummary
@@ -152,6 +155,16 @@ type APIErrorDetail struct {
 	Detail  string `json:"detail,omitempty"`
 }
 
+type ClearActionRequest struct {
+	Scope string `json:"scope"`
+}
+
+type ClearActionResponse struct {
+	Status  string         `json:"status"`
+	Message string         `json:"message"`
+	Removed map[string]int `json:"removed"`
+}
+
 type listQuery struct {
 	Limit  int
 	Offset int
@@ -171,6 +184,8 @@ type Options struct {
 	CertFile  string
 	KeyFile   string
 	UseTLS    bool
+	Bench     config.BenchConfig
+	Probe     config.ProbeConfig
 }
 
 func (o *Options) withDefaults() {
@@ -179,5 +194,35 @@ func (o *Options) withDefaults() {
 	}
 	if o.BuildTime == "" {
 		o.BuildTime = buildinfo.BuildTime
+	}
+	if o.Bench.DefaultDuration <= 0 {
+		o.Bench.DefaultDuration = 3 * time.Second
+	}
+	if o.Bench.DefaultConcurrency <= 0 {
+		o.Bench.DefaultConcurrency = 4
+	}
+	if len(o.Bench.DefaultProtocols) == 0 {
+		o.Bench.DefaultProtocols = []string{"h1", "h2"}
+	}
+	if o.Bench.DefaultFormat == "" {
+		o.Bench.DefaultFormat = "json"
+	}
+	if o.Probe.Timeout <= 0 {
+		o.Probe.Timeout = 10 * time.Second
+	}
+	if len(o.Probe.DefaultTests) == 0 {
+		o.Probe.DefaultTests = []string{"handshake", "tls", "latency", "throughput", "streams", "alt-svc"}
+	}
+	if o.Probe.DefaultFormat == "" {
+		o.Probe.DefaultFormat = "json"
+	}
+	if o.Probe.DownloadSize == "" {
+		o.Probe.DownloadSize = "1MB"
+	}
+	if o.Probe.UploadSize == "" {
+		o.Probe.UploadSize = "1MB"
+	}
+	if o.Probe.DefaultStreams <= 0 {
+		o.Probe.DefaultStreams = 5
 	}
 }
