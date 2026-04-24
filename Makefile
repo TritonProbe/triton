@@ -1,7 +1,7 @@
 VERSION ?= dev
 LDFLAGS = -s -w -X main.version=$(VERSION)
 
-.PHONY: build build-all clean test test-race test-fuzz perf-check fmt lint security docker release-snapshot smoke
+.PHONY: build build-all clean test test-race test-fuzz perf-check check-guard fmt lint security docker release-snapshot smoke
 
 build:
 	go build -ldflags="$(LDFLAGS)" -o bin/triton ./cmd/triton
@@ -25,6 +25,9 @@ test-fuzz:
 
 perf-check: build
 	bash ./scripts/ci-bench-guard.sh
+
+check-guard: build
+	bash ./scripts/ci-check-guard.sh
 
 fmt:
 	go fmt ./...

@@ -1,7 +1,8 @@
 param(
   [switch]$Race,
   [switch]$SkipSmoke,
-  [switch]$SkipBenchGuard
+  [switch]$SkipBenchGuard,
+  [switch]$SkipCheckGuard
 )
 
 $ErrorActionPreference = "Stop"
@@ -110,6 +111,17 @@ try {
     }
   } else {
     Write-Host "[local-ci] skip: benchmark regression guard"
+  }
+
+  if (-not $SkipCheckGuard) {
+    Invoke-Step "run combined check guard" {
+      & powershell -NoProfile -File .\scripts\ci-check-guard.ps1
+      if ($LASTEXITCODE -ne 0) {
+        throw "[local-ci] combined check guard failed"
+      }
+    }
+  } else {
+    Write-Host "[local-ci] skip: combined check guard"
   }
 
   if ($Race) {

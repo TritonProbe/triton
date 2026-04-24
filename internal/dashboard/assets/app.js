@@ -62,11 +62,13 @@ function flattenConfig(data) {
   const traceDir = logging.trace_dir || (logging.trace_dir_configured ? "configured" : "disabled");
   const accessLogEnabled = logging.access_log ? true : logging.access_log_enabled;
   const tlsConfigured = tls.configured || (tls.cert_configured && tls.key_configured);
+  const dashboardTransport = dashboard.transport || (allowRemote ? "https" : "http");
   return [
     ["HTTPS/TCP", listenerTCP],
     ["Real HTTP/3 (quic-go)", listenerH3],
     ["Experimental UDP H3 (lab)", listenerExperimental],
     ["Dashboard", dashboardListen],
+    ["Dashboard Transport", dashboardTransport],
     ["Dashboard Auth", dashboard.auth_enabled ? "enabled" : "disabled"],
     ["Remote Dashboard", allowRemote ? "enabled" : "disabled"],
     ["Max Body", limits.max_body_bytes || "n/a"],
@@ -76,7 +78,7 @@ function flattenConfig(data) {
     ["Idle Timeout", timeouts.idle || "n/a"],
     ["Access Log", accessLogEnabled ? "enabled" : "disabled"],
     ["Trace Dir", traceDir],
-    ["TLS", tlsConfigured ? "configured" : "self-signed/default"],
+    ["TLS", tlsConfigured ? "configured" : "runtime-managed local"],
   ];
 }
 

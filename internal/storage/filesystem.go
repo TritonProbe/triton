@@ -19,6 +19,7 @@ type FileStore struct {
 	maxResults int
 	retention  time.Duration
 	mu         sync.RWMutex
+	writeMu    sync.Mutex
 	listCache  map[string]listCacheEntry
 	indexCache map[string]summaryIndexCache
 }
@@ -95,7 +96,7 @@ func (s *FileStore) save(category, id string, data any) error {
 		return err
 	}
 	// #nosec G304 -- resultPath validates category/id and constrains paths to the store root.
-	file, err := os.Create(path)
+	file, err := createExclusiveFile(path, 0o600)
 	if err != nil {
 		return err
 	}
@@ -259,7 +260,7 @@ func (s *FileStore) saveSummary(category, id string, data any) error {
 		return err
 	}
 	// #nosec G304 -- summaryPath validates category/id and constrains paths to the store root.
-	file, err := os.Create(path)
+	file, err := createExclusiveFile(path, 0o600)
 	if err != nil {
 		return err
 	}
@@ -403,24 +404,28 @@ func (s *FileStore) updateSummaryIndex(category string, update func(map[string]j
 		}
 		return err
 	}
-	entries, err := s.summaryIndex(category)
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+
+	release, err := acquireFileLock(path+".lock", 2*time.Second, 30*time.Second)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = release()
+	}()
+
+	entries, err := readSummaryIndexFile(path)
 	if err != nil {
 		return err
 	}
 	update(entries)
 
-	// #nosec G304 -- summaryIndexPath constrains paths to the store root.
-	file, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	if err := json.NewEncoder(file).Encode(entries); err != nil {
+	if err := writeSummaryIndexFile(path, entries); err != nil {
 		return err
 	}
 
-	info, err := file.Stat()
+	info, err := os.Stat(path)
 	if err != nil {
 		s.mu.Lock()
 		delete(s.indexCache, category)
@@ -447,4 +452,105 @@ func cloneSummaryIndexEntries(entries map[string]json.RawMessage) map[string]jso
 		cloned[key] = append(json.RawMessage(nil), value...)
 	}
 	return cloned
+}
+
+func createExclusiveFile(path string, perm os.FileMode) (*os.File, error) {
+	// #nosec G304 -- callers pass paths derived from validated store roots and identifiers.
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, perm)
+	if err == nil {
+		return file, nil
+	}
+	if os.IsExist(err) {
+		return nil, fmt.Errorf("%s already exists: %w", path, os.ErrExist)
+	}
+	return nil, err
+}
+
+func acquireFileLock(lockPath string, timeout, staleAfter time.Duration) (func() error, error) {
+	deadline := time.Now().Add(timeout)
+	for {
+		// #nosec G304 -- lockPath is derived from the validated summary index path inside the store root.
+		file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			_, _ = file.WriteString(time.Now().UTC().Format(time.RFC3339Nano))
+			if closeErr := file.Close(); closeErr != nil {
+				_ = os.Remove(lockPath)
+				return nil, closeErr
+			}
+			return func() error {
+				if err := os.Remove(lockPath); err != nil && !os.IsNotExist(err) {
+					return err
+				}
+				return nil
+			}, nil
+		}
+		if !os.IsExist(err) {
+			return nil, err
+		}
+
+		info, statErr := os.Stat(lockPath)
+		switch {
+		case statErr == nil && time.Since(info.ModTime()) > staleAfter:
+			if err := os.Remove(lockPath); err != nil && !os.IsNotExist(err) {
+				return nil, err
+			}
+			continue
+		case statErr != nil && os.IsNotExist(statErr):
+			continue
+		case statErr != nil:
+			return nil, statErr
+		case time.Now().After(deadline):
+			return nil, fmt.Errorf("timed out acquiring summary index lock %s", lockPath)
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func readSummaryIndexFile(path string) (map[string]json.RawMessage, error) {
+	// #nosec G304 -- summary index path is derived from validated storage configuration.
+	file, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string]json.RawMessage{}, nil
+		}
+		return nil, err
+	}
+	defer file.Close()
+
+	entries := map[string]json.RawMessage{}
+	if err := json.NewDecoder(file).Decode(&entries); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+func writeSummaryIndexFile(path string, entries map[string]json.RawMessage) (err error) {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return err
+	}
+
+	file, err := os.CreateTemp(dir, "index-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := file.Name()
+	defer func() {
+		if err != nil {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if err = json.NewEncoder(file).Encode(entries); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err = file.Close(); err != nil {
+		return err
+	}
+	if err = os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	return nil
 }

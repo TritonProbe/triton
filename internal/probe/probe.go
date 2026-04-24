@@ -17,6 +17,7 @@ import (
 	"github.com/tritonprobe/triton/internal/observability"
 	"github.com/tritonprobe/triton/internal/quic/transport"
 	"github.com/tritonprobe/triton/internal/realh3"
+	"github.com/tritonprobe/triton/internal/runid"
 )
 
 const maxProbeResponseBodyBytes int64 = 1 << 20
@@ -84,7 +85,7 @@ func Run(target string, cfg config.ProbeConfig) (*Result, error) {
 	}
 
 	result := &Result{
-		ID:        fmt.Sprintf("pr-%s", time.Now().UTC().Format("20060102-150405")),
+		ID:        runid.New("pr"),
 		Target:    parsed.String(),
 		Timestamp: time.Now().UTC(),
 		Duration:  time.Since(start),
@@ -185,7 +186,7 @@ func runStandardH3Probe(parsed *url.URL, cfg config.ProbeConfig) (*Result, error
 	}
 
 	result := &Result{
-		ID:        fmt.Sprintf("pr-%s", time.Now().UTC().Format("20060102-150405")),
+		ID:        runid.New("pr"),
 		Target:    parsed.String(),
 		Timestamp: time.Now().UTC(),
 		Duration:  time.Since(start),
@@ -326,7 +327,7 @@ func runLoopbackProbe(parsed *url.URL, cfg config.ProbeConfig) (*Result, error) 
 	}
 
 	result := &Result{
-		ID:        fmt.Sprintf("pr-%s", time.Now().UTC().Format("20060102-150405")),
+		ID:        runid.New("pr"),
 		Target:    parsed.String(),
 		Timestamp: time.Now().UTC(),
 		Duration:  time.Since(start),
@@ -444,7 +445,7 @@ func runRemoteTritonProbe(parsed *url.URL, cfg config.ProbeConfig, plan testPlan
 	}
 
 	result := &Result{
-		ID:        fmt.Sprintf("pr-%s", time.Now().UTC().Format("20060102-150405")),
+		ID:        runid.New("pr"),
 		Target:    parsed.String(),
 		Timestamp: time.Now().UTC(),
 		Duration:  time.Since(start),

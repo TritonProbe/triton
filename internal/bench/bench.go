@@ -19,6 +19,7 @@ import (
 	"github.com/tritonprobe/triton/internal/observability"
 	"github.com/tritonprobe/triton/internal/quic/transport"
 	"github.com/tritonprobe/triton/internal/realh3"
+	"github.com/tritonprobe/triton/internal/runid"
 )
 
 type Result struct {
@@ -96,7 +97,7 @@ func Run(target string, cfg config.BenchConfig) (*Result, error) {
 		return nil, err
 	}
 	return &Result{
-		ID:          fmt.Sprintf("bn-%s", time.Now().UTC().Format("20060102-150405")),
+		ID:          runid.New("bn"),
 		Target:      target,
 		Timestamp:   time.Now().UTC(),
 		Duration:    cfg.DefaultDuration,

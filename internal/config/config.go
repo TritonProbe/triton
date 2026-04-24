@@ -1,6 +1,7 @@
 package config
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -11,10 +12,12 @@ import (
 )
 
 type Config struct {
-	Server  ServerConfig  `yaml:"server"`
-	Probe   ProbeConfig   `yaml:"probe"`
-	Bench   BenchConfig   `yaml:"bench"`
-	Storage StorageConfig `yaml:"storage"`
+	Server        ServerConfig            `yaml:"server"`
+	Probe         ProbeConfig             `yaml:"probe"`
+	Bench         BenchConfig             `yaml:"bench"`
+	Storage       StorageConfig           `yaml:"storage"`
+	ProbeProfiles map[string]ProbeProfile `yaml:"probe_profiles,omitempty"`
+	BenchProfiles map[string]BenchProfile `yaml:"bench_profiles,omitempty"`
 }
 
 type ServerConfig struct {
@@ -41,25 +44,28 @@ type ServerConfig struct {
 }
 
 type ProbeConfig struct {
-	Timeout          time.Duration `yaml:"timeout"`
-	Insecure         bool          `yaml:"insecure"`
-	AllowInsecureTLS bool          `yaml:"allow_insecure_tls"`
-	TraceDir         string        `yaml:"trace_dir"`
-	DefaultTests     []string      `yaml:"default_tests"`
-	DefaultFormat    string        `yaml:"default_format"`
-	DownloadSize     string        `yaml:"download_size"`
-	UploadSize       string        `yaml:"upload_size"`
-	DefaultStreams   int           `yaml:"default_streams"`
+	Timeout          time.Duration   `yaml:"timeout"`
+	Insecure         bool            `yaml:"insecure"`
+	AllowInsecureTLS bool            `yaml:"allow_insecure_tls"`
+	TraceDir         string          `yaml:"trace_dir"`
+	DefaultTests     []string        `yaml:"default_tests"`
+	DefaultFormat    string          `yaml:"default_format"`
+	DownloadSize     string          `yaml:"download_size"`
+	UploadSize       string          `yaml:"upload_size"`
+	DefaultStreams   int             `yaml:"default_streams"`
+	Thresholds       ProbeThresholds `yaml:"thresholds,omitempty"`
 }
 
 type BenchConfig struct {
-	Warmup             time.Duration `yaml:"warmup"`
-	DefaultDuration    time.Duration `yaml:"default_duration"`
-	DefaultConcurrency int           `yaml:"default_concurrency"`
-	DefaultProtocols   []string      `yaml:"default_protocols"`
-	Insecure           bool          `yaml:"insecure"`
-	AllowInsecureTLS   bool          `yaml:"allow_insecure_tls"`
-	TraceDir           string        `yaml:"trace_dir"`
+	Warmup             time.Duration   `yaml:"warmup"`
+	DefaultDuration    time.Duration   `yaml:"default_duration"`
+	DefaultConcurrency int             `yaml:"default_concurrency"`
+	DefaultProtocols   []string        `yaml:"default_protocols"`
+	DefaultFormat      string          `yaml:"default_format"`
+	Insecure           bool            `yaml:"insecure"`
+	AllowInsecureTLS   bool            `yaml:"allow_insecure_tls"`
+	TraceDir           string          `yaml:"trace_dir"`
+	Thresholds         BenchThresholds `yaml:"thresholds,omitempty"`
 }
 
 type StorageConfig struct {
@@ -98,6 +104,7 @@ func Default() Config {
 			DefaultDuration:    10 * time.Second,
 			DefaultConcurrency: 10,
 			DefaultProtocols:   []string{"h1", "h2"},
+			DefaultFormat:      "table",
 			Insecure:           false,
 		},
 		Storage: StorageConfig{
@@ -146,6 +153,9 @@ func (c Config) Validate() error {
 		if c.Server.AllowRemoteDashboard && (c.Server.DashboardUser == "" || c.Server.DashboardPass == "") {
 			return errors.New("server dashboard auth is required when server.allow_remote_dashboard is true")
 		}
+		if c.Server.AllowRemoteDashboard && (c.Server.CertFile == "" || c.Server.KeyFile == "") {
+			return errors.New("server.allow_remote_dashboard requires explicit server.cert and server.key")
+		}
 	}
 	if c.Server.ReadTimeout <= 0 || c.Server.WriteTimeout <= 0 || c.Server.IdleTimeout <= 0 {
 		return errors.New("server timeouts must be positive")
@@ -168,17 +178,29 @@ func (c Config) Validate() error {
 	if c.Probe.Timeout <= 0 {
 		return errors.New("probe.timeout must be positive")
 	}
+	if err := validateOutputFormat(c.Probe.DefaultFormat, "probe.default_format"); err != nil {
+		return err
+	}
 	if c.Probe.Insecure && !c.Probe.AllowInsecureTLS {
 		return errors.New("probe.insecure requires probe.allow_insecure_tls to be true")
 	}
 	if c.Probe.DefaultStreams <= 0 {
 		return errors.New("probe.default_streams must be positive")
 	}
+	if err := validateProbeThresholds(c.Probe.Thresholds, "probe.thresholds"); err != nil {
+		return err
+	}
 	if c.Bench.Warmup < 0 || c.Bench.DefaultDuration <= 0 || c.Bench.DefaultConcurrency <= 0 {
 		return errors.New("bench defaults are invalid")
 	}
+	if err := validateOutputFormat(c.Bench.DefaultFormat, "bench.default_format"); err != nil {
+		return err
+	}
 	if c.Bench.Insecure && !c.Bench.AllowInsecureTLS {
 		return errors.New("bench.insecure requires bench.allow_insecure_tls to be true")
+	}
+	if err := validateBenchThresholds(c.Bench.Thresholds, "bench.thresholds"); err != nil {
+		return err
 	}
 	if (c.Server.CertFile == "") != (c.Server.KeyFile == "") {
 		return errors.New("server cert and key must be provided together")
@@ -190,6 +212,14 @@ func (c Config) Validate() error {
 		if _, err := os.Stat(path); err != nil {
 			return fmt.Errorf("cannot access %s: %w", path, err)
 		}
+	}
+	if c.Server.CertFile != "" && c.Server.KeyFile != "" {
+		if _, err := tls.LoadX509KeyPair(c.Server.CertFile, c.Server.KeyFile); err != nil {
+			return fmt.Errorf("invalid tls certificate pair: %w", err)
+		}
+	}
+	if err := c.validateProfiles(); err != nil {
+		return err
 	}
 	return nil
 }

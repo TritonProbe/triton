@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -215,5 +216,61 @@ func TestLoadSummaryFallsBackToPersistedIndex(t *testing.T) {
 	}
 	if summary["target"] != "https://indexed.example.com" {
 		t.Fatalf("expected summary from persisted index, got %#v", summary)
+	}
+}
+
+func TestDuplicateResultSaveDoesNotOverwriteExistingData(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewFileStore(dir, 10, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.SaveProbe("probe-1", map[string]any{"id": "probe-1", "value": 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveProbe("probe-1", map[string]any{"id": "probe-1", "value": 2}); err == nil {
+		t.Fatal("expected duplicate save to fail")
+	}
+
+	var output map[string]any
+	if err := store.Load("probes", "probe-1", &output); err != nil {
+		t.Fatal(err)
+	}
+	if output["value"] != float64(1) {
+		t.Fatalf("expected original payload to remain intact, got %#v", output)
+	}
+}
+
+func TestConcurrentSummaryWritesPreserveAllIndexEntries(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewFileStore(dir, 100, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			id := filepath.Base(filepath.Join("probe", string(rune('a'+i))))
+			if err := store.SaveProbeSummary(id, map[string]any{"id": id}); err != nil {
+				t.Errorf("SaveProbeSummary(%s) returned error: %v", id, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	restarted, err := NewFileStore(dir, 100, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := restarted.summaryIndex("probes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 16 {
+		t.Fatalf("expected 16 summary index entries, got %d", len(entries))
 	}
 }

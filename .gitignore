@@ -1,6 +1,8 @@
 # Binaries
 /triton
 /triton.exe
+/server
+/dashboard
 /bin/
 *.exe
 *.dll
@@ -11,15 +13,21 @@
 *.test
 *.out
 *.coverprofile
+coverprofile
+$profile
 coverage
+coverage-review
 coverage_review
 coverage.out
+review_cover.out
 
 # Local runtime data
 /triton-data/
+.tmp/
 
 # Go workspace caches
 .gocache/
+.gopath/
 
 # Environment files
 .env

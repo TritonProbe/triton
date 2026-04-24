@@ -26,10 +26,12 @@ Use this short list before exposing a server beyond local development:
    Use custom `server.cert` and `server.key` for shared or remote environments.
 3. Keep the dashboard on loopback unless remote access is intentional.
    If remote access is needed, require `server.allow_remote_dashboard: true` plus auth.
+   Remote dashboard mode now serves HTTPS and requires explicit `server.cert` and `server.key`.
 4. Set storage and trace directories intentionally.
    Confirm retention, max-results, and disk headroom before enabling long-running collection.
 5. Verify health and status endpoints after startup.
    Check `/healthz`, `/readyz`, `/metrics`, and `/api/v1/status`.
+   `readyz` now validates core runtime dependencies such as TLS materials and writable storage/trace directories.
 6. Confirm no lab-only transport flags were enabled by accident.
    Review startup logs for experimental or mixed-plane warnings.
 
@@ -109,12 +111,16 @@ Remote dashboard requirements:
 - `server.allow_remote_dashboard: true`
 - `server.dashboard_user`
 - `server.dashboard_pass`
+- `server.cert`
+- `server.key`
+- remote dashboard traffic is served over HTTPS using the configured server certificate and key material
 
 Recommended remote posture:
 
 - bind the dashboard only to the interface you need
 - avoid default credentials or shared throwaway passwords
 - pair dashboard exposure with network-layer restrictions when possible
+- provide explicit `server.cert` and `server.key`; remote dashboard startup now rejects runtime-generated/self-signed fallback
 
 ## Tracing
 
@@ -141,15 +147,14 @@ Exposed ports:
 
 - `8443/tcp` for HTTPS/TCP
 - `4434/udp` for supported real HTTP/3 when enabled
-- `4433/udp` for experimental lab UDP H3 when enabled
 - `9090/tcp` for the dashboard
 
 Container recommendations:
 
 - mount `/var/lib/triton` or at least `/var/lib/triton/triton-data` if you want persistent results and generated self-signed cert material
 - provide explicit `server.cert` and `server.key` for shared or remote deployments
-- do not expose `4433/udp` unless you intentionally want the lab-only transport surface
 - keep dashboard exposure loopback-only or pair remote bind with auth and network controls
+- expose the lab-only UDP H3 port manually only when you intentionally run experimental transport research
 
 ## Supported vs Lab Change Control
 
@@ -196,13 +201,37 @@ Use this flow for repeatable publishing:
 3. Create and push a `v*` tag such as `v1.0.0`.
 4. Let `.github/workflows/release.yml` invoke GoReleaser from `.goreleaser.yml`.
 5. Verify the GitHub release contains cross-platform archives and `checksums.txt`.
-6. Smoke-check the released binary on at least one target platform.
+6. Verify the release workflow produced a GitHub artifact attestation for `dist/checksums.txt`.
+7. Smoke-check the released binary on at least one target platform.
 
 Current release automation expects:
 
 - tag-driven releases only
 - a full-history checkout on the release runner
 - passing Go tests plus release smoke verification before packaging
+- release provenance attestation for generated artifacts
+
+## Backup And Restore
+
+The current persistence model is filesystem-backed. Treat the results directory as application state.
+
+Backup:
+
+- stop Triton or ensure no active probe/bench writes are in progress
+- archive `storage.results_dir` as a whole, including `probes/`, `benches/`, `probe_summaries/`, `bench_summaries/`, and `certs/` when runtime-generated certificates are in use
+- if traces matter operationally, archive `server.trace_dir`, `probe.trace_dir`, and `bench.trace_dir` separately
+
+Restore:
+
+- restore the archived directories onto the target host
+- preserve file ownership and write permissions for the runtime user
+- start Triton with the same `storage.results_dir` and trace directory configuration
+- verify `/api/v1/status`, `/api/v1/probes`, and `/api/v1/benches` after startup
+
+Operational note:
+
+- the product is currently safest as a single-writer deployment over one filesystem state root
+- do not point multiple production instances at the same writable results directory unless you have explicitly validated that deployment model for your environment
 
 ## Verification Checklist
 
@@ -210,6 +239,7 @@ Current release automation expects:
 - HTTPS/TCP listener is reachable
 - real HTTP/3 listener is reachable when configured
 - dashboard auth works as intended
+- remote dashboard uses an explicit trusted certificate pair when enabled
 - `/healthz`, `/readyz`, `/metrics`, and `/api/v1/status` respond
 - result retention limits are set intentionally
 - trace directories exist and have headroom if tracing is enabled

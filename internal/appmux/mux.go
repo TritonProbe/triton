@@ -26,6 +26,8 @@ type Options struct {
 	Stability            string
 	Version              string
 	BuildTime            string
+	HealthCheck          func(context.Context) error
+	ReadinessCheck       func(context.Context) error
 }
 
 func New() http.Handler {
@@ -64,8 +66,12 @@ func NewWithOptions(opts Options) http.Handler {
 	mux.HandleFunc("/", methodHandler(func(w http.ResponseWriter, r *http.Request) {
 		handleRoot(w, r, opts)
 	}, http.MethodGet))
-	mux.HandleFunc("/healthz", methodHandler(handleHealth, http.MethodGet))
-	mux.HandleFunc("/readyz", methodHandler(handleReady, http.MethodGet))
+	mux.HandleFunc("/healthz", methodHandler(func(w http.ResponseWriter, r *http.Request) {
+		handleHealth(w, r, opts)
+	}, http.MethodGet))
+	mux.HandleFunc("/readyz", methodHandler(func(w http.ResponseWriter, r *http.Request) {
+		handleReady(w, r, opts)
+	}, http.MethodGet))
 	mux.HandleFunc("/metrics", methodHandler(opts.Metrics.handleMetrics, http.MethodGet))
 	mux.HandleFunc("/ping", methodHandler(handlePing, http.MethodGet))
 	mux.HandleFunc("/echo", methodHandler(func(w http.ResponseWriter, r *http.Request) {
@@ -108,16 +114,12 @@ func handlePing(w http.ResponseWriter, _ *http.Request) {
 	_, _ = io.WriteString(w, "pong")
 }
 
-func handleHealth(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status": "ok",
-	})
+func handleHealth(w http.ResponseWriter, r *http.Request, opts Options) {
+	writeCheckStatus(w, r, "healthz", "ok", opts.HealthCheck)
 }
 
-func handleReady(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status": "ready",
-	})
+func handleReady(w http.ResponseWriter, r *http.Request, opts Options) {
+	writeCheckStatus(w, r, "readyz", "ready", opts.ReadinessCheck)
 }
 
 func handleEcho(w http.ResponseWriter, r *http.Request, opts Options) {
@@ -372,6 +374,24 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func writeCheckStatus(w http.ResponseWriter, r *http.Request, check, okStatus string, fn func(context.Context) error) {
+	if fn != nil {
+		if err := fn(r.Context()); err != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+				"status":  "error",
+				"check":   check,
+				"message": err.Error(),
+			})
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": okStatus,
+		"check":  check,
+	})
 }
 
 func tlsVersion(v uint16) string {

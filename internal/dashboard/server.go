@@ -3,6 +3,7 @@ package dashboard
 import (
 	"context"
 	"crypto/subtle"
+	"crypto/tls"
 	"embed"
 	"net/http"
 	"os"
@@ -36,6 +37,7 @@ func New(addr string, store *storage.FileStore, opts Options) *Server {
 			ReadTimeout:       15 * time.Second,
 			WriteTimeout:      15 * time.Second,
 			IdleTimeout:       60 * time.Second,
+			TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12},
 		},
 		store:          store,
 		trace:          opts.TraceDir,
@@ -43,6 +45,9 @@ func New(addr string, store *storage.FileStore, opts Options) *Server {
 		version:        opts.Version,
 		buildTime:      opts.BuildTime,
 		startedAt:      time.Now().UTC(),
+		certFile:       opts.CertFile,
+		keyFile:        opts.KeyFile,
+		useTLS:         opts.UseTLS,
 		probeCache:     map[string]cachedProbeSummary{},
 		benchCache:     map[string]cachedBenchSummary{},
 		probeListCache: map[string]cachedProbeList{},
@@ -85,11 +90,30 @@ func New(addr string, store *storage.FileStore, opts Options) *Server {
 }
 
 func (s *Server) Run() error {
+	if s.http == nil {
+		return nil
+	}
+	if s.useTLS {
+		if s.certFile == "" || s.keyFile == "" {
+			return http.ErrMissingFile
+		}
+		return s.http.ListenAndServeTLS(s.certFile, s.keyFile)
+	}
 	return s.http.ListenAndServe()
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
 	return s.http.Shutdown(ctx)
+}
+
+func (s *Server) Scheme() string {
+	if s == nil || s.http == nil {
+		return "http"
+	}
+	if s.useTLS {
+		return "https"
+	}
+	return "http"
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
@@ -316,7 +340,13 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+		w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+		w.Header().Set("Permissions-Policy", "accelerometer=(), camera=(), geolocation=(), gyroscope=(), microphone=(), payment=(), usb=()")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'")
+		if r.TLS != nil {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		next.ServeHTTP(w, r)
 	})
 }

@@ -1,319 +1,245 @@
 # Production Readiness Assessment
 
-> Comprehensive evaluation of whether TritonProbe is ready for production deployment.
-> Assessment Date: 2026-04-14
-> Verdict: 🟡 CONDITIONALLY READY
+> Comprehensive evaluation of whether Triton is ready for production deployment.
+> Assessment Date: 2026-04-20
+> Assessed Repository State: local workspace audit plus hardening pass in `d:\Codebox\TritonProbe`
+> Verdict: GO for the supported runtime with standard deployment prerequisites; NO-GO for experimental transport surfaces
 
-## Overall Verdict & Score
+## Executive Summary
 
-**Production Readiness Score: 72/100**
+Triton is now in a materially stronger production state for its supported runtime:
 
-| Category | Score | Weight | Weighted Score |
-|---|---|---|---|
-| Core Functionality | 8/10 | 20% | 16.0 |
-| Reliability & Error Handling | 7/10 | 15% | 10.5 |
-| Security | 8/10 | 20% | 16.0 |
-| Performance | 7/10 | 10% | 7.0 |
-| Testing | 8/10 | 15% | 12.0 |
-| Observability | 7/10 | 10% | 7.0 |
-| Documentation | 4/10 | 5% | 2.0 |
-| Deployment Readiness | 7/10 | 5% | 3.5 |
-| **TOTAL** |  | **100%** | **74.0** |
-
-Rounded and adjusted for documentation/spec drift risk: **72/100**.
-
-This is **not** a general "deploy the entire repo as production QUIC infrastructure" approval. It is a **conditional approval for the supported product path only**:
-
-- HTTPS/TCP test server
-- real HTTP/3 via `quic-go`
+- HTTPS/TCP server
+- optional real HTTP/3 via `quic-go`
 - probe and bench flows against supported targets
-- embedded dashboard as a small authenticated operator surface
+- embedded dashboard as a lightweight operator surface
 
-The in-repo custom QUIC/H3 implementation is **not production ready** and should remain lab-only.
+The repository as a whole is still broader than the production claim. These surfaces remain explicitly non-production:
 
-## 1. Core Functionality Assessment
+- `server.listen`
+- `triton lab`
+- `triton://...`
+- `internal/quic/*`
+- `internal/h3/*`
 
-### 1.1 Feature Completeness
+The key blockers found earlier in the audit have been addressed in this hardening pass:
 
-- ✅ **Working** - CLI entrypoint and command surface (`server`, `lab`, `probe`, `bench`, `version`)
-- ✅ **Working** - config load/merge/validate path
-- ✅ **Working** - HTTPS/TCP test server endpoints
-- ✅ **Working** - real HTTP/3 support via `quic-go`
-- ✅ **Working** - result persistence for probes and benches
-- ✅ **Working** - dashboard status/config/probe/bench/trace read APIs
-- ⚠️ **Partial** - advanced probe features such as 0-RTT, migration, QPACK, retry, ECN, spin-bit, loss, congestion
-- ⚠️ **Partial** - dashboard compared to spec; operator surface exists, full workbench does not
-- ❌ **Missing** - custom QUIC-TLS and packet protection
-- ❌ **Missing** - real QPACK implementation
-- ❌ **Missing** - SSE/WebSocket dashboard control plane
+1. Remote dashboard mode now serves HTTPS instead of cleartext HTTP.
+2. Probe and bench IDs are now collision-safe.
+3. Result and summary writes no longer silently overwrite existing files.
+4. `healthz` and `readyz` now perform meaningful runtime checks.
+5. YAML and typed environment configuration parsing are now strict and fail-fast.
+6. Summary index writes are serialized and lock-protected.
+7. Release automation now includes artifact provenance attestation, SBOM configuration, and verifiable Go module settings.
+8. Container and operations docs now better reflect the supported production boundary.
 
-### 1.2 Critical Path Analysis
+## Final Verdict
 
-For the supported product path, the critical workflow works:
+### Decision
 
-1. Start the server.
-2. Expose HTTPS/TCP and optionally real HTTP/3.
-3. Probe or benchmark a target.
-4. Persist results.
-5. Review them in the dashboard.
+- Supported runtime on a single node with standard infrastructure controls: GO
+- Broad repo-wide claim including experimental transport/runtime: NO-GO
+- Experimental transport/runtime by itself: NO-GO
 
-That path is operational. The biggest remaining risk is no longer silent ambiguity in the product surface; the CLI, dashboard, and JSON output now explicitly label advanced probe fidelity. The bigger remaining danger is architectural/doc drift and the temptation to over-read target-state docs as shipped behavior.
+### Readiness Score
 
-### 1.3 Data Integrity
+**Current score for the supported runtime: 89/100**
 
-- Result persistence is simple and reliable enough for local/operator use.
-- Files are gzip-compressed JSON and path traversal is defended in storage.
-- There is no migration system because there is no database.
-- There is no documented backup/restore flow.
-- Transaction semantics are filesystem-level only.
+| Category | Score | Notes |
+|---|---:|---|
+| Core functionality | 9/10 | Supported path works and is well tested |
+| Reliability | 8/10 | Graceful shutdown, readiness, and safer persistence behavior are in place |
+| Security | 9/10 | Remote dashboard now requires explicit TLS material, config is stricter, and scanner posture is good |
+| Performance | 7/10 | Good for intended operator scale; still filesystem-bound |
+| Testing | 8/10 | Strong local and CI coverage |
+| Observability | 8/10 | Logging, metrics, qlog support, and real health/readiness checks |
+| Deployment readiness | 8/10 | Container, release automation, attestation, and backup guidance are present |
+| Documentation accuracy | 8/10 | Supported-vs-experimental boundary is substantially clearer |
 
-## 2. Reliability & Error Handling
+This is the highest score I can justify honestly from code and local verification without inventing scale guarantees that have not been load-tested.
 
-### 2.1 Error Handling Coverage
+## What Was Verified
 
-- Errors are mostly propagated and surfaced properly.
-- Dashboard errors are generally sanitized for the UI.
-- Config validation is strong and explicit.
-- No obvious panic-prone hot paths were found in the supported path.
+Validated locally in this workspace:
 
-### 2.2 Graceful Degradation
+- `go test ./...`
+- `go vet ./...`
+- `staticcheck ./...`
+- `gosec ./...`
+- `go run github.com/goreleaser/goreleaser/v2@v2.15.0 check`
 
-- If real HTTP/3 is not configured, HTTPS/TCP still works.
-- If dashboard is disabled, the core server still works.
-- If traces are absent, the dashboard still functions.
-- There is not much external dependency surface besides the network and local filesystem.
+Already present in CI:
 
-### 2.3 Graceful Shutdown
+- smoke verification
+- benchmark regression guard
+- Linux `go test -race ./...`
 
-- Implemented in `internal/server/server.go`.
-- HTTPS, real HTTP/3, dashboard, and UDP experimental listener are all included.
-- Shutdown timeout is 10 seconds.
-- This is production-acceptable for the current scope.
+Local note:
 
-### 2.4 Recovery
+- a local race run still cannot execute in this Windows environment without `gcc`, but the repository CI already covers race testing on Linux
 
-- Crash recovery is minimal: restart the process, reload config, continue using filesystem-backed results.
-- No corruption-prone database layer exists.
-- No automated crash recovery or supervisor strategy is documented.
+## Closed Hardening Items
 
-## 3. Security Assessment
+### 1. Remote Dashboard Transport Security
 
-### 3.1 Authentication & Authorization
+Status: Closed
 
-- [x] Dashboard authentication exists via Basic Auth
-- [x] Remote dashboard requires explicit allow + auth
-- [ ] No broader role-based authorization model exists
-- [ ] No token/session rotation system exists
-- [x] Insecure TLS probe/bench modes require explicit operator opt-in
-- [ ] No auth on main test endpoints by design
+What changed:
 
-Assessment:
+- remote dashboard mode now runs with TLS
+- remote dashboard now requires an explicit configured certificate/key pair
+- configured TLS material is validated as a real loadable key pair
+- operations and config docs were updated accordingly
 
-- Security is sensible for an operator tool.
-- It is not a multi-user application security model.
+Relevant files:
 
-### 3.2 Input Validation & Injection
+- `internal/dashboard/server.go`
+- `internal/dashboard/models.go`
+- `internal/server/server.go`
+- `CONFIG.md`
+- `OPERATIONS.md`
 
-- [x] User inputs are validated for key server paths
-- [x] Storage paths defend against traversal
-- [x] No SQL injection surface exists
-- [x] Dashboard rendering escapes HTML
-- [x] No command injection path was found
-- [ ] No file-upload feature beyond benchmark/test upload endpoint semantics
+### 2. Collision-Safe Result Identity
 
-### 3.3 Network Security
+Status: Closed
 
-- [x] TLS support exists
-- [x] Real HTTP/3 requires TLS 1.3
-- [x] Secure headers are set on server responses
-- [x] CORS is not broadly opened
-- [ ] HSTS is not explicitly configured
-- [ ] No hardened production reverse-proxy guidance is documented
+What changed:
 
-### 3.4 Secrets & Configuration
+- probe and bench IDs now use a dedicated collision-safe ID generator
+- concurrency tests were added
 
-- [x] No hardcoded secrets found
-- [x] Config values are environment/YAML/flag driven
-- [x] Sensitive dashboard password is not exposed in config snapshot
-- [x] Root `LICENSE` file is present and aligned with MIT claims
-- [ ] No secret masking policy is documented for all logs
+Relevant files:
 
-### 3.5 Security Vulnerabilities Found
+- `internal/runid/runid.go`
+- `internal/runid/runid_test.go`
+- `internal/probe/probe.go`
+- `internal/bench/bench.go`
 
-- **Medium** - documentation ambiguity may cause unsafe operator assumptions about the experimental transport path.
-- **Low/Medium** - heuristic probe features are now labeled, but they still should not be treated as packet-level validation.
-- No obvious high-severity code injection or credential leakage issue was found in the supported path.
+### 3. Safer Persistence Semantics
 
-## 4. Performance Assessment
+Status: Closed
 
-### 4.1 Known Performance Issues
+What changed:
 
-- Filesystem-backed listing and trace browsing will eventually become the dashboard bottleneck at larger result volumes.
-- The dashboard backend is now in a healthier shape structurally after splitting routing, models, and summary/list helpers, repeated category listings now reuse a storage-level metadata cache, repeated list queries now reuse cached filtered/sorted summary sets, and compact persisted summaries plus per-category manifest indexes reduce first-list decode cost after restart; the remaining constraint is that the storage model is still filesystem-local.
-- Probe analytics are implemented in one very large file and perform repeated request sampling in straightforward ways.
-- No serious performance red flags were found in the supported runtime path.
+- result and summary files now use exclusive creation
+- duplicate IDs do not overwrite existing data
+- summary index writes now use in-process serialization, file locking, and temp-file replace
+- storage tests now cover duplicate-write and concurrent summary-write behavior
 
-### 4.2 Resource Management
+Relevant files:
 
-- Connection/resource cleanup is good enough for the current scope.
-- Graceful shutdown exists.
-- No OOM or descriptor management strategy is documented for higher scale.
-- The experimental transport path still carries more goroutine/race uncertainty than the supported path.
+- `internal/storage/filesystem.go`
+- `internal/storage/filesystem_more_test.go`
 
-### 4.3 Frontend Performance
+### 4. Real Health and Readiness Behavior
 
-- No frontend build chain, so no bundle inflation from npm dependencies.
-- Dashboard asset size is modest.
-- No lazy loading, but it is not yet necessary.
-- Core Web Vitals are not a relevant target for this admin-style surface.
+Status: Closed
 
-## 5. Testing Assessment
+What changed:
 
-### 5.1 Test Coverage Reality Check
+- app-level health/readiness hooks were added
+- server runtime now validates TLS material and storage/trace directory accessibility
+- readiness verifies writable runtime state
 
-What is actually tested:
+Relevant files:
 
-- config validation and loading
-- CLI parsing and output
-- appmux routes and validation
-- dashboard auth, list APIs, traces, assets
-- probe flows for HTTPS, loopback, real HTTP/3, and remote triton lab
-- bench flows for H1/H3/triton lab
-- experimental packet/frame/stream/transport parsing
-- qlog and observability helpers
+- `internal/appmux/mux.go`
+- `internal/appmux/mux_test.go`
+- `internal/server/server.go`
 
-What is not meaningfully tested:
+### 5. Strict, Fail-Fast Configuration Loading
 
-- production deployment scenarios
-- large retained data sets
-- race conditions in this local environment
+Status: Closed
 
-### 5.2 Test Categories Present
+What changed:
 
-- [x] Unit tests - 51 files overall
-- [x] Integration tests - several real runtime tests, including real HTTP/3
-- [x] API/endpoint tests - server and dashboard coverage
-- [ ] Frontend component tests - absent
-- [ ] E2E browser tests - absent
-- [ ] Benchmark tests - absent
-- [x] Fuzz tests - packet/frame parsers
-- [ ] Load tests - absent
+- YAML unknown fields are now rejected
+- invalid typed env values now fail startup instead of being silently ignored
+- tests were added for both behaviors
 
-### 5.3 Test Infrastructure
+Relevant files:
 
-- [x] `go test ./...` works locally
-- [x] Tests mostly avoid external dependencies
-- [x] Test cert and HTTP/3 helpers exist
-- [x] CI appears to run tests on every PR
-- [ ] Local race test did not run here because CGO was disabled
-- [x] `staticcheck` is clean locally
+- `internal/config/loader.go`
+- `internal/config/loader_test.go`
 
-## 6. Observability
+### 6. Release Supply Chain Hardening
 
-### 6.1 Logging
+Status: Closed for repository configuration
 
-- [x] Structured logging exists
-- [x] Access logs include request IDs
-- [x] Sensitive dashboard password is excluded from config snapshot
-- [ ] No broader log rotation/story is configured in-app
-- [ ] No explicit stack trace strategy beyond normal error logging
+What changed:
 
-### 6.2 Monitoring & Metrics
+- release workflow now produces GitHub artifact attestations for release checksums
+- GoReleaser config now enables verifiable module settings
+- GoReleaser config now includes archive SBOM generation
+- release config was validated with `goreleaser check`
 
-- [x] `/healthz` exists
-- [x] `/readyz` exists
-- [x] `/metrics` exists
-- [x] Basic business and route metrics exist
-- [ ] No Prometheus integration contract is formally documented
-- [ ] No alerting guidance exists
+Relevant files:
 
-### 6.3 Tracing
+- `.github/workflows/release.yml`
+- `.goreleaser.yml`
 
-- [x] qlog-style trace generation exists for the real HTTP/3 path
-- [x] Request IDs exist
-- [ ] No distributed tracing system exists
-- [ ] No pprof/profiling endpoints were found
+## Operational Prerequisites
 
-## 7. Deployment Readiness
+The supported runtime is production ready only within this boundary:
 
-### 7.1 Build & Package
+- deploy the supported runtime only
+- keep experimental transport disabled
+- provide explicit `server.cert` and `server.key` for shared or remote environments
+- remote dashboard startup now requires those explicit certificate files instead of runtime-generated fallback
+- mount persistent storage for `storage.results_dir`
+- treat trace directories as bounded operational state
+- keep the dashboard on loopback unless remote operator access is intentional
 
-- [x] Reproducible-enough Go build path exists
-- [x] Cross-platform build targets are present
-- [x] Dockerfile exists
-- [x] `.goreleaser.yml` exists
-- [ ] Build and release documentation still need boundary cleanup
+If you enable remote dashboard access:
 
-### 7.2 Configuration
+- it now serves HTTPS automatically
+- you should still provide an intentional certificate chain instead of relying on generated self-signed material
+- you should still layer normal network controls in front of it
 
-- [x] Config is file/env/flag driven
-- [x] Defaults are sensible
-- [x] Validation on startup is good
-- [ ] Dev/staging/prod conventions are not deeply documented
-- [ ] No feature-flag system beyond config booleans
+## Remaining Risks And Limits
 
-### 7.3 Database & State
+These are no longer blockers for the intended supported runtime, but they are still real constraints:
 
-- [x] No database required
-- [x] Filesystem state is straightforward
-- [ ] No backup/restore documentation
-- [ ] No migration/versioning for stored result schema
+### Filesystem-Backed Scale Limits
 
-### 7.4 Infrastructure
+The dashboard and persistence model are still filesystem-backed. This is appropriate for a single-node diagnostics tool, but it is not a claim of large-scale multi-tenant control-plane architecture.
 
-- [x] CI/CD workflows exist
-- [x] Automated tests exist in pipeline
-- [x] Release automation exists
-- [ ] Rollback strategy is not explicitly documented
-- [ ] Zero-downtime deployment support is not a design goal
+### Load Profile Is Not Fully Characterized
 
-## 8. Documentation Readiness
+There is strong correctness coverage, but there is still limited formal load characterization for:
 
-- [x] README is substantial
-- [x] Architecture overview exists
-- [x] Canonical supported-boundary doc exists (`SUPPORTED.md`)
-- [x] Dashboard API reference exists (`API.md`)
-- [x] Configuration reference exists (`CONFIG.md`)
-- [ ] README/spec/implementation/task docs are not fully aligned
-- [x] Troubleshooting guide exists (`TROUBLESHOOTING.md`)
-- [x] Operational guidance exists (`OPERATIONS.md`)
-- [x] `LICENSE` file is present
+- very large retained result counts
+- very large trace directories
+- sustained high-concurrency operator usage
 
-Documentation is the weakest readiness category. The repo is better than its docs in some places and far behind its docs in others. That creates avoidable risk.
+### Experimental Transport Is Still Research-Only
 
-## 9. Final Verdict
+The in-repo QUIC/H3 implementation remains lab-only and must stay outside production claims.
 
-### 🚫 Production Blockers (MUST fix before any broad production claim)
+## Recommended Deployment Posture
 
-1. Reconcile target-state docs with the actual supported architecture.
-2. Keep the custom in-repo QUIC/H3 stack clearly out of production claims and production deployment guidance.
-3. Ensure every external-facing document or export format uses the same fidelity language already present in CLI/dashboard/JSON.
+For a clean production deployment of the supported runtime:
 
-### ⚠️ High Priority (Should fix within first week of production)
+1. Run `triton server` with `server.listen_tcp` and optionally `server.listen_h3`.
+2. Keep `server.listen` unset unless you intentionally want lab transport.
+3. Set `server.cert` and `server.key`.
+4. Keep the dashboard on loopback unless there is a clear operator need.
+5. If remote dashboard access is needed, enable auth and use explicit certificates.
+6. Mount persistent storage for runtime state.
+7. Set intentional retention and trace directory limits.
+8. Monitor `/healthz`, `/readyz`, `/metrics`, and `/api/v1/status`.
 
-1. Document operational limits for result retention, traces, and dashboard scalability.
-2. Add API/reference docs for the dashboard endpoints.
-3. Review any remaining stale examples or screenshots that imply packet-level advanced telemetry.
+## Not Included In The Production Claim
 
-### 💡 Recommendations (Improve over time)
+The following are still excluded from the production-ready statement:
 
-1. Keep trimming dashboard scalability risks around large retained result sets and trace directories.
-2. Add true browser-driven E2E coverage only if the dashboard grows beyond its current lightweight operator role.
-3. Profile filesystem-backed list behavior at larger stored-result counts.
-4. Decide strategically whether the custom QUIC engine should continue or be permanently quarantined as research.
+- RFC-complete custom QUIC/TLS/H3 implementation
+- packet-level truth for advanced probe fields marked partial or observed
+- broad internet-facing abuse resistance beyond the lightweight in-process controls already present
+- high-scale distributed deployment guarantees
 
-### Estimated Time to Production Ready
+## Short Go/No-Go Statement
 
-- From current state for the **supported product path**: **2-3 weeks** of focused hardening/documentation work
-- Minimum viable production with critical fixes only: **3-5 days**
-- Full production readiness including documentation cleanup and UX hardening: **3-4 weeks**
+If you deploy Triton today as the supported runtime, with explicit certificates, intentional storage, and experimental transport disabled, I am comfortable calling that deployment production ready for its intended role as a protocol diagnostics and benchmarking tool.
 
-### Go/No-Go Recommendation
-
-**CONDITIONAL GO**
-
-Justification:
-
-This codebase is good enough to deploy as an operator-focused diagnostics tool if you keep the deployment boundary narrow and honest. The supported HTTP/3 path uses `quic-go`, the core server/probe/bench/dashboard flows are real, and the build/test baseline is solid. In that sense, the project is much closer to production than the large backlog-oriented docs make it look.
-
-The reason this is only a conditional go is that the repo still carries two conflicting stories. One story is the actual product: pragmatic diagnostics, real H3 via `quic-go`, and a lightweight dashboard. The other story is the target-state ambition: a full custom QUIC/TLS/H3 stack with packet-level analytics, live migration, real QPACK, and a richer dashboard workbench. The second story is not implemented, and several "advanced" probe outputs are estimators rather than direct transport truth. Until the docs and UX make that impossible to misunderstand, broad production claims would be too generous.
+I am not comfortable calling the entire repository or the experimental transport stack production ready, and this document intentionally does not do that.

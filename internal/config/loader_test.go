@@ -76,9 +76,25 @@ server:
   max_body_bytes: 4096
 probe:
   timeout: 6s
+  thresholds:
+    require_status_min: 200
+    require_status_max: 299
 bench:
   default_duration: 3s
   default_concurrency: 2
+  default_format: markdown
+probe_profiles:
+  prod-edge:
+    target: "https://example.com"
+    default_tests: [latency, streams]
+    thresholds:
+      max_latency_p95_ms: 250
+bench_profiles:
+  staging-api:
+    target: "https://example.com"
+    default_protocols: [h1, h2, h3]
+    thresholds:
+      max_error_rate: 0.05
 storage:
   results_dir: "./data"
   max_results: 50
@@ -108,8 +124,14 @@ storage:
 	if cfg.Probe.Timeout != 6*time.Second {
 		t.Fatalf("probe timeout not loaded: %+v", cfg.Probe)
 	}
-	if cfg.Bench.DefaultDuration != 3*time.Second || cfg.Bench.DefaultConcurrency != 2 {
+	if cfg.Probe.Thresholds.RequireStatusMin != 200 || cfg.Probe.Thresholds.RequireStatusMax != 299 {
+		t.Fatalf("probe thresholds not loaded: %+v", cfg.Probe.Thresholds)
+	}
+	if cfg.Bench.DefaultDuration != 3*time.Second || cfg.Bench.DefaultConcurrency != 2 || cfg.Bench.DefaultFormat != "markdown" {
 		t.Fatalf("bench yaml overrides not applied: %+v", cfg.Bench)
+	}
+	if cfg.ProbeProfiles["prod-edge"].Target != "https://example.com" || cfg.BenchProfiles["staging-api"].Thresholds.MaxErrorRate != 0.05 {
+		t.Fatalf("profile data not loaded from yaml: %+v %+v", cfg.ProbeProfiles, cfg.BenchProfiles)
 	}
 	if cfg.Storage.MaxResults != 50 || cfg.Storage.Retention != 48*time.Hour {
 		t.Fatalf("storage yaml overrides not applied: %+v", cfg.Storage)
@@ -125,5 +147,25 @@ func TestLoadRejectsMalformedYAML(t *testing.T) {
 
 	if _, err := Load(cfgPath); err == nil {
 		t.Fatal("expected malformed yaml error")
+	}
+}
+
+func TestLoadRejectsUnknownYAMLFields(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "unknown.yaml")
+	if err := os.WriteFile(cfgPath, []byte("server:\n  listen_tcp: \":8443\"\n  unknown_field: true\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	if _, err := Load(cfgPath); err == nil {
+		t.Fatal("expected unknown yaml field error")
+	}
+}
+
+func TestLoadRejectsInvalidTypedEnvOverride(t *testing.T) {
+	t.Setenv("TRITON_SERVER_RATE_LIMIT", "not-an-int")
+
+	if _, err := Load(""); err == nil {
+		t.Fatal("expected invalid env override to fail")
 	}
 }

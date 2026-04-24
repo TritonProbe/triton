@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -54,6 +55,46 @@ func TestDashboardBasicAuth(t *testing.T) {
 	}
 	if srv.http.ReadHeaderTimeout != 5*time.Second || srv.http.ReadTimeout != 15*time.Second || srv.http.WriteTimeout != 15*time.Second || srv.http.IdleTimeout != 60*time.Second {
 		t.Fatalf("unexpected dashboard timeouts: %+v", srv.http)
+	}
+}
+
+func TestDashboardSecurityHeadersIncludeTLSHardening(t *testing.T) {
+	store, err := storage.NewFileStore(t.TempDir(), 10, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := New("127.0.0.1:0", store, Options{})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	req.TLS = &tls.ConnectionState{}
+	rec := httptest.NewRecorder()
+	srv.http.Handler.ServeHTTP(rec, req)
+	if rec.Header().Get("Strict-Transport-Security") == "" {
+		t.Fatal("expected HSTS header on tls request")
+	}
+	if rec.Header().Get("Permissions-Policy") == "" || rec.Header().Get("Cross-Origin-Opener-Policy") == "" || rec.Header().Get("Cross-Origin-Resource-Policy") == "" {
+		t.Fatal("expected additional browser hardening headers")
+	}
+}
+
+func TestDashboardSchemeReflectsTLSMode(t *testing.T) {
+	store, err := storage.NewFileStore(t.TempDir(), 10, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	httpSrv := New("127.0.0.1:0", store, Options{})
+	if scheme := httpSrv.Scheme(); scheme != "http" {
+		t.Fatalf("expected http dashboard scheme, got %q", scheme)
+	}
+
+	httpsSrv := New("127.0.0.1:0", store, Options{
+		UseTLS:   true,
+		CertFile: "cert.pem",
+		KeyFile:  "key.pem",
+	})
+	if scheme := httpsSrv.Scheme(); scheme != "https" {
+		t.Fatalf("expected https dashboard scheme, got %q", scheme)
 	}
 }
 

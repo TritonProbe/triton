@@ -9,7 +9,7 @@
 **License:** MIT
 **Tagline:** "Three Prongs. One Binary. Every Packet."
 
-> Current-state note (2026-04-12): this document remains the target-state specification. The current repo already ships a working diagnostics tool, but the supported HTTP/3 path uses `quic-go`, the in-repo `internal/quic` / `internal/h3` stacks remain experimental lab-only transport research, the dashboard is a lightweight operator surface rather than the full live workbench described below, and several advanced probe features are partial approximations rather than packet-level implementations. Read this spec together with [ANALYSIS.md](./ANALYSIS.md), [ROADMAP.md](./ROADMAP.md), and [PRODUCTIONREADY.md](./PRODUCTIONREADY.md) for the actual implementation boundary.
+> Current-state note (2026-04-12): this document remains the target-state specification. The current repo already ships a working diagnostics tool, but the supported HTTP/3 path uses `quic-go`, the in-repo `internal/quic` / `internal/h3` stacks remain experimental lab-only transport research, the dashboard is a lightweight operator surface rather than the full live workbench described below, and several advanced probe features are partial approximations rather than packet-level implementations. Read this spec together with [ROADMAP.md](./ROADMAP.md) and [PRODUCTIONREADY.md](./PRODUCTIONREADY.md) for the actual implementation boundary.
 
 > Reader warning: unless a section explicitly says "current implementation baseline", assume the remainder of this document describes the intended target state, not guaranteed code that exists today.
 
@@ -1111,7 +1111,6 @@ triton/
 ├── SPECIFICATION.md
 ├── IMPLEMENTATION.md
 ├── TASKS.md
-├── BRANDING.md
 ├── LICENSE
 └── .github/
     └── workflows/

@@ -19,6 +19,6 @@ RUN apt-get update \
 WORKDIR /var/lib/triton
 COPY --from=builder /out/triton /usr/local/bin/triton
 USER 10001:10001
-EXPOSE 4433/udp 4434/udp 8443/tcp 9090/tcp
+EXPOSE 4434/udp 8443/tcp 9090/tcp
 ENTRYPOINT ["triton"]
 CMD ["server"]

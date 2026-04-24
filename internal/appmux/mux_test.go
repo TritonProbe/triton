@@ -105,6 +105,25 @@ func TestRootAndReadyEndpoints(t *testing.T) {
 	}
 }
 
+func TestReadyEndpointReturnsServiceUnavailableOnFailedCheck(t *testing.T) {
+	handler := NewWithOptions(Options{
+		ReadinessCheck: func(context.Context) error {
+			return errors.New("storage directory not writable")
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"storage directory not writable"`) {
+		t.Fatalf("expected readiness error detail, got %q", rec.Body.String())
+	}
+}
+
 func TestRootReflectsConfiguredProtocols(t *testing.T) {
 	handler := NewWithOptions(Options{
 		SupportedProtocols:   []string{"http/1.1", "h2", "h3"},

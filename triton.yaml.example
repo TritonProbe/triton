@@ -10,6 +10,10 @@ server:
   allow_remote_dashboard: false
   dashboard_user: ""
   dashboard_pass: ""
+  # when allow_remote_dashboard is true, the dashboard is served over HTTPS
+  # and requires explicit server cert/key files instead of runtime-generated fallback
+  cert: ""
+  key: ""
   read_timeout: 15s
   write_timeout: 30s
   idle_timeout: 30s
@@ -30,18 +34,78 @@ probe:
   download_size: 1MB
   upload_size: 1MB
   default_streams: 10
+  thresholds:
+    require_status_min: 200
+    require_status_max: 299
+    max_total_ms: 0
+    max_latency_p95_ms: 0
+    max_stream_p95_ms: 0
+    min_stream_success_rate: 0
+    min_coverage_ratio: 0
 
 bench:
   warmup: 2s
   default_duration: 10s
   default_concurrency: 10
+  default_format: table
   trace_dir: ""
   default_protocols:
     - h1
     - h2
   insecure: false
   allow_insecure_tls: false
+  thresholds:
+    require_all_healthy: false
+    max_error_rate: 0
+    min_req_per_sec: 0
+    max_p95_ms: 0
   # use h3 explicitly with loopback targets, e.g. triton://loopback/ping
+
+probe_profiles:
+  # shared names let `triton check --profile NAME` resolve probe and bench together
+  production-edge:
+    target: https://example.com
+    report_name: Production Edge
+    default_format: markdown
+    default_tests:
+      - handshake
+      - tls
+      - latency
+      - streams
+    thresholds:
+      require_status_min: 200
+      require_status_max: 299
+      max_latency_p95_ms: 250
+      min_stream_success_rate: 0.95
+      min_coverage_ratio: 0.8
+
+bench_profiles:
+  staging-api:
+    target: https://example.com
+    report_name: Staging API
+    default_protocols:
+      - h1
+      - h2
+      - h3
+    default_format: markdown
+    thresholds:
+      require_all_healthy: true
+      max_error_rate: 0.05
+      min_req_per_sec: 10
+      max_p95_ms: 300
+  production-edge:
+    target: https://example.com
+    report_name: Production Edge
+    default_protocols:
+      - h1
+      - h2
+      - h3
+    default_format: markdown
+    thresholds:
+      require_all_healthy: true
+      max_error_rate: 0.05
+      min_req_per_sec: 10
+      max_p95_ms: 300
 
 storage:
   results_dir: ./triton-data

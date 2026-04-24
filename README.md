@@ -4,11 +4,12 @@
 
 *Three Prongs. One Binary. Every Packet.*
 
-Triton is a pure Go toolkit for observing, testing, and benchmarking HTTP/3 and QUIC behavior. The project is designed around a single binary with three primary operating modes:
+Triton is a pure Go toolkit for observing, testing, and benchmarking HTTP/3 and QUIC behavior. The project is designed around a single binary with four primary operating modes:
 
 - `server`: runs protocol-aware test endpoints
 - `probe`: inspects and measures remote targets
 - `bench`: compares HTTP/1.1, HTTP/2, and HTTP/3 behavior
+- `check`: runs reusable profile-based verification flows for CI and recurring checks
 
 This repository is not yet the full RFC-complete final product described in the specification, but it already contains a working CLI, a test server, probe/bench flows, QUIC building blocks, and a minimal in-repo H3 loopback stack with handler dispatch.
 Current product positioning is pragmatic: real HTTP diagnostics and real HTTP/3 behavior are supported through `quic-go`, while the in-repo custom QUIC/H3 stack remains lab-only research.
@@ -61,7 +62,7 @@ Core principles from the specification:
 - CLI-first automation
 - Educational protocol visibility
 
-## Three Modes
+## Four Modes
 
 ### 1. Server
 
@@ -71,6 +72,7 @@ By default, `triton server` starts the HTTPS/TCP server on `:8443` and the dashb
 Experimental UDP H3 is also loopback-only by default; binding it on a non-loopback interface now additionally requires `--allow-remote-experimental-h3` or `server.allow_remote_experimental_h3: true`.
 Running real HTTP/3 (`--listen-h3`) and experimental UDP H3 (`--listen`) together now requires explicit mixed-plane opt-in via `--allow-mixed-h3-planes` or `server.allow_mixed_h3_planes: true`.
 Remote dashboard binding is blocked by default; use `--allow-remote-dashboard` only when you intentionally want non-loopback access, and pair it with dashboard auth.
+When remote dashboard access is enabled, provide explicit `--cert` and `--key`; runtime-generated self-signed fallback is no longer accepted for that mode.
 
 If you want to work with the experimental Triton UDP H3 stack directly, prefer `triton lab` instead of mixing it into the normal `server` command.
 For the explicit research-only boundary around that surface, see [EXPERIMENTAL.md](/d:/Codebox/TritonProbe/EXPERIMENTAL.md).
@@ -166,6 +168,32 @@ Current implementation note:
 - bench output now includes sampled latency percentiles (`p50`, `p95`, `p99`), error-rate/error-summary data, and average request phases such as connect, TLS, first-byte, and transfer time
 - bench results now also include a computed `summary` rollup that classifies protocols as healthy/degraded/failed and highlights the best and riskiest protocol in the run
 
+### 4. Check
+
+Check mode turns probe and bench into a reusable verification workflow.
+
+Use it when you want one command that:
+
+- loads named probe and bench profiles from config
+- runs one or both checks against the same target family
+- emits a combined verdict for CI or recurring operational gates
+- optionally writes a combined report file
+
+Examples:
+
+```bash
+triton check --profile production-edge
+triton check --probe-profile production-edge --bench-profile staging-api --report-out reports/check.md
+triton check --profile production-edge --summary-out reports/check-summary.json --junit-out reports/check-junit.xml
+triton check --config triton.yaml --target https://example.com
+```
+
+Current implementation note:
+
+- `check` reuses the same underlying `probe` and `bench` engines
+- threshold failures still persist results, but the command exits non-zero
+- shared profile names let one command resolve both `probe_profiles.NAME` and `bench_profiles.NAME`
+
 ## Architecture
 
 When there is a conflict between the long-term architecture vision below and the running code, prefer [SUPPORTED.md](/d:/Codebox/TritonProbe/SUPPORTED.md), then [ARCHITECTURE.md](/d:/Codebox/TritonProbe/ARCHITECTURE.md), then the generated audit docs under `.project/`.
@@ -200,7 +228,7 @@ What exists in this repository today:
 
 ### Implemented now
 
-- `triton version`, `triton server`, `triton probe`, `triton bench`
+- `triton version`, `triton server`, `triton probe`, `triton bench`, `triton check`
 - self-signed TLS certificate generation
 - persisted probe and benchmark result storage under `triton-data/`
 - dashboard status and result listing API
@@ -280,6 +308,14 @@ go run ./cmd/triton probe --target triton://loopback/ping --format json
 
 ```bash
 go run ./cmd/triton bench --target https://example.com --duration 3s --concurrency 4 --format json
+```
+
+### Run a reusable verification check
+
+```bash
+go run ./cmd/triton check --profile production-edge
+go run ./cmd/triton check --profile production-edge --report-out reports/check.md
+go run ./cmd/triton check --profile production-edge --summary-out reports/check-summary.json --junit-out reports/check-junit.xml
 ```
 
 ## Command Summary
@@ -368,6 +404,31 @@ Important flags:
 - `--insecure`
 - `--allow-insecure-tls`
 - `--trace-dir`
+- `--profile`
+- `--report-out`
+- `--report-format`
+- threshold flags such as `--threshold-max-error-rate`
+
+### Check
+
+```bash
+triton check [flags]
+```
+
+Important flags:
+
+- `--config`
+- `--profile`
+- `--probe-profile`
+- `--bench-profile`
+- `--target`
+- `--format`
+- `--report-out`
+- `--report-format`
+- `--summary-out`
+- `--junit-out`
+- `--skip-probe`
+- `--skip-bench`
 
 ## Example Endpoints
 
@@ -484,6 +545,7 @@ Current hardening features:
 - optional HTTP Basic Auth via `server.dashboard_user` / `server.dashboard_pass`
 - remote dashboard binding requires explicit opt-in via `server.allow_remote_dashboard` or `--allow-remote-dashboard`
 - remote dashboard binding also requires dashboard auth credentials
+- remote dashboard binding also requires explicit `server.cert` and `server.key`
 - experimental UDP H3 requires explicit opt-in via `server.allow_experimental_h3` or `--allow-experimental-h3`
 - non-loopback experimental UDP H3 binding additionally requires `server.allow_remote_experimental_h3` or `--allow-remote-experimental-h3`
 - enabling both `server.listen` (experimental UDP H3) and `server.listen_h3` (real HTTP/3) requires `server.allow_mixed_h3_planes` or `--allow-mixed-h3-planes`
@@ -582,7 +644,7 @@ Container runtime notes:
 - the image now runs as non-root user `10001`
 - default command is `triton server`
 - runtime state is expected under `/var/lib/triton`
-- exposed ports cover supported HTTPS/TCP (`8443/tcp`), supported real HTTP/3 (`4434/udp`), experimental lab UDP H3 (`4433/udp`), and dashboard (`9090/tcp`)
+- exposed ports cover supported HTTPS/TCP (`8443/tcp`), supported real HTTP/3 (`4434/udp`), and dashboard (`9090/tcp`)
 - see [OPERATIONS.md](/d:/Codebox/TritonProbe/OPERATIONS.md) for persistence, cert, and remote-exposure guidance
 
 Developer verification helpers:
@@ -592,17 +654,19 @@ Developer verification helpers:
 - `make test-race`
 - `make test-fuzz`
 - `make perf-check`
+- `make check-guard`
 - `make lint`
 - `make security`
 - `pwsh -File ./scripts/ci-local.ps1` for local CI-style verification on Windows/PowerShell
 - `pwsh -File ./scripts/ci-local.ps1 -Race` to include race tests when a CGO toolchain is available
 - `bash ./scripts/ci-smoke.sh` on bash-capable environments
 - `pwsh -File ./scripts/ci-smoke.ps1` on Windows/PowerShell
+- `bash ./scripts/ci-check-guard.sh` for the combined `triton check` CI gate
+- `pwsh -File ./scripts/ci-check-guard.ps1` on Windows/PowerShell
 
 Repository maintenance helper:
 
-- `scripts/bootstrap-v1-hardening.ps1`
-- use `-DryRun` first to preview label, milestone, and issue creation before writing to GitHub
+- GitHub maintenance is handled directly through standard repo workflows and CI scripts
 
 ## Roadmap
 
@@ -628,12 +692,12 @@ Project planning and product definition live under `.project/`:
 - [OPERATIONS.md](/d:/Codebox/TritonProbe/OPERATIONS.md)
 - [TROUBLESHOOTING.md](/d:/Codebox/TritonProbe/TROUBLESHOOTING.md)
 - [SUPPORTED.md](/d:/Codebox/TritonProbe/SUPPORTED.md)
+- [PRODUCTIONREADY.md](/d:/Codebox/TritonProbe/.project/PRODUCTIONREADY.md)
+- [ROADMAP.md](/d:/Codebox/TritonProbe/.project/ROADMAP.md)
 - [SPECIFICATION.md](/d:/Codebox/TritonProbe/.project/SPECIFICATION.md)
 - [IMPLEMENTATION.md](/d:/Codebox/TritonProbe/.project/IMPLEMENTATION.md)
 - [TASKS.md](/d:/Codebox/TritonProbe/.project/TASKS.md)
-- [BRANDING.md](/d:/Codebox/TritonProbe/.project/BRANDING.md)
 - [ENGINE_STRATEGY.md](/d:/Codebox/TritonProbe/.project/ENGINE_STRATEGY.md)
-- [BENCHMARKING.md](/d:/Codebox/TritonProbe/.project/BENCHMARKING.md)
 
 ## Status Note
 

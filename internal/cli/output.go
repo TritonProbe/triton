@@ -7,6 +7,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/tritonprobe/triton/internal/bench"
 	"github.com/tritonprobe/triton/internal/probe"
@@ -40,6 +41,10 @@ func renderOutput(w io.Writer, format string, v any) error {
 
 func renderTable(v any) string {
 	switch value := v.(type) {
+	case *CheckResult:
+		return renderCheckTable(*value)
+	case CheckResult:
+		return renderCheckTable(value)
 	case *probe.Result:
 		return renderProbeTable(*value)
 	case probe.Result:
@@ -59,6 +64,10 @@ func renderTable(v any) string {
 
 func renderMarkdown(v any) string {
 	switch value := v.(type) {
+	case *CheckResult:
+		return renderCheckMarkdown(*value)
+	case CheckResult:
+		return renderCheckMarkdown(value)
 	case *probe.Result:
 		return renderProbeMarkdown(*value)
 	case probe.Result:
@@ -97,6 +106,48 @@ func renderProbeTable(result probe.Result) string {
 	}
 	if len(result.Analysis) > 0 {
 		renderProbeAnalysisTable(&b, result.Analysis)
+	}
+	return b.String()
+}
+
+func renderCheckTable(result CheckResult) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Check Result\n")
+	fmt.Fprintf(&b, "Status: %s\n", verdictLabel(result.Passed))
+	if result.Profile != "" {
+		fmt.Fprintf(&b, "Profile: %s\n", result.Profile)
+	}
+	if result.Probe != nil {
+		fmt.Fprintf(&b, "Probe:  %s", verdictLabel(result.Probe.Passed))
+		if result.Probe.Profile != "" {
+			fmt.Fprintf(&b, " (%s)", result.Probe.Profile)
+		}
+		b.WriteString("\n")
+		if result.Probe.Result != nil {
+			fmt.Fprintf(&b, "        target=%s status=%d proto=%s\n", result.Probe.Result.Target, result.Probe.Result.Status, result.Probe.Result.Proto)
+		}
+		for _, violation := range result.Probe.Violations {
+			fmt.Fprintf(&b, "        violation=%s\n", violation)
+		}
+	}
+	if result.Bench != nil {
+		fmt.Fprintf(&b, "Bench:  %s", verdictLabel(result.Bench.Passed))
+		if result.Bench.Profile != "" {
+			fmt.Fprintf(&b, " (%s)", result.Bench.Profile)
+		}
+		b.WriteString("\n")
+		if result.Bench.Result != nil {
+			fmt.Fprintf(&b, "        target=%s protocols=%s\n", result.Bench.Result.Target, strings.Join(result.Bench.Result.Protocols, ", "))
+		}
+		for _, violation := range result.Bench.Violations {
+			fmt.Fprintf(&b, "        violation=%s\n", violation)
+		}
+	}
+	if len(result.Failures) > 0 {
+		b.WriteString("\nFailures\n")
+		for _, failure := range result.Failures {
+			fmt.Fprintf(&b, "  %s\n", failure)
+		}
 	}
 	return b.String()
 }
@@ -159,6 +210,71 @@ func renderProbeMarkdown(result probe.Result) string {
 	}
 	if len(result.Analysis) > 0 {
 		renderProbeAnalysisMarkdown(&b, result.Analysis)
+	}
+	return b.String()
+}
+
+func verdictLabel(passed bool) string {
+	if passed {
+		return "passed"
+	}
+	return "failed"
+}
+
+func renderCheckMarkdown(result CheckResult) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Check Result\n\n")
+	fmt.Fprintf(&b, "- Status: `%s`\n", verdictLabel(result.Passed))
+	if result.Profile != "" {
+		fmt.Fprintf(&b, "- Profile: `%s`\n", result.Profile)
+	}
+	fmt.Fprintf(&b, "- Generated: `%s`\n\n", result.GeneratedAt.Format(time.RFC3339))
+	if len(result.Failures) > 0 {
+		b.WriteString("## Failures\n\n")
+		for _, failure := range result.Failures {
+			fmt.Fprintf(&b, "- `%s`\n", failure)
+		}
+		b.WriteString("\n")
+	}
+	if result.Probe != nil {
+		b.WriteString("## Probe\n\n")
+		fmt.Fprintf(&b, "- Status: `%s`\n", verdictLabel(result.Probe.Passed))
+		if result.Probe.Profile != "" {
+			fmt.Fprintf(&b, "- Profile: `%s`\n", result.Probe.Profile)
+		}
+		if result.Probe.Error != "" {
+			fmt.Fprintf(&b, "- Error: `%s`\n\n", result.Probe.Error)
+		} else {
+			for _, violation := range result.Probe.Violations {
+				fmt.Fprintf(&b, "- Violation: `%s`\n", violation)
+			}
+			if len(result.Probe.Violations) > 0 {
+				b.WriteString("\n")
+			}
+			if result.Probe.Result != nil {
+				b.WriteString(renderProbeMarkdown(*result.Probe.Result))
+			}
+		}
+	}
+	if result.Bench != nil {
+		b.WriteString("## Bench\n\n")
+		fmt.Fprintf(&b, "- Status: `%s`\n", verdictLabel(result.Bench.Passed))
+		if result.Bench.Profile != "" {
+			fmt.Fprintf(&b, "- Profile: `%s`\n", result.Bench.Profile)
+		}
+		if result.Bench.Error != "" {
+			fmt.Fprintf(&b, "- Error: `%s`\n\n", result.Bench.Error)
+		} else {
+			for _, violation := range result.Bench.Violations {
+				fmt.Fprintf(&b, "- Violation: `%s`\n", violation)
+			}
+			if len(result.Bench.Violations) > 0 {
+				b.WriteString("\n")
+			}
+			if result.Bench.Result != nil {
+				b.WriteString(renderBenchMarkdown(*result.Bench.Result))
+			}
+		}
 	}
 	return b.String()
 }

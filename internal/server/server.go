@@ -37,6 +37,9 @@ type Server struct {
 }
 
 func New(cfg config.ServerConfig, dataDir string, store *storage.FileStore) (*Server, error) {
+	if cfg.Dashboard && cfg.AllowRemoteDashboard && (cfg.CertFile == "" || cfg.KeyFile == "") {
+		return nil, errors.New("remote dashboard requires explicit tls certificate and key files")
+	}
 	certFile, keyFile, err := ensureCertificate(cfg, dataDir)
 	if err != nil {
 		return nil, err
@@ -47,7 +50,10 @@ func New(cfg config.ServerConfig, dataDir string, store *storage.FileStore) (*Se
 		return nil, err
 	}
 
-	handler := buildHandler(cfg, logger.Logger)
+	cfg.CertFile = certFile
+	cfg.KeyFile = keyFile
+
+	handler := buildHandler(cfg, dataDir, logger.Logger)
 	var h3real *quichttp3.Server
 	if cfg.ListenH3 != "" {
 		h3real = &quichttp3.Server{
@@ -94,15 +100,16 @@ func New(cfg config.ServerConfig, dataDir string, store *storage.FileStore) (*Se
 			Logger:   logger,
 			TraceDir: cfg.TraceDir,
 			Config:   dashboardConfigSnapshot(cfg),
+			CertFile: cfg.CertFile,
+			KeyFile:  cfg.KeyFile,
+			UseTLS:   cfg.AllowRemoteDashboard,
 		})
 	}
 
-	cfg.CertFile = certFile
-	cfg.KeyFile = keyFile
 	return &Server{cfg: cfg, logger: logger, https: srv, h3real: h3real, dashboard: dash, udp: udpListener, h3: h3Server}, nil
 }
 
-func buildHandler(cfg config.ServerConfig, logger *slog.Logger) http.Handler {
+func buildHandler(cfg config.ServerConfig, dataDir string, logger *slog.Logger) http.Handler {
 	mux := appmux.NewWithOptions(appmux.Options{
 		MaxBodyBytes:         cfg.MaxBodyBytes,
 		SupportedProtocols:   supportedProtocols(cfg),
@@ -110,6 +117,8 @@ func buildHandler(cfg config.ServerConfig, logger *slog.Logger) http.Handler {
 		ExperimentalFeatures: experimentalFeatures(cfg),
 		DeploymentProfile:    deploymentProfile(cfg),
 		Stability:            stabilityLevel(cfg),
+		HealthCheck:          runtimeHealthCheck(cfg, dataDir),
+		ReadinessCheck:       runtimeReadyCheck(cfg, dataDir),
 	})
 	return observability.WithRequestID(
 		observability.WithAccessLog(
@@ -218,7 +227,7 @@ func (s *Server) Run() error {
 
 	if s.dashboard != nil {
 		go func() {
-			log.Printf("dashboard listening on http://%s", s.cfg.DashboardListen)
+			log.Printf("dashboard listening on %s://%s", s.dashboard.Scheme(), s.cfg.DashboardListen)
 			if err := s.dashboard.Run(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				errCh <- err
 			}
@@ -344,6 +353,8 @@ func dashboardConfigSnapshot(cfg config.ServerConfig) map[string]any {
 			"enabled":                cfg.Dashboard,
 			"allow_remote_dashboard": cfg.AllowRemoteDashboard,
 			"auth_enabled":           cfg.DashboardUser != "" && cfg.DashboardPass != "",
+			"tls_enabled":            cfg.AllowRemoteDashboard,
+			"transport":              dashboardTransport(cfg),
 		},
 		"limits": map[string]any{
 			"max_body_bytes": cfg.MaxBodyBytes,
@@ -366,13 +377,119 @@ func dashboardConfigSnapshot(cfg config.ServerConfig) map[string]any {
 	}
 }
 
+func dashboardTransport(cfg config.ServerConfig) string {
+	if cfg.AllowRemoteDashboard {
+		return "https"
+	}
+	return "http"
+}
+
+func runtimeHealthCheck(cfg config.ServerConfig, dataDir string) func(context.Context) error {
+	return func(ctx context.Context) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := validateRuntimeTLSFiles(cfg); err != nil {
+			return err
+		}
+		if err := ensureDirectoryAccessible(dataDir, false); err != nil {
+			return fmt.Errorf("storage directory unavailable: %w", err)
+		}
+		if cfg.TraceDir != "" {
+			if err := ensureDirectoryAccessible(cfg.TraceDir, false); err != nil {
+				return fmt.Errorf("trace directory unavailable: %w", err)
+			}
+		}
+		return nil
+	}
+}
+
+func runtimeReadyCheck(cfg config.ServerConfig, dataDir string) func(context.Context) error {
+	health := runtimeHealthCheck(cfg, dataDir)
+	return func(ctx context.Context) error {
+		if err := health(ctx); err != nil {
+			return err
+		}
+		if err := ensureDirectoryAccessible(dataDir, true); err != nil {
+			return fmt.Errorf("storage directory not writable: %w", err)
+		}
+		if cfg.TraceDir != "" {
+			if err := ensureDirectoryAccessible(cfg.TraceDir, true); err != nil {
+				return fmt.Errorf("trace directory not writable: %w", err)
+			}
+		}
+		return nil
+	}
+}
+
+func validateRuntimeTLSFiles(cfg config.ServerConfig) error {
+	needsTLS := cfg.ListenTCP != "" || cfg.ListenH3 != "" || (cfg.Dashboard && cfg.AllowRemoteDashboard)
+	if !needsTLS {
+		return nil
+	}
+	for _, path := range []string{cfg.CertFile, cfg.KeyFile} {
+		if path == "" {
+			return errors.New("tls materials are not configured")
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			return fmt.Errorf("cannot access tls material %s: %w", path, err)
+		}
+		if info.IsDir() {
+			return fmt.Errorf("tls material %s is a directory", path)
+		}
+	}
+	if _, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile); err != nil {
+		return fmt.Errorf("invalid tls material pair: %w", err)
+	}
+	return nil
+}
+
+func ensureDirectoryAccessible(path string, writable bool) error {
+	if path == "" {
+		return nil
+	}
+	if err := os.MkdirAll(path, 0o750); err != nil {
+		return err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s is not a directory", path)
+	}
+	if !writable {
+		return nil
+	}
+	file, err := os.CreateTemp(path, ".triton-ready-*")
+	if err != nil {
+		return err
+	}
+	name := file.Name()
+	if err := file.Close(); err != nil {
+		_ = os.Remove(name)
+		return err
+	}
+	if err := os.Remove(name); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 func withSecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+		w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+		w.Header().Set("Permissions-Policy", "accelerometer=(), camera=(), geolocation=(), gyroscope=(), microphone=(), payment=(), usb=()")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'")
+		if r.TLS != nil {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		next.ServeHTTP(w, r)
 	})
 }

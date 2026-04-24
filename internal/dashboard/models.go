@@ -20,6 +20,9 @@ type Server struct {
 	version        string
 	buildTime      string
 	startedAt      time.Time
+	certFile       string
+	keyFile        string
+	useTLS         bool
 	cacheMu        sync.RWMutex
 	probeCache     map[string]cachedProbeSummary
 	benchCache     map[string]cachedBenchSummary
@@ -165,6 +168,9 @@ type Options struct {
 	Config    map[string]any
 	Version   string
 	BuildTime string
+	CertFile  string
+	KeyFile   string
+	UseTLS    bool
 }
 
 func (o *Options) withDefaults() {

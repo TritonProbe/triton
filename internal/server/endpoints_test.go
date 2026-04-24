@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"net"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"github.com/tritonprobe/triton/internal/observability"
 	"github.com/tritonprobe/triton/internal/probe"
 	"github.com/tritonprobe/triton/internal/storage"
+	"github.com/tritonprobe/triton/internal/testutil"
 )
 
 func TestPingHandler(t *testing.T) {
@@ -227,7 +229,7 @@ func TestBuildHandlerAndMiddlewareHelpers(t *testing.T) {
 	handler := buildHandler(config.ServerConfig{
 		MaxBodyBytes: 16,
 		RateLimit:    1,
-	}, logger.Logger)
+	}, t.TempDir(), logger.Logger)
 
 	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
 	rec := httptest.NewRecorder()
@@ -253,9 +255,17 @@ func TestBuildHandlerAndMiddlewareHelpers(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	rec = httptest.NewRecorder()
-	withSecurityHeaders(base).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	req.TLS = &tls.ConnectionState{}
+	withSecurityHeaders(base).ServeHTTP(rec, req)
 	if rec.Header().Get("Content-Security-Policy") == "" {
 		t.Fatal("expected CSP header")
+	}
+	if rec.Header().Get("Strict-Transport-Security") == "" {
+		t.Fatal("expected HSTS header on tls request")
+	}
+	if rec.Header().Get("Permissions-Policy") == "" || rec.Header().Get("Cross-Origin-Opener-Policy") == "" || rec.Header().Get("Cross-Origin-Resource-Policy") == "" {
+		t.Fatal("expected additional security headers")
 	}
 
 	rec = httptest.NewRecorder()
@@ -323,8 +333,63 @@ func TestDashboardConfigSnapshotRedactsSecrets(t *testing.T) {
 	if dashboardCfg["auth_enabled"] != true {
 		t.Fatalf("expected auth_enabled=true, got %#v", dashboardCfg)
 	}
+	if dashboardCfg["tls_enabled"] != true || dashboardCfg["transport"] != "https" {
+		t.Fatalf("expected remote dashboard to advertise tls transport, got %#v", dashboardCfg)
+	}
 	if _, ok := dashboardCfg["password"]; ok {
 		t.Fatal("dashboard snapshot must not expose passwords")
+	}
+}
+
+func TestNewUsesTLSForRemoteDashboard(t *testing.T) {
+	store, err := storage.NewFileStore(t.TempDir(), 10, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certFile, keyFile := testutil.GenerateSelfSignedCertFiles(t)
+
+	srv, err := New(config.ServerConfig{
+		ListenTCP:            "127.0.0.1:0",
+		CertFile:             certFile,
+		KeyFile:              keyFile,
+		Dashboard:            true,
+		DashboardListen:      "0.0.0.0:9090",
+		AllowRemoteDashboard: true,
+		DashboardUser:        "admin",
+		DashboardPass:        "secret",
+		ReadTimeout:          2 * time.Second,
+		WriteTimeout:         2 * time.Second,
+		IdleTimeout:          2 * time.Second,
+		MaxBodyBytes:         1 << 20,
+	}, t.TempDir(), store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scheme := srv.dashboard.Scheme(); scheme != "https" {
+		t.Fatalf("expected remote dashboard tls scheme, got %q", scheme)
+	}
+}
+
+func TestNewRejectsRemoteDashboardWithoutExplicitTLSFiles(t *testing.T) {
+	store, err := storage.NewFileStore(t.TempDir(), 10, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = New(config.ServerConfig{
+		ListenTCP:            "127.0.0.1:0",
+		Dashboard:            true,
+		DashboardListen:      "0.0.0.0:9090",
+		AllowRemoteDashboard: true,
+		DashboardUser:        "admin",
+		DashboardPass:        "secret",
+		ReadTimeout:          2 * time.Second,
+		WriteTimeout:         2 * time.Second,
+		IdleTimeout:          2 * time.Second,
+		MaxBodyBytes:         1 << 20,
+	}, t.TempDir(), store)
+	if err == nil {
+		t.Fatal("expected remote dashboard without explicit tls files to be rejected")
 	}
 }
 

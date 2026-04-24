@@ -2,6 +2,12 @@ version: 2
 
 project_name: triton
 
+gomod:
+  proxy: true
+  env:
+    - GOPROXY=https://proxy.golang.org,direct
+    - GOSUMDB=sum.golang.org
+
 before:
   hooks:
     - go test ./... -count=1
@@ -34,6 +40,11 @@ archives:
 
 checksum:
   name_template: checksums.txt
+
+sboms:
+  - id: archives
+    artifacts: archive
+    disable: false
 
 changelog:
   use: git

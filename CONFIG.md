@@ -15,6 +15,11 @@ Configuration precedence is:
 3. environment variables
 4. CLI flags
 
+Validation behavior:
+
+- unknown YAML fields are rejected at load time
+- invalid typed environment overrides fail startup instead of being silently ignored
+
 ## Example
 
 See [triton.yaml.example](/d:/Codebox/TritonProbe/triton.yaml.example) for a full baseline file.
@@ -66,6 +71,7 @@ See [triton.yaml.example](/d:/Codebox/TritonProbe/triton.yaml.example) for a ful
 - Purpose: provide custom TLS certificate and key
 - Validation: both must be set together
 - Validation: files must exist
+- Validation: the certificate and key must load as a valid TLS pair
 
 If omitted, Triton uses its existing runtime cert behavior instead of requiring user-provided cert files.
 
@@ -74,6 +80,7 @@ Certificate guidance:
 - local-only or disposable environments can use the runtime certificate behavior
 - shared, remote, or operator-facing environments should set both `server.cert` and `server.key`
 - if clients outside your machine will connect, treat custom certificates as the safer default
+- remote dashboard mode uses the same resolved certificate/key pair as the supported server surfaces
 
 ### `server.dashboard`
 
@@ -94,6 +101,8 @@ Certificate guidance:
 - Default: `false`
 - Purpose: allow dashboard on non-loopback interfaces
 - Safety rule: requires both `server.dashboard_user` and `server.dashboard_pass`
+- Safety rule: requires explicit `server.cert` and `server.key`
+- Runtime behavior: when enabled, the dashboard is served over HTTPS using the resolved server certificate and key material
 
 ### `server.dashboard_user` / `server.dashboard_pass`
 
@@ -206,6 +215,24 @@ Use probe fidelity metadata to interpret advanced checks such as `0rtt`, `migrat
 - Default: `10`
 - Validation: must be positive
 
+### `probe.thresholds`
+
+- Type: object
+- Default: empty / disabled thresholds
+- Purpose: define pass/fail conditions for probe and `check` workflows
+
+Supported fields:
+
+- `require_status_min`
+- `require_status_max`
+- `max_total_ms`
+- `max_latency_p95_ms`
+- `max_stream_p95_ms`
+- `min_stream_success_rate`
+- `min_coverage_ratio`
+
+Threshold ratios use `0..1` values.
+
 ## `bench`
 
 ### `bench.warmup`
@@ -251,6 +278,79 @@ Use `h3` explicitly when benchmarking supported real HTTP/3 targets.
 - Type: filesystem path
 - Default: empty
 
+### `bench.default_format`
+
+- Type: string
+- Default: `table`
+
+### `bench.thresholds`
+
+- Type: object
+- Default: empty / disabled thresholds
+- Purpose: define pass/fail conditions for bench and `check` workflows
+
+Supported fields:
+
+- `require_all_healthy`
+- `max_error_rate`
+- `min_req_per_sec`
+- `max_p95_ms`
+
+Threshold ratios use `0..1` values.
+
+## `probe_profiles`
+
+### `probe_profiles.<name>`
+
+- Type: object
+- Purpose: reusable named probe workflow for `triton probe --profile ...` and `triton check`
+
+Supported fields:
+
+- `target`
+- `report_name`
+- `timeout`
+- `insecure`
+- `allow_insecure_tls`
+- `trace_dir`
+- `default_tests`
+- `default_format`
+- `default_streams`
+- `thresholds`
+
+Validation rules:
+
+- `target` must be non-empty
+- `default_streams` must be zero or positive
+- `default_format` must be one of `table`, `json`, `yaml`, or `markdown`
+
+## `bench_profiles`
+
+### `bench_profiles.<name>`
+
+- Type: object
+- Purpose: reusable named bench workflow for `triton bench --profile ...` and `triton check`
+
+Supported fields:
+
+- `target`
+- `report_name`
+- `warmup`
+- `default_duration`
+- `default_concurrency`
+- `default_protocols`
+- `default_format`
+- `insecure`
+- `allow_insecure_tls`
+- `trace_dir`
+- `thresholds`
+
+Validation rules:
+
+- `target` must be non-empty
+- durations and concurrency must be zero or positive
+- `default_format` must be one of `table`, `json`, `yaml`, or `markdown`
+
 ## `storage`
 
 ### `storage.results_dir`
@@ -284,6 +384,7 @@ Triton intentionally blocks a few risky combinations:
 - remote experimental UDP H3 needs an extra explicit opt-in
 - real and experimental H3 together need explicit mixed-plane opt-in
 - remote dashboard needs explicit opt-in plus auth
+- remote dashboard also needs explicit cert/key files
 - insecure probe/bench TLS needs explicit opt-in
 - cert/key must be provided together
 
@@ -322,6 +423,38 @@ Notes:
 - enable `server.listen_h3` only when you actually intend to serve supported HTTP/3
 - size `storage.retention` and trace directories with disk headroom in mind
 
+### Reusable CI / check profile
+
+```yaml
+probe_profiles:
+  production-edge:
+    target: "https://example.com"
+    report_name: "Production Edge"
+    default_tests: ["handshake", "latency", "streams"]
+    thresholds:
+      require_status_min: 200
+      require_status_max: 299
+      max_latency_p95_ms: 250
+      min_stream_success_rate: 0.95
+
+bench_profiles:
+  production-edge:
+    target: "https://example.com"
+    report_name: "Production Edge"
+    default_protocols: ["h1", "h2", "h3"]
+    thresholds:
+      require_all_healthy: true
+      max_error_rate: 0.05
+      min_req_per_sec: 10
+      max_p95_ms: 300
+```
+
+This enables:
+
+- `triton probe --profile production-edge`
+- `triton bench --profile production-edge`
+- `triton check --profile production-edge`
+
 ### Lab transport work
 
 ```yaml
@@ -338,6 +471,8 @@ server:
   dashboard: true
   dashboard_listen: "0.0.0.0:9090"
   allow_remote_dashboard: true
+  cert: "/etc/triton/tls/fullchain.pem"
+  key: "/etc/triton/tls/privkey.pem"
   dashboard_user: "admin"
   dashboard_pass: "change-me"
 ```
