@@ -91,6 +91,16 @@ func TestValidateRequiresAtLeastOneServerListener(t *testing.T) {
 	}
 }
 
+func TestValidateClientAllowsNoServerListeners(t *testing.T) {
+	cfg := Default()
+	cfg.Server.Listen = ""
+	cfg.Server.ListenH3 = ""
+	cfg.Server.ListenTCP = ""
+	if err := cfg.ValidateClient(); err != nil {
+		t.Fatalf("expected client config without server listeners to validate: %v", err)
+	}
+}
+
 func TestDashboardRemoteBindRequiresExplicitOptIn(t *testing.T) {
 	cfg := Default()
 	cfg.Server.DashboardListen = "0.0.0.0:9090"

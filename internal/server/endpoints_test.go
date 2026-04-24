@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -367,6 +368,47 @@ func TestNewUsesTLSForRemoteDashboard(t *testing.T) {
 	}
 	if scheme := srv.dashboard.Scheme(); scheme != "https" {
 		t.Fatalf("expected remote dashboard tls scheme, got %q", scheme)
+	}
+}
+
+func TestNewWithDashboardDefaultsUsesProvidedProbeBenchConfig(t *testing.T) {
+	store, err := storage.NewFileStore(t.TempDir(), 10, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	benchDefaults := config.Default().Bench
+	benchDefaults.DefaultDuration = 7 * time.Second
+	benchDefaults.DefaultConcurrency = 3
+	probeDefaults := config.Default().Probe
+	probeDefaults.Timeout = 11 * time.Second
+	probeDefaults.DefaultStreams = 9
+
+	srv, err := NewWithDashboardDefaults(config.ServerConfig{
+		ListenTCP:            "127.0.0.1:0",
+		Dashboard:            true,
+		DashboardListen:      "127.0.0.1:9090",
+		ReadTimeout:          2 * time.Second,
+		WriteTimeout:         2 * time.Second,
+		IdleTimeout:          2 * time.Second,
+		MaxBodyBytes:         1 << 20,
+		RateLimit:            0,
+		AccessLog:            "",
+		TraceDir:             "",
+		DashboardUser:        "",
+		DashboardPass:        "",
+		CertFile:             "",
+		KeyFile:              "",
+		AllowRemoteDashboard: false,
+	}, t.TempDir(), store, benchDefaults, probeDefaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dashboardValue := reflect.ValueOf(srv.dashboard).Elem()
+	gotBench := time.Duration(dashboardValue.FieldByName("benchDefaults").FieldByName("DefaultDuration").Int())
+	gotProbe := time.Duration(dashboardValue.FieldByName("probeDefaults").FieldByName("Timeout").Int())
+	if gotBench != benchDefaults.DefaultDuration || gotProbe != probeDefaults.Timeout {
+		t.Fatalf("dashboard defaults not propagated: bench=%s probe=%s", gotBench, gotProbe)
 	}
 }
 

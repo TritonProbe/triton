@@ -37,6 +37,11 @@ type Server struct {
 }
 
 func New(cfg config.ServerConfig, dataDir string, store *storage.FileStore) (*Server, error) {
+	defaults := config.Default()
+	return NewWithDashboardDefaults(cfg, dataDir, store, defaults.Bench, defaults.Probe)
+}
+
+func NewWithDashboardDefaults(cfg config.ServerConfig, dataDir string, store *storage.FileStore, benchDefaults config.BenchConfig, probeDefaults config.ProbeConfig) (*Server, error) {
 	if cfg.Dashboard && cfg.AllowRemoteDashboard && (cfg.CertFile == "" || cfg.KeyFile == "") {
 		return nil, errors.New("remote dashboard requires explicit tls certificate and key files")
 	}
@@ -103,8 +108,8 @@ func New(cfg config.ServerConfig, dataDir string, store *storage.FileStore) (*Se
 			CertFile: cfg.CertFile,
 			KeyFile:  cfg.KeyFile,
 			UseTLS:   cfg.AllowRemoteDashboard,
-			Bench:    config.Default().Bench,
-			Probe:    config.Default().Probe,
+			Bench:    benchDefaults,
+			Probe:    probeDefaults,
 		})
 	}
 

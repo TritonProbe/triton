@@ -375,11 +375,11 @@ func writeReportFile(path string, body []byte) error {
 	}
 	dir := filepath.Dir(path)
 	if dir != "." && dir != "" {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
 			return err
 		}
 	}
-	return os.WriteFile(path, body, 0o644)
+	return os.WriteFile(path, body, 0o600)
 }
 
 func buildCheckJUnitReport(result CheckResult) junitTestSuites {

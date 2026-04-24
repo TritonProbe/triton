@@ -19,6 +19,8 @@ Validation behavior:
 
 - unknown YAML fields are rejected at load time
 - invalid typed environment overrides fail startup instead of being silently ignored
+- `server` and `lab` require at least one active listener after config, env, and flags are merged
+- `probe`, `bench`, and `check` may use client-only config files with all server listeners disabled
 
 ## Example
 
@@ -379,7 +381,8 @@ Operational note:
 
 Triton intentionally blocks a few risky combinations:
 
-- at least one server listener must exist
+- server/lab mode requires at least one server listener
+- client-only probe/bench/check configs may disable all server listeners
 - experimental UDP H3 needs explicit opt-in
 - remote experimental UDP H3 needs an extra explicit opt-in
 - real and experimental H3 together need explicit mixed-plane opt-in

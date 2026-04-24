@@ -116,7 +116,15 @@ func Default() Config {
 }
 
 func (c Config) Validate() error {
-	if c.Server.Listen == "" && c.Server.ListenH3 == "" && c.Server.ListenTCP == "" {
+	return c.validate(true)
+}
+
+func (c Config) ValidateClient() error {
+	return c.validate(false)
+}
+
+func (c Config) validate(requireServerListener bool) error {
+	if requireServerListener && c.Server.Listen == "" && c.Server.ListenH3 == "" && c.Server.ListenTCP == "" {
 		return errors.New("at least one server listener must be configured")
 	}
 	if c.Server.Listen != "" {

@@ -167,6 +167,7 @@ Current implementation note:
 - `triton://host:port/path` targets use Triton's experimental UDP H3 transport
 - bench output now includes sampled latency percentiles (`p50`, `p95`, `p99`), error-rate/error-summary data, and average request phases such as connect, TLS, first-byte, and transfer time
 - bench results now also include a computed `summary` rollup that classifies protocols as healthy/degraded/failed and highlights the best and riskiest protocol in the run
+- multi-protocol bench runs preserve partial protocol failures in the result summary when at least one protocol completes successfully
 
 ### 4. Check
 

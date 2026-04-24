@@ -87,7 +87,7 @@ func (a *App) printHelp() {
 }
 
 func loadBaseConfig(path string) (config.Config, *storage.FileStore, error) {
-	cfg, err := config.Load(path)
+	cfg, err := config.LoadUnvalidated(path)
 	if err != nil {
 		return config.Config{}, nil, err
 	}
@@ -177,7 +177,7 @@ func (a *App) runServer(args []string) error {
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
-	srv, err := server.New(cfg.Server, cfg.Storage.ResultsDir, store)
+	srv, err := server.NewWithDashboardDefaults(cfg.Server, cfg.Storage.ResultsDir, store, cfg.Bench, cfg.Probe)
 	if err != nil {
 		return err
 	}
@@ -213,7 +213,7 @@ func (a *App) runLab(args []string) error {
 		return err
 	}
 
-	srv, err := server.New(cfg.Server, cfg.Storage.ResultsDir, store)
+	srv, err := server.NewWithDashboardDefaults(cfg.Server, cfg.Storage.ResultsDir, store, cfg.Bench, cfg.Probe)
 	if err != nil {
 		return err
 	}
@@ -245,7 +245,7 @@ func (a *App) runProbe(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := cfg.Validate(); err != nil {
+	if err := cfg.ValidateClient(); err != nil {
 		return err
 	}
 	if err := validateReportFormat(opts.ReportFormat); err != nil {
@@ -305,7 +305,7 @@ func (a *App) runBench(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := cfg.Validate(); err != nil {
+	if err := cfg.ValidateClient(); err != nil {
 		return err
 	}
 	if err := validateReportFormat(opts.ReportFormat); err != nil {
@@ -389,7 +389,7 @@ func (a *App) runCheck(args []string) error {
 		check := &CheckProbeResult{Profile: probeProfileName}
 		if targetErr != nil {
 			check.Error = targetErr.Error()
-		} else if err := probeCfg.Validate(); err != nil {
+		} else if err := probeCfg.ValidateClient(); err != nil {
 			check.Error = err.Error()
 		} else {
 			check.Result, err = probe.Run(target, probeCfg.Probe)
@@ -429,7 +429,7 @@ func (a *App) runCheck(args []string) error {
 		check := &CheckBenchResult{Profile: benchProfileName}
 		if targetErr != nil {
 			check.Error = targetErr.Error()
-		} else if err := benchCfg.Validate(); err != nil {
+		} else if err := benchCfg.ValidateClient(); err != nil {
 			check.Error = err.Error()
 		} else {
 			check.Result, err = bench.Run(target, benchCfg.Bench)

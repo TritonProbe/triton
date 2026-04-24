@@ -125,20 +125,23 @@ flowchart TD
     CLI --> Check["check"]
 
     Server --> LoadServer["load config + storage"]
-    LoadServer --> ValidateServer["cfg.Validate"]
+    LoadServer --> ValidateServer["cfg.Validate<br/>server listener required"]
     ValidateServer --> ServerNew["server.New"]
     ServerNew --> ServerRun["Server.Run"]
 
     Probe --> LoadProbe["load config + profile + flags"]
-    LoadProbe --> ProbeRun["probe.Run"]
+    LoadProbe --> ValidateProbe["cfg.ValidateClient<br/>client-only config allowed"]
+    ValidateProbe --> ProbeRun["probe.Run"]
     ProbeRun --> SaveProbe["SaveProbe + SaveProbeSummary"]
 
     Bench --> LoadBench["load config + profile + flags"]
-    LoadBench --> BenchRun["bench.Run"]
+    LoadBench --> ValidateBench["cfg.ValidateClient<br/>client-only config allowed"]
+    ValidateBench --> BenchRun["bench.Run"]
     BenchRun --> SaveBench["SaveBench + SaveBenchSummary"]
 
     Check --> ResolveProfiles["resolve probe/bench profiles"]
-    ResolveProfiles --> RunBoth["run selected probe and/or bench"]
+    ResolveProfiles --> ValidateCheck["cfg.ValidateClient per phase"]
+    ValidateCheck --> RunBoth["run selected probe and/or bench"]
     RunBoth --> Verdict["combined pass/fail + optional reports"]
 ```
 
@@ -160,14 +163,19 @@ flowchart LR
     YAML --> Env["Environment variables<br/>typed parsing"]
     Env --> Flags["CLI flags"]
     Flags --> Profiles["Optional named profiles"]
-    Profiles --> Validate["Config.Validate"]
-    Validate --> Runtime["Server / Probe / Bench / Check"]
+    Profiles --> Validate{"Command validation"}
+    Validate -->|server/lab| ServerValidate["Config.Validate<br/>listener required"]
+    Validate -->|probe/bench/check| ClientValidate["Config.ValidateClient<br/>listener optional"]
+    ServerValidate --> Runtime["Runtime"]
+    ClientValidate --> Runtime
 ```
 
 Important properties:
 
 - Unknown YAML fields are rejected.
 - Invalid typed environment variables fail startup.
+- Server and lab modes require an active listener.
+- Probe, bench, and check modes support client-only config with all server listeners disabled.
 - `probe.insecure` and `bench.insecure` require explicit `allow_insecure_tls`.
 - `server.listen` is experimental and requires `allow_experimental_h3`.
 - Non-loopback experimental binds require `allow_remote_experimental_h3`.
@@ -178,11 +186,15 @@ Important properties:
 stateDiagram-v2
     [*] --> ConfigLoaded
     ConfigLoaded --> Invalid: unknown YAML / bad env / bad flag
-    ConfigLoaded --> ValidateListeners
+    ConfigLoaded --> ValidateMode
+    ValidateMode --> ValidateListeners: server or lab
+    ValidateMode --> ValidateClient: probe, bench, or check
     ValidateListeners --> Invalid: no listener
     ValidateListeners --> Invalid: unsafe experimental bind
     ValidateListeners --> Invalid: remote dashboard without auth/TLS
     ValidateListeners --> ValidateTLS
+    ValidateClient --> Invalid: unsafe TLS/profile/storage config
+    ValidateClient --> Ready
     ValidateTLS --> Invalid: missing or invalid cert/key pair
     ValidateTLS --> Ready
     Invalid --> [*]
@@ -580,8 +592,8 @@ Current limitations:
 
 ```mermaid
 flowchart TD
-    Config["Configuration"] --> Validation["Config.Validate"]
-    Validation --> ListenerSafety["Listener safety gates"]
+    Config["Configuration"] --> Validation["Config.Validate / ValidateClient"]
+    Validation --> ListenerSafety["Listener safety gates<br/>server/lab only"]
     Validation --> TLSCheck["TLS material validation"]
     Validation --> InsecureGate["Insecure TLS opt-in gates"]
 

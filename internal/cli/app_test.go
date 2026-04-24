@@ -211,6 +211,31 @@ func TestAppCheckRunsAgainstTarget(t *testing.T) {
 	}
 }
 
+func TestAppProbeAllowsClientOnlyConfig(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "client-only.yaml")
+	cfg := "server:\n  listen: \"\"\n  listen_h3: \"\"\n  listen_tcp: \"\"\n  dashboard: false\nprobe:\n  timeout: 500ms\n  default_tests: [handshake]\nstorage:\n  results_dir: \"" + filepath.ToSlash(filepath.Join(dir, "data")) + "\"\n  max_results: 10\n  retention: 24h\n"
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	var out bytes.Buffer
+	app := NewApp("dev", "unknown")
+	app.SetStdout(&out)
+	if err := app.Run([]string{"probe", "-config", cfgPath, "-target", srv.URL, "-format", "json"}); err != nil {
+		t.Fatalf("probe command returned error: %v", err)
+	}
+	if !strings.Contains(out.String(), `"status": 200`) {
+		t.Fatalf("unexpected probe output: %q", out.String())
+	}
+}
+
 func loadCheckTestConfig() config.Config {
 	cfg := config.Default()
 	cfg.ProbeProfiles = map[string]config.ProbeProfile{

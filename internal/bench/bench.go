@@ -80,17 +80,34 @@ func Run(target string, cfg config.BenchConfig) (*Result, error) {
 		return nil, err
 	}
 	stats := make(map[string]Stats, len(cfg.DefaultProtocols))
+	var runErr error
+	successfulProtocols := 0
 	for _, protocol := range cfg.DefaultProtocols {
 		if cfg.Warmup > 0 {
-			if _, err := runProtocol(target, protocol, cfg.Warmup, cfg.DefaultConcurrency, cfg.Insecure, ""); err != nil {
-				return nil, fmt.Errorf("warmup %s: %w", protocol, err)
+			warmupStats, err := runProtocol(target, protocol, cfg.Warmup, cfg.DefaultConcurrency, cfg.Insecure, "")
+			if err != nil {
+				if warmupStats.Requests == 0 && warmupStats.Errors == 0 {
+					warmupStats = failedStats(err)
+				}
+				stats[protocol] = warmupStats
+				runErr = errors.Join(runErr, fmt.Errorf("warmup %s: %w", protocol, err))
+				continue
 			}
 		}
 		run, err := runProtocol(target, protocol, cfg.DefaultDuration, cfg.DefaultConcurrency, cfg.Insecure, cfg.TraceDir)
 		if err != nil {
-			return nil, err
+			if run.Requests == 0 && run.Errors == 0 {
+				run = failedStats(err)
+			}
+			stats[protocol] = run
+			runErr = errors.Join(runErr, fmt.Errorf("%s: %w", protocol, err))
+			continue
 		}
 		stats[protocol] = run
+		successfulProtocols++
+	}
+	if successfulProtocols == 0 && runErr != nil {
+		return nil, runErr
 	}
 	after, err := observability.ListQLOGFiles(cfg.TraceDir)
 	if err != nil {
@@ -147,6 +164,18 @@ func buildSummary(stats map[string]Stats) Summary {
 	summary.RiskiestProtocol = riskiestProtocol
 	summary.HighestErrorRate = highestErrorRate
 	return summary
+}
+
+func failedStats(err error) Stats {
+	category := categorizeBenchError(err)
+	if category == "" {
+		category = "request_failed"
+	}
+	return Stats{
+		Errors:       1,
+		ErrorRate:    1,
+		ErrorSummary: map[string]int64{category: 1},
+	}
 }
 
 func protocolHealth(stat Stats) string {

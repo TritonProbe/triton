@@ -13,6 +13,14 @@ import (
 )
 
 func Load(path string) (Config, error) {
+	cfg, err := LoadUnvalidated(path)
+	if err != nil {
+		return Config{}, err
+	}
+	return cfg, cfg.Validate()
+}
+
+func LoadUnvalidated(path string) (Config, error) {
 	cfg := Default()
 
 	if path != "" {
@@ -31,7 +39,7 @@ func Load(path string) (Config, error) {
 	if err := applyEnv(&cfg); err != nil {
 		return Config{}, err
 	}
-	return cfg, cfg.Validate()
+	return cfg, nil
 }
 
 func applyEnv(cfg *Config) error {

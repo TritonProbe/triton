@@ -155,6 +155,31 @@ func TestRunBenchLinksTraceFiles(t *testing.T) {
 	}
 }
 
+func TestRunBenchKeepsPartialProtocolFailures(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	result, err := Run(srv.URL, config.BenchConfig{
+		DefaultDuration:    100 * time.Millisecond,
+		DefaultConcurrency: 1,
+		DefaultProtocols:   []string{"h1", "h3"},
+	})
+	if err != nil {
+		t.Fatalf("expected partial bench run to return result: %v", err)
+	}
+	if result.Stats["h1"].Requests == 0 {
+		t.Fatalf("expected h1 stats to succeed: %+v", result.Stats["h1"])
+	}
+	if result.Stats["h3"].Errors == 0 || result.Stats["h3"].ErrorRate != 1 {
+		t.Fatalf("expected h3 failure stats to be preserved: %+v", result.Stats["h3"])
+	}
+	if result.Summary.FailedProtocols != 1 || result.Summary.HealthyProtocols != 1 {
+		t.Fatalf("unexpected summary for partial failure: %#v", result.Summary)
+	}
+}
+
 func TestRunBenchRejectsInsecureTLSWithoutOptIn(t *testing.T) {
 	if _, err := Run("https://example.com", config.BenchConfig{
 		DefaultDuration:    time.Second,
